@@ -1,0 +1,26 @@
+{
+  "name": "renovar-erp-payments-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend Node/Express do Renovar ERP para pagamentos Mercado Pago.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "lint": "node --check src/server.js && node --check src/firebaseAdmin.js && node --check src/mercadoPago.js && node --check src/middlewares/authFirebase.js && node --check src/routes/checkoutRoutes.js && node --check src/routes/webhookRoutes.js && node --check src/utils/planos.js && node --check src/utils/datas.js"
+  },
+  "engines": {
+    "node": "20.x"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "firebase-admin": "^13.0.0",
+    "helmet": "^8.0.0",
+    "mercadopago": "^2.0.15"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}

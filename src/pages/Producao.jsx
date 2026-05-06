@@ -1,0 +1,486 @@
+import { useState } from "react";
+import { useERP } from "../context/useERP";
+import { useToast } from "../context/useToast";
+import { useConfirmacao } from "../context/useConfirmacao";
+import { useTableSort } from "../hooks/useTableSort";
+import ActionMenu from "../components/ActionMenu";
+import { moedaBR, numeroBR, inteiroBR, dataBR } from "../utils/formatters";
+import { extrairNumeroCodigo } from "../utils/sortUtils";
+
+export default function Producao() {
+  // ================================
+  // 🔹 CONTEXTO GLOBAL DO ERP
+  // ================================
+  const {
+  produtos,
+  insumos,
+  producoes,
+  addItem,
+  deleteItem,
+} = useERP();
+  const { showToast } = useToast();
+  const { confirmar } = useConfirmacao();
+  const ordenacaoProducoes = useTableSort({
+    chave: "data",
+    direcao: "asc",
+  });
+
+  // ================================
+  // 🔹 FORMULÁRIO DE PRODUÇÃO
+  // ================================
+  const [form, setForm] = useState({
+    produtoIndex: "",
+    quantidade: "",
+    data: "",
+  });
+
+  // ================================
+  // 🔹 CALCULAR CUSTO MÉDIO DOS INSUMOS
+  // ================================
+  const calcularCustoMedio = (compras = []) => {
+    const qtdTotal = compras.reduce(
+      (total, compra) => total + Number(compra.quantidade || 0),
+      0
+    );
+
+    const valorTotal = compras.reduce(
+      (total, compra) => total + Number(compra.valorTotal || 0),
+      0
+    );
+
+    return qtdTotal > 0 ? valorTotal / qtdTotal : 0;
+  };
+
+  // ================================
+  // 🔹 PRODUTO SELECIONADO
+  // ================================
+  const produtoSelecionado =
+    form.produtoIndex !== "" ? produtos[form.produtoIndex] : null;
+
+  const produtosOrdenadosPorCodigo = produtos
+    .map((produto, index) => ({
+      produto,
+      index,
+    }))
+    .sort((itemA, itemB) => {
+      const numeroA = extrairNumeroCodigo(itemA.produto.codigo);
+      const numeroB = extrairNumeroCodigo(itemB.produto.codigo);
+
+      if (numeroA !== numeroB) return numeroA - numeroB;
+
+      return String(itemA.produto.codigo || "").localeCompare(
+        String(itemB.produto.codigo || ""),
+        "pt-BR",
+        {
+          numeric: true,
+          sensitivity: "base",
+        }
+      );
+    });
+
+  // ================================
+  // 🔹 CALCULAR CONSUMO DOS INSUMOS
+  // ================================
+  const calcularConsumos = () => {
+    if (!produtoSelecionado) return [];
+
+    return insumos.map((insumo) => {
+      const consumoUnitario = Number(
+        produtoSelecionado.consumos?.[insumo.nome] || 0
+      );
+
+      const quantidadeTotal =
+        consumoUnitario * Number(form.quantidade || 0);
+
+      const custoMedio = calcularCustoMedio(insumo.compras || []);
+
+      const custoTotal = quantidadeTotal * custoMedio;
+
+      return {
+        nome: insumo.nome,
+        unidade: insumo.unidade,
+        quantidadeTotal,
+        custoMedio,
+        custoTotal,
+      };
+    });
+  };
+
+  const consumosCalculados = calcularConsumos();
+
+  // ================================
+  // 🔹 CUSTOS DA PRODUÇÃO
+  // ================================
+  const custoTotalProducao = consumosCalculados.reduce(
+    (total, item) => total + Number(item.custoTotal || 0),
+    0
+  );
+
+  const custoUnitario =
+    Number(form.quantidade || 0) > 0
+      ? custoTotalProducao / Number(form.quantidade)
+      : 0;
+
+  // ================================
+  // 🔹 RESUMOS DA PÁGINA
+  // ================================
+  const totalProduzido = producoes.reduce(
+    (total, producao) => total + Number(producao.quantidade || 0),
+    0
+  );
+
+  const custoTotalHistorico = producoes.reduce(
+    (total, producao) => total + Number(producao.custoTotal || 0),
+    0
+  );
+
+  const custoMedioHistorico =
+    totalProduzido > 0 ? custoTotalHistorico / totalProduzido : 0;
+
+  const producoesOrdenadas = ordenacaoProducoes.ordenar(
+    producoes.map((producao, index) => ({
+      producao,
+      index,
+    })),
+    ({ producao }, chave) => {
+      const valores = {
+        data: producao.data || "",
+        produto: producao.produto || producao.nomeProduto || "",
+        quantidade: Number(producao.quantidade || 0),
+        custoTotal: Number(producao.custoTotal || 0),
+        custoUnitario: Number(producao.custoUnitario || 0),
+      };
+
+      return valores[chave] ?? "";
+    }
+  );
+
+  const renderCabecalhoOrdenavel = (label, chave, sort) => {
+    const ativo = sort.ativo(chave);
+
+    return (
+      <button
+        type="button"
+        className={ativo ? "table-sort-button active" : "table-sort-button"}
+        onClick={() => sort.ordenarPor(chave)}
+      >
+        <span>{label}</span>
+        {ativo && <span aria-hidden="true">{sort.indicador(chave)}</span>}
+      </button>
+    );
+  };
+
+  // ================================
+  // 🔹 VALIDAR ESTOQUE DE INSUMOS
+  // ================================
+  const validarEstoque = () => {
+    for (let consumo of consumosCalculados) {
+      const insumo = insumos.find((i) => i.nome === consumo.nome);
+
+      // Energia entra como custo, mas não bloqueia produção
+      if (
+        insumo &&
+        insumo.nome !== "Energia" &&
+        Number(insumo.estoque || 0) < Number(consumo.quantidadeTotal || 0)
+      ) {
+        showToast(`Estoque insuficiente para ${insumo.nome}`, "warning");
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  // ================================
+  // 🔹 REGISTRAR PRODUÇÃO
+  // ================================
+     const registrarProducao = async () => {
+  if (!produtoSelecionado || !form.quantidade || !form.data) {
+    showToast("Selecione o produto, informe a quantidade e a data.", "warning");
+    return;
+  }
+
+  if (Number(form.quantidade) <= 0) {
+    showToast("Informe uma quantidade válida.", "warning");
+    return;
+  }
+
+  if (!validarEstoque()) return;
+
+    const novaProducao = {
+      produto: `${produtoSelecionado.codigo} - ${produtoSelecionado.nome} ${produtoSelecionado.tipo}`,
+      codigo: produtoSelecionado.codigo,
+      nomeProduto: produtoSelecionado.nome,
+      tipo: produtoSelecionado.tipo,
+      quantidade: Number(form.quantidade),
+      data: form.data,
+      consumos: consumosCalculados,
+      custoTotal: custoTotalProducao,
+      custoUnitario,
+    };
+
+    await addItem("producoes", novaProducao);
+
+    setForm({
+      produtoIndex: "",
+      quantidade: "",
+      data: "",
+    });
+  };
+  // ================================
+  // 🔹 EXCLUIR PRODUÇÃO
+  // ================================
+    const excluirProducao = async (index) => {
+    const confirmado = await confirmar("Deseja excluir esta produção?");
+    if (!confirmado) return;
+
+    const producao = producoes[index];
+
+    await deleteItem("producoes", producao.id);
+  };
+
+  // ================================
+  // 🔹 RENDERIZAÇÃO
+  // ================================
+  return (
+    <div>
+      <h1 className="page-title">Produção Inteligente</h1>
+
+      {/* ================================
+          🔹 CARDS RESUMO
+      ================================= */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: "18px",
+          marginBottom: "25px",
+        }}
+      >
+        <div className="card" style={{ borderLeft: "5px solid #2563eb" }}>
+          <p style={{ color: "#64748b" }}>Total Produzido</p>
+          <h2 style={{ color: "#2563eb" }}>{totalProduzido}</h2>
+          <small>Unidades fabricadas</small>
+        </div>
+
+        <div className="card" style={{ borderLeft: "5px solid #dc2626" }}>
+          <p style={{ color: "#64748b" }}>Custo Total</p>
+          <h2 style={{ color: "#dc2626" }}>{moedaBR(custoTotalHistorico)}</h2>
+          <small>Custo acumulado</small>
+        </div>
+
+        <div className="card" style={{ borderLeft: "5px solid #16a34a" }}>
+          <p style={{ color: "#64748b" }}>Custo Médio</p>
+          <h2 style={{ color: "#16a34a" }}>{moedaBR(custoMedioHistorico)}</h2>
+          <small>Custo por unidade produzida</small>
+        </div>
+
+        <div className="card" style={{ borderLeft: "5px solid #7c3aed" }}>
+          <p style={{ color: "#64748b" }}>Registros</p>
+          <h2 style={{ color: "#7c3aed" }}>{inteiroBR(producoes.length)}</h2>
+          <small>Produções registradas</small>
+        </div>
+      </div>
+
+      {/* ================================
+          🔹 REGISTRAR PRODUÇÃO
+      ================================= */}
+      <div className="card">
+        <h3>Registrar Produção</h3>
+
+        <select
+          value={form.produtoIndex}
+          onChange={(e) =>
+            setForm({ ...form, produtoIndex: e.target.value })
+          }
+        >
+          <option value="">Selecione o produto</option>
+
+          {produtosOrdenadosPorCodigo.map(({ produto, index }) => (
+            <option key={index} value={index}>
+              {produto.codigo} - {produto.nome} {produto.tipo}
+            </option>
+          ))}
+        </select>
+
+        <input
+          type="number"
+          placeholder="Quantidade produzida"
+          value={form.quantidade}
+          onChange={(e) =>
+            setForm({ ...form, quantidade: e.target.value })
+          }
+        />
+
+        <input
+          type="date"
+          value={form.data}
+          onChange={(e) => setForm({ ...form, data: e.target.value })}
+        />
+
+
+        <button onClick={registrarProducao}>Registrar Produção</button>
+      </div>
+
+      <br />
+
+      {/* ================================
+          🔹 PRÉVIA DA PRODUÇÃO
+      ================================= */}
+      {produtoSelecionado && (
+        <div className="card">
+          <h3>Prévia da Produção</h3>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 1fr)",
+              gap: "15px",
+              marginBottom: "20px",
+            }}
+          >
+            <div>
+              <small>Produto</small>
+              <h4>
+                {produtoSelecionado.codigo} - {produtoSelecionado.nome}{" "}
+                {produtoSelecionado.tipo}
+              </h4>
+            </div>
+
+            <div>
+              <small>Quantidade</small>
+              <h4>{form.quantidade || 0} unidades</h4>
+            </div>
+
+            <div>
+              <small>Custo Total</small>
+              <h4 style={{ color: "#dc2626" }}>
+                {moedaBR(custoTotalProducao)}
+              </h4>
+            </div>
+
+            <div>
+              <small>Custo Unitário</small>
+              <h4>{moedaBR(custoUnitario)}</h4>
+            </div>
+
+          </div>
+
+          <h3>Consumo de Insumos</h3>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Insumo</th>
+                <th>Qtd Consumida</th>
+                <th>Estoque Atual</th>
+                <th>Custo Médio</th>
+                <th>Custo Total</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {consumosCalculados.map((item, index) => {
+                const insumo = insumos.find((i) => i.nome === item.nome);
+                const estoqueAtual = Number(insumo?.estoque || 0);
+
+                const faltaEstoque =
+                  item.nome !== "Energia" &&
+                  estoqueAtual < Number(item.quantidadeTotal || 0);
+
+                return (
+                  <tr key={item.nome || index}>
+                    <td>{item.nome}</td>
+
+                    <td>
+                      {numeroBR(item.quantidadeTotal,3)} {item.unidade}
+                    </td>
+
+                    <td>
+                      {numeroBR(estoqueAtual,3)} {item.unidade}
+                    </td>
+
+                    <td>{moedaBR(item.custoMedio)}</td>
+
+                    <td>{moedaBR(item.custoTotal)}</td>
+
+                    <td>
+                      <span
+                        style={{
+                          padding: "5px 10px",
+                          borderRadius: "20px",
+                          background: faltaEstoque ? "#fee2e2" : "#dcfce7",
+                          color: faltaEstoque ? "#991b1b" : "#166534",
+                        }}
+                      >
+                        {item.nome === "Energia"
+                          ? "Custo"
+                          : faltaEstoque
+                          ? "Insuficiente"
+                          : "OK"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <br />
+
+      {/* ================================
+          🔹 HISTÓRICO DE PRODUÇÃO
+      ================================= */}
+      <div className="card">
+        <h3>Histórico de Produção</h3>
+
+        <table>
+          <thead>
+            <tr>
+              <th>{renderCabecalhoOrdenavel("Data", "data", ordenacaoProducoes)}</th>
+              <th>{renderCabecalhoOrdenavel("Produto", "produto", ordenacaoProducoes)}</th>
+              <th>{renderCabecalhoOrdenavel("Qtd", "quantidade", ordenacaoProducoes)}</th>
+              <th>{renderCabecalhoOrdenavel("Custo Total", "custoTotal", ordenacaoProducoes)}</th>
+              <th>{renderCabecalhoOrdenavel("Custo Unit.", "custoUnitario", ordenacaoProducoes)}</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {producoesOrdenadas.map(({ producao: p, index }) => (
+              <tr key={p.id || index}>
+                <td>{dataBR(p.data)}</td>
+                <td>{p.produto}</td>
+                <td>{inteiroBR(p.quantidade)}</td>
+                <td>{moedaBR(p.custoTotal)}</td>
+                <td>{moedaBR(p.custoUnitario)}</td>
+
+                <td>
+                  <ActionMenu
+                    label="Abrir ações da produção"
+                    items={[
+                      {
+                        label: "Excluir produção",
+                        danger: true,
+                        onClick: () => excluirProducao(index),
+                      },
+                    ]}
+                  />
+                </td>
+              </tr>
+            ))}
+
+            {producoes.length === 0 && (
+              <tr>
+                <td colSpan="6">Nenhuma produção registrada.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
