@@ -556,7 +556,7 @@ export default function ClientesCRM() {
 
       {podeUsarCRMInteligente && !podeUsarCRMFollowUp && (
         <div className="plan-locked-inline">
-          <span>Follow-up disponível no plano Premium.</span>
+          <span>Follow-up disponível no plano Profissional.</span>
           <button type="button" onClick={() => navigate("/planos")}>
             Ver planos
           </button>

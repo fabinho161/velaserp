@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useERP } from "../context/useERP";
-import { assinaturaGratisPadrao, getPlanoConfig } from "../config/planos";
+import { assinaturaGratisPadrao, getPlanoConfig, getPlanoNivel } from "../config/planos";
 
 export function usePlano() {
   const {
@@ -19,6 +19,7 @@ export function usePlano() {
     const planoAtual = assinatura.plano || "gratis";
     const status = assinatura.status || "active";
     const limites = getPlanoConfig(planoAtual);
+    const planoNivel = getPlanoNivel(planoAtual);
     const assinaturaAtiva = status === "active";
 
     const limiteEmpresas = limites.empresas;
@@ -32,6 +33,7 @@ export function usePlano() {
     return {
       assinatura,
       planoAtual,
+      planoNivel,
       status,
       limites,
       assinaturaCarregando: Boolean(perfilCarregando),
@@ -40,6 +42,8 @@ export function usePlano() {
       isProfissional: planoAtual === "profissional",
       isPremium: planoAtual === "premium",
       podeCriarEmpresa,
+      podeUsarVendas:
+        isAdminMaster || assinaturaAtiva && Boolean(limites.vendas),
       podeUsarDRE: isAdminMaster || assinaturaAtiva && Boolean(limites.dre),
       podeGerarPDF:
         isAdminMaster || assinaturaAtiva && Boolean(limites.pdfProfissional),

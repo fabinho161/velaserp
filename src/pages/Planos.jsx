@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Barcode, Copy, CreditCard, ExternalLink, QrCode, X } from "lucide-react";
-import { PLANOS } from "../config/planos";
+import { PLANOS, getPlanoNivel } from "../config/planos";
 import { usePlano } from "../hooks/usePlano";
 import { useToast } from "../context/useToast";
 import { moedaBR } from "../utils/formatters";
@@ -18,6 +18,13 @@ const DESCRICOES_PLANOS = {
 };
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:10000";
+
+const DESCRICOES_PLANOS_COMERCIAL = {
+  gratis: "Entrada leve para acompanhar a operacao essencial sem area comercial.",
+  basico: "Primeiro degrau comercial: vendas, clientes e historico simples.",
+  profissional: "Camada de gestao: DRE, PDF profissional, CRM inteligente e follow-up.",
+  premium: "Operacao completa com multiempresas, identidade visual e recursos premium.",
+};
 
 const boletoFormInicial = {
   first_name: "",
@@ -40,7 +47,7 @@ const formatarVencimento = (valor) => {
 
 export default function Planos() {
   const { showToast } = useToast();
-  const { planoAtual, status } = usePlano();
+  const { planoAtual, planoNivel, status } = usePlano();
   const [planoProcessando, setPlanoProcessando] = useState(null);
   const [modalPagamento, setModalPagamento] = useState(null);
   const [pagamentoLoading, setPagamentoLoading] = useState(false);
@@ -409,9 +416,19 @@ export default function Planos() {
         </span>
       </div>
 
+      <div className="plans-evolution">
+        <span>Gratis</span>
+        <span>Basico</span>
+        <span>Profissional</span>
+        <span>Premium</span>
+      </div>
+
       <div className="plans-grid">
         {Object.entries(PLANOS).map(([chave, plano]) => {
           const ativo = chave === planoAtual;
+          const planoOfertaNivel = getPlanoNivel(chave);
+          const planoInferior = planoOfertaNivel < planoNivel;
+          const planoAcima = planoOfertaNivel > planoNivel;
           const recomendado = chave === "profissional";
 
           return (
@@ -421,14 +438,16 @@ export default function Planos() {
                 "card",
                 "plan-card",
                 ativo ? "plan-card-active" : "",
-                recomendado ? "plan-card-recommended" : "",
+                planoInferior ? "plan-card-disabled" : "",
+                recomendado && !planoInferior ? "plan-card-recommended" : "",
               ].filter(Boolean).join(" ")}
             >
               <div className="plan-card-header">
                 <span>{plano.nome}</span>
                 <div className="plan-badges">
-                  {recomendado && <strong>Recomendado</strong>}
                   {ativo && <strong>Plano atual</strong>}
+                  {planoInferior && <strong className="plan-badge-muted">Plano inferior</strong>}
+                  {recomendado && !ativo && !planoInferior && <strong>Recomendado</strong>}
                 </div>
               </div>
 
@@ -438,7 +457,7 @@ export default function Planos() {
               </div>
 
               <p className="plan-conversion-text">
-                {DESCRICOES_PLANOS[chave]}
+                {DESCRICOES_PLANOS_COMERCIAL[chave] || DESCRICOES_PLANOS[chave]}
               </p>
 
               <div className="plan-section">
@@ -461,9 +480,9 @@ export default function Planos() {
                 </div>
               )}
 
-              {chave === "gratis" || ativo ? (
+              {chave === "gratis" || ativo || planoInferior ? (
                 <button type="button" className="plan-current-button" disabled>
-                  {ativo ? "Plano atual" : "Plano gratuito"}
+                  {ativo ? "Plano atual" : planoInferior ? "Plano inferior" : "Plano gratuito"}
                 </button>
               ) : (
                 <div className="plan-payment-actions">
@@ -473,7 +492,11 @@ export default function Planos() {
                     disabled={planoProcessando === chave}
                   >
                     <CreditCard size={17} />
-                    {planoProcessando === chave ? "Preparando..." : "Assinar com cartao"}
+                    {planoProcessando === chave
+                      ? "Preparando..."
+                      : planoAcima
+                        ? "Fazer upgrade"
+                        : "Assinar com cartao"}
                   </button>
                   <button
                     type="button"

@@ -25,6 +25,9 @@ import { useERP } from "../context/useERP";
 import { useTableSort } from "../hooks/useTableSort";
 import { extrairNumeroPedido } from "../utils/sortUtils";
 
+const MIN_CHART_WIDTH = 80;
+const MIN_CHART_HEIGHT = 180;
+
 function ChartFrame({ children }) {
   const frameRef = useRef(null);
   const [ready, setReady] = useState(false);
@@ -38,7 +41,7 @@ function ChartFrame({ children }) {
       cancelAnimationFrame(animationFrame);
       animationFrame = requestAnimationFrame(() => {
         const { width, height } = element.getBoundingClientRect();
-        setReady(width > 0 && height > 0);
+        setReady(width >= MIN_CHART_WIDTH && height >= MIN_CHART_HEIGHT);
       });
     };
 

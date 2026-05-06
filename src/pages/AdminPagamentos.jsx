@@ -10,6 +10,7 @@ import {
 import { AlertTriangle, CheckCircle2, Clock3, RefreshCw } from "lucide-react";
 import { db } from "../firebase";
 import { useToast } from "../context/useToast";
+import { useERP } from "../context/useERP";
 import { moedaBR } from "../utils/formatters";
 
 const LIMITE_REGISTROS = 30;
@@ -50,6 +51,20 @@ const getUidFromDoc = (docSnap) => {
   return docSnap.ref.parent.parent?.id || "";
 };
 
+const isPermissionError = (error) => {
+  return error?.code === "permission-denied" ||
+    String(error?.message || "").toLowerCase().includes("permission");
+};
+
+const ordenarPorAtualizacao = (items) => {
+  return [...items].sort((a, b) =>
+    obterTempoSistema(b.atualizadoEm || b.criadoEm) -
+    obterTempoSistema(a.atualizadoEm || a.criadoEm)
+  );
+};
+
+const limitarRegistros = (items) => ordenarPorAtualizacao(items).slice(0, LIMITE_REGISTROS);
+
 const normalizarStatus = (status) => {
   return String(status || "pendente").toLowerCase();
 };
@@ -70,82 +85,163 @@ const getStatusClass = (status) => {
 
 export default function AdminPagamentos() {
   const { showToast } = useToast();
+  const { isAdminMaster } = useERP();
   const [carregando, setCarregando] = useState(true);
   const [checkoutSessions, setCheckoutSessions] = useState([]);
   const [pagamentos, setPagamentos] = useState([]);
   const [webhooks, setWebhooks] = useState([]);
   const [usuarios, setUsuarios] = useState({});
+  const [erroPermissao, setErroPermissao] = useState("");
+
+  const carregarUsuarios = useCallback(async () => {
+    const usuariosSnapshot = await getDocs(collection(db, "users"));
+
+    return usuariosSnapshot.docs.reduce((acc, userDoc) => {
+      acc[userDoc.id] = {
+        uid: userDoc.id,
+        ...userDoc.data(),
+      };
+      return acc;
+    }, {});
+  }, []);
+
+  const carregarSubcolecaoPorUsuarios = useCallback(async (mapaUsuarios, colecao) => {
+    const leituras = await Promise.allSettled(
+      Object.keys(mapaUsuarios).map(async (uid) => {
+        const snapshot = await getDocs(collection(db, "users", uid, colecao));
+        return snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          uid,
+          path: docSnap.ref.path,
+          ...docSnap.data(),
+        }));
+      })
+    );
+
+    return limitarRegistros(
+      leituras.flatMap((resultado) =>
+        resultado.status === "fulfilled" ? resultado.value : []
+      )
+    );
+  }, []);
+
+  const carregarCollectionGroupComFallback = useCallback(
+    async (mapaUsuarios, colecao) => {
+      try {
+        const snapshot = await getDocs(
+          query(
+            collectionGroup(db, colecao),
+            orderBy("atualizadoEm", "desc"),
+            limit(LIMITE_REGISTROS)
+          )
+        );
+
+        return {
+          data: snapshot.docs.map((docSnap) => ({
+            id: docSnap.id,
+            uid: getUidFromDoc(docSnap),
+            path: docSnap.ref.path,
+            ...docSnap.data(),
+          })),
+          permissaoNegada: false,
+        };
+      } catch (error) {
+        if (!isPermissionError(error)) throw error;
+
+        const data = await carregarSubcolecaoPorUsuarios(mapaUsuarios, colecao);
+        return {
+          data,
+          permissaoNegada: true,
+        };
+      }
+    },
+    [carregarSubcolecaoPorUsuarios]
+  );
 
   const carregarDiagnostico = useCallback(async () => {
     setCarregando(true);
+    setErroPermissao("");
 
     try {
-      const checkoutQuery = query(
-        collectionGroup(db, "checkoutSessions"),
-        orderBy("atualizadoEm", "desc"),
-        limit(LIMITE_REGISTROS)
-      );
-      const pagamentosQuery = query(
-        collectionGroup(db, "pagamentos"),
-        orderBy("atualizadoEm", "desc"),
-        limit(LIMITE_REGISTROS)
-      );
-      const webhooksQuery = query(
-        collection(db, "logs", "webhooksMercadoPago", "eventos"),
-        orderBy("atualizadoEm", "desc"),
-        limit(LIMITE_REGISTROS)
-      );
+      if (!isAdminMaster) {
+        setCheckoutSessions([]);
+        setPagamentos([]);
+        setWebhooks([]);
+        setUsuarios({});
+        setErroPermissao("Apenas administradores master podem acessar o diagnostico de pagamentos.");
+        return;
+      }
 
-      const [
-        checkoutSnapshot,
-        pagamentosSnapshot,
-        webhooksSnapshot,
-        usuariosSnapshot,
-      ] = await Promise.all([
-        getDocs(checkoutQuery),
-        getDocs(pagamentosQuery),
-        getDocs(webhooksQuery),
-        getDocs(collection(db, "users")),
+      const mapaUsuarios = await carregarUsuarios();
+      const [checkoutResult, pagamentosResult, webhooksResult] = await Promise.allSettled([
+        carregarCollectionGroupComFallback(mapaUsuarios, "checkoutSessions"),
+        carregarCollectionGroupComFallback(mapaUsuarios, "pagamentos"),
+        getDocs(
+          query(
+            collection(db, "logs", "webhooksMercadoPago", "eventos"),
+            orderBy("atualizadoEm", "desc"),
+            limit(LIMITE_REGISTROS)
+          )
+        ),
       ]);
 
-      const mapaUsuarios = usuariosSnapshot.docs.reduce((acc, userDoc) => {
-        acc[userDoc.id] = {
-          uid: userDoc.id,
-          ...userDoc.data(),
-        };
-        return acc;
-      }, {});
+      const mensagensPermissao = [];
+
+      const checkoutData = checkoutResult.status === "fulfilled"
+        ? checkoutResult.value.data
+        : [];
+      const pagamentosData = pagamentosResult.status === "fulfilled"
+        ? pagamentosResult.value.data
+        : [];
+      const webhooksData = webhooksResult.status === "fulfilled"
+        ? webhooksResult.value.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        }))
+        : [];
+
+      if (checkoutResult.status === "fulfilled" && checkoutResult.value.permissaoNegada) {
+        mensagensPermissao.push("checkoutSessions foram carregadas por usuario.");
+      }
+
+      if (pagamentosResult.status === "fulfilled" && pagamentosResult.value.permissaoNegada) {
+        mensagensPermissao.push("pagamentos foram carregados por usuario.");
+      }
+
+      if (webhooksResult.status === "rejected") {
+        if (isPermissionError(webhooksResult.reason)) {
+          mensagensPermissao.push("logs de webhook nao estao liberados pelas regras atuais.");
+        } else {
+          throw webhooksResult.reason;
+        }
+      }
+
+      if (checkoutResult.status === "rejected") throw checkoutResult.reason;
+      if (pagamentosResult.status === "rejected") throw pagamentosResult.reason;
 
       setUsuarios(mapaUsuarios);
-      setCheckoutSessions(
-        checkoutSnapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          uid: getUidFromDoc(docSnap),
-          path: docSnap.ref.path,
-          ...docSnap.data(),
-        }))
-      );
-      setPagamentos(
-        pagamentosSnapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          uid: getUidFromDoc(docSnap),
-          path: docSnap.ref.path,
-          ...docSnap.data(),
-        }))
-      );
-      setWebhooks(
-        webhooksSnapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...docSnap.data(),
-        }))
-      );
+      setCheckoutSessions(checkoutData);
+      setPagamentos(pagamentosData);
+      setWebhooks(webhooksData);
+      setErroPermissao(mensagensPermissao.join(" "));
     } catch (error) {
       console.error("Erro ao carregar diagnostico de pagamentos:", error);
-      showToast("Erro ao carregar diagnostico de pagamentos.", "error");
+      if (isPermissionError(error)) {
+        setErroPermissao(
+          "Sem permissao para carregar todos os dados do diagnostico com as regras atuais do Firestore."
+        );
+      } else {
+        showToast("Erro ao carregar diagnostico de pagamentos.", "error");
+      }
     } finally {
       setCarregando(false);
     }
-  }, [showToast]);
+  }, [
+    carregarCollectionGroupComFallback,
+    carregarUsuarios,
+    isAdminMaster,
+    showToast,
+  ]);
 
   useEffect(() => {
     // Tela administrativa de leitura carregada sob AdminRoute.
@@ -231,6 +327,13 @@ export default function AdminPagamentos() {
           {carregando ? "Atualizando..." : "Atualizar diagnostico"}
         </button>
       </div>
+
+      {erroPermissao && (
+        <div className="admin-permission-alert">
+          <AlertTriangle size={18} />
+          <span>{erroPermissao}</span>
+        </div>
+      )}
 
       <div className="admin-summary-grid">
         <div className="card admin-metric admin-metric-blue">
@@ -328,7 +431,7 @@ export default function AdminPagamentos() {
 
                 {checkoutSessions.length === 0 && (
                   <tr>
-                    <td colSpan="8">Nenhuma checkoutSession encontrada.</td>
+                    <td colSpan="8">Nenhum registro encontrado.</td>
                   </tr>
                 )}
               </tbody>
@@ -373,7 +476,7 @@ export default function AdminPagamentos() {
 
                 {pagamentos.length === 0 && (
                   <tr>
-                    <td colSpan="7">Nenhum pagamento encontrado.</td>
+                    <td colSpan="7">Nenhum registro encontrado.</td>
                   </tr>
                 )}
               </tbody>
@@ -418,7 +521,7 @@ export default function AdminPagamentos() {
 
                 {webhooks.length === 0 && (
                   <tr>
-                    <td colSpan="7">Nenhum webhook encontrado.</td>
+                    <td colSpan="7">Nenhum registro encontrado.</td>
                   </tr>
                 )}
               </tbody>

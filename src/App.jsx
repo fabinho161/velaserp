@@ -5,7 +5,9 @@ import { auth } from "./firebase";
 
 import Sidebar from "./components/Sidebar";
 import AdminRoute from "./components/AdminRoute";
+import PlanoRoute from "./components/PlanoRoute";
 import Login from "./pages/Login";
+import { usePlano } from "./hooks/usePlano";
 
 import Dashboard from "./pages/Dashboard";
 import Producao from "./pages/Producao";
@@ -24,6 +26,11 @@ import PagamentoRetorno from "./pages/PagamentoRetorno";
 
 export default function App() {
   const [user, setUser] = useState(undefined);
+  const {
+    podeUsarVendas,
+    podeUsarCRMComercial,
+    podeUsarRelatoriosAvancados,
+  } = usePlano();
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (usuario) => {
@@ -51,10 +58,46 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/producao" element={<Producao />} />
             <Route path="/estoque" element={<Estoque />} />
-            <Route path="/vendas" element={<Vendas />} />
-            <Route path="/clientes" element={<ClientesCRM />} />
+            <Route
+              path="/vendas"
+              element={(
+                <PlanoRoute
+                  permitido={podeUsarVendas}
+                  titulo="Vendas indisponiveis no plano atual"
+                  descricao="O modulo de Vendas entra a partir do plano Basico, junto com a operacao comercial e o CRM basico."
+                  planoMinimo="Plano Basico"
+                >
+                  <Vendas />
+                </PlanoRoute>
+              )}
+            />
+            <Route
+              path="/clientes"
+              element={(
+                <PlanoRoute
+                  permitido={podeUsarCRMComercial}
+                  titulo="CRM indisponivel no plano atual"
+                  descricao="A carteira de clientes entra a partir do plano Basico, com cadastro de clientes e historico simples."
+                  planoMinimo="Plano Basico"
+                >
+                  <ClientesCRM />
+                </PlanoRoute>
+              )}
+            />
             <Route path="/financeiro" element={<Financeiro />} />
-            <Route path="/relatorios" element={<Relatorios />} />
+            <Route
+              path="/relatorios"
+              element={(
+                <PlanoRoute
+                  permitido={podeUsarRelatoriosAvancados}
+                  titulo="Relatorios avancados indisponiveis"
+                  descricao="A central de relatorios avancados e recursos premium fica disponivel no plano Premium."
+                  planoMinimo="Plano Premium"
+                >
+                  <Relatorios />
+                </PlanoRoute>
+              )}
+            />
             <Route path="/produtos" element={<Produtos />} />
             <Route path="/insumos" element={<Insumos />} />
             <Route path="/planos" element={<Planos />} />

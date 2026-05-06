@@ -28,28 +28,64 @@ const NOME_SAAS = "Renovar ERP";
 
 export default function Sidebar() {
   const { configuracoes, isAdminMaster } = useERP();
-  const { podeUsarCRMComercial } = usePlano();
+  const {
+    podeUsarCRMComercial,
+    podeUsarRelatoriosAvancados,
+    podeUsarVendas,
+  } = usePlano();
   const [menuAberto, setMenuAberto] = useState(false);
 
-  const menus = [
-    { path: "/", label: "Dashboard", icon: LayoutDashboard },
-    { path: "/insumos", label: "Insumos", icon: Package },
-    { path: "/produtos", label: "Produtos", icon: Boxes },
-    { path: "/producao", label: "Produção", icon: Factory },
-    { path: "/estoque", label: "Estoque", icon: Warehouse },
-    { path: "/vendas", label: "Vendas", icon: ShoppingCart },
-    ...(podeUsarCRMComercial ? [{ path: "/clientes", label: "CRM", icon: Users }] : []),
-    { path: "/financeiro", label: "Financeiro", icon: Wallet },
-    { path: "/relatorios", label: "Relatórios", icon: FileText },
-    { path: "/planos", label: "Planos", icon: CreditCard },
-    { path: "/configuracoes", label: "Configurações", icon: Settings },
-    ...(isAdminMaster
-      ? [
-          { path: "/admin/clientes", label: "Admin Clientes", icon: ShieldCheck },
-          { path: "/admin/pagamentos", label: "Admin Pagamentos", icon: CreditCard },
-        ]
-      : []),
-  ];
+  const menuSections = [
+    {
+      title: "Principal",
+      items: [{ path: "/", label: "Dashboard", icon: LayoutDashboard }],
+    },
+    {
+      title: "Operação",
+      items: [
+        { path: "/insumos", label: "Insumos", icon: Package },
+        { path: "/produtos", label: "Produtos", icon: Boxes },
+        { path: "/producao", label: "Produção", icon: Factory },
+        { path: "/estoque", label: "Estoque", icon: Warehouse },
+      ],
+    },
+    {
+      title: "Comercial",
+      items: [
+        ...(podeUsarVendas
+          ? [{ path: "/vendas", label: "Vendas", icon: ShoppingCart }]
+          : []),
+        ...(podeUsarCRMComercial
+          ? [{ path: "/clientes", label: "CRM", icon: Users }]
+          : []),
+      ],
+    },
+    {
+      title: "Gestão",
+      items: [
+        { path: "/financeiro", label: "Financeiro", icon: Wallet },
+        ...(podeUsarRelatoriosAvancados
+          ? [{ path: "/relatorios", label: "Relatórios", icon: FileText }]
+          : []),
+      ],
+    },
+    {
+      title: "Conta",
+      items: [
+        { path: "/planos", label: "Planos", icon: CreditCard },
+        { path: "/configuracoes", label: "Configurações", icon: Settings },
+      ],
+    },
+    {
+      title: "Administração",
+      items: isAdminMaster
+        ? [
+            { path: "/admin/clientes", label: "Admin Clientes", icon: ShieldCheck },
+            { path: "/admin/pagamentos", label: "Admin Pagamentos", icon: CreditCard },
+          ]
+        : [],
+    },
+  ].filter((section) => section.items.length > 0);
 
   const empresaConfig = configuracoes?.empresa;
   const nomeSistema =
@@ -81,24 +117,32 @@ export default function Sidebar() {
 
   const renderMenu = () => (
     <nav className="sidebar-menu">
-      {menus.map((menu) => {
-        const Icon = menu.icon;
+      {menuSections.map((section) => (
+        <div className="sidebar-section" key={section.title}>
+          <span className="sidebar-section-title">{section.title}</span>
 
-        return (
-          <NavLink
-            key={menu.path}
-            to={menu.path}
-            end={menu.path === "/"}
-            className={({ isActive }) =>
-              isActive ? "sidebar-link active" : "sidebar-link"
-            }
-            onClick={() => setMenuAberto(false)}
-          >
-            <Icon size={18} />
-            <span>{menu.label}</span>
-          </NavLink>
-        );
-      })}
+          <div className="sidebar-section-links">
+            {section.items.map((menu) => {
+              const Icon = menu.icon;
+
+              return (
+                <NavLink
+                  key={menu.path}
+                  to={menu.path}
+                  end={menu.path === "/"}
+                  className={({ isActive }) =>
+                    isActive ? "sidebar-link active" : "sidebar-link"
+                  }
+                  onClick={() => setMenuAberto(false)}
+                >
+                  <Icon size={18} />
+                  <span>{menu.label}</span>
+                </NavLink>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </nav>
   );
 

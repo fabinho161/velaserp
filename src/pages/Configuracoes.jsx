@@ -38,7 +38,7 @@ export default function Configuracoes() {
     if (!file) return;
 
     if (!podePersonalizarSistema) {
-      showToast("Personalização disponível no plano Profissional.", "warning");
+      showToast("Personalização disponível no plano Premium.", "warning");
       return;
     }
 
@@ -171,7 +171,7 @@ export default function Configuracoes() {
             : "config-logo-area config-locked-area"}
           onClick={() => {
             if (!podePersonalizarSistema) {
-              showToast("Personalização disponível no plano Profissional.", "warning");
+              showToast("Personalização disponível no plano Premium.", "warning");
             }
           }}
         >
@@ -218,7 +218,7 @@ export default function Configuracoes() {
 
         {!podePersonalizarSistema && (
           <div className="plan-locked-inline">
-            <span>Personalização disponível no plano Profissional.</span>
+            <span>Personalização disponível no plano Premium.</span>
             <button type="button" onClick={() => navigate("/planos")}>
               Ver planos
             </button>
@@ -234,7 +234,7 @@ export default function Configuracoes() {
               disabled={!podePersonalizarSistema}
               onClick={() => {
                 if (!podePersonalizarSistema) {
-                  showToast("Personalização disponível no plano Profissional.", "warning");
+                  showToast("Personalização disponível no plano Premium.", "warning");
                 }
               }}
               onChange={(e) =>
