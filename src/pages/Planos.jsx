@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Barcode, Copy, CreditCard, ExternalLink, QrCode, X } from "lucide-react";
 import { PLANOS, getPlanoNivel } from "../config/planos";
 import { usePlano } from "../hooks/usePlano";
@@ -18,6 +18,8 @@ const DESCRICOES_PLANOS = {
 };
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:10000";
+const MENSAGEM_PAGAMENTO_CONFIRMADO =
+  "Pagamento confirmado! Plano ativado com sucesso.";
 
 const DESCRICOES_PLANOS_COMERCIAL = {
   gratis: "Entrada leve para acompanhar a operacao essencial sem area comercial.",
@@ -54,6 +56,88 @@ export default function Planos() {
   const [pagamentoErro, setPagamentoErro] = useState("");
   const [pagamentoResultado, setPagamentoResultado] = useState(null);
   const [boletoForm, setBoletoForm] = useState(boletoFormInicial);
+  const fechamentoAutomaticoRef = useRef(null);
+  const confirmacaoFrameRef = useRef(null);
+
+  const limparFechamentoAutomatico = useCallback(() => {
+    if (fechamentoAutomaticoRef.current) {
+      clearTimeout(fechamentoAutomaticoRef.current);
+      fechamentoAutomaticoRef.current = null;
+    }
+  }, []);
+
+  const limparConfirmacaoFrame = useCallback(() => {
+    if (confirmacaoFrameRef.current) {
+      cancelAnimationFrame(confirmacaoFrameRef.current);
+      confirmacaoFrameRef.current = null;
+    }
+  }, []);
+
+  const limparEstadoModalPagamento = useCallback(() => {
+    limparFechamentoAutomatico();
+    limparConfirmacaoFrame();
+    setModalPagamento(null);
+    setPagamentoErro("");
+    setPagamentoResultado(null);
+    setBoletoForm(boletoFormInicial);
+  }, [limparConfirmacaoFrame, limparFechamentoAutomatico]);
+
+  useEffect(() => {
+    if (!modalPagamento) {
+      limparFechamentoAutomatico();
+      limparConfirmacaoFrame();
+      return undefined;
+    }
+
+    const pagamentoLocalAprovado = pagamentoResultado?.status === "approved";
+    const planoPixAtivado =
+      modalPagamento.tipo === "pix" &&
+      modalPagamento.planoSolicitado === planoAtual;
+
+    if (!pagamentoLocalAprovado && !planoPixAtivado) {
+      return undefined;
+    }
+
+    if (
+      pagamentoResultado?.status !== "approved" ||
+      pagamentoResultado?.mensagem !== MENSAGEM_PAGAMENTO_CONFIRMADO
+    ) {
+      limparConfirmacaoFrame();
+      confirmacaoFrameRef.current = requestAnimationFrame(() => {
+        confirmacaoFrameRef.current = null;
+        setPagamentoResultado((resultadoAtual) => ({
+          ...(resultadoAtual || {}),
+          status: "approved",
+          mensagem: MENSAGEM_PAGAMENTO_CONFIRMADO,
+        }));
+      });
+    }
+
+    limparFechamentoAutomatico();
+    fechamentoAutomaticoRef.current = setTimeout(() => {
+      limparEstadoModalPagamento();
+    }, 2000);
+
+    return () => {
+      limparFechamentoAutomatico();
+      limparConfirmacaoFrame();
+    };
+  }, [
+    limparConfirmacaoFrame,
+    limparEstadoModalPagamento,
+    limparFechamentoAutomatico,
+    modalPagamento,
+    pagamentoResultado?.mensagem,
+    pagamentoResultado?.status,
+    planoAtual,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      limparFechamentoAutomatico();
+      limparConfirmacaoFrame();
+    };
+  }, [limparConfirmacaoFrame, limparFechamentoAutomatico]);
 
   const solicitarAtivacaoCartao = async (planoSolicitado) => {
     if (planoSolicitado === "gratis") {
@@ -113,10 +197,7 @@ export default function Planos() {
 
   const fecharModalPagamento = () => {
     if (pagamentoLoading) return;
-    setModalPagamento(null);
-    setPagamentoErro("");
-    setPagamentoResultado(null);
-    setBoletoForm(boletoFormInicial);
+    limparEstadoModalPagamento();
   };
 
   const criarPagamentoAvulso = async (tipo, planoSolicitado, payer) => {
@@ -212,6 +293,10 @@ export default function Planos() {
 
     const isPix = modalPagamento.tipo === "pix";
     const titulo = isPix ? "Pagamento via PIX" : "Boleto bancario";
+    const pagamentoAprovado = pagamentoResultado?.status === "approved";
+    const mensagemStatus = pagamentoAprovado
+      ? MENSAGEM_PAGAMENTO_CONFIRMADO
+      : "Aguardando confirmacao do Mercado Pago";
 
     return (
       <div className="modal-overlay payment-modal-overlay">
@@ -275,8 +360,14 @@ export default function Planos() {
                 Copiar codigo PIX
               </button>
 
-              <div className="payment-waiting-status">
-                Aguardando confirmacao do Mercado Pago
+              <div
+                className={
+                  pagamentoAprovado
+                    ? "payment-success-status"
+                    : "payment-waiting-status"
+                }
+              >
+                {mensagemStatus}
               </div>
             </div>
           )}
@@ -390,8 +481,14 @@ export default function Planos() {
                 <strong>{formatarVencimento(pagamentoResultado.vencimento)}</strong>
               </div>
 
-              <div className="payment-waiting-status">
-                Aguardando confirmacao do Mercado Pago
+              <div
+                className={
+                  pagamentoAprovado
+                    ? "payment-success-status"
+                    : "payment-waiting-status"
+                }
+              >
+                {mensagemStatus}
               </div>
             </div>
           )}
