@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
   collectionGroup,
@@ -14,6 +14,9 @@ import { useERP } from "../context/useERP";
 import { moedaBR } from "../utils/formatters";
 
 const LIMITE_REGISTROS = 30;
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:10000";
+const AVISO_DIAGNOSTICO_PARCIAL =
+  "Diagnóstico carregado parcialmente. Checkout sessions e pagamentos foram consultados por usuário. Logs técnicos de webhook não estão disponíveis nesta tela por segurança.";
 
 const formatarDataSistema = (valor) => {
   if (!valor) return "-";
@@ -86,12 +89,17 @@ const getStatusClass = (status) => {
 export default function AdminPagamentos() {
   const { showToast } = useToast();
   const { isAdminMaster } = useERP();
+  const webhooksTecnicosIndisponiveisRef = useRef(false);
   const [carregando, setCarregando] = useState(true);
   const [checkoutSessions, setCheckoutSessions] = useState([]);
   const [pagamentos, setPagamentos] = useState([]);
   const [webhooks, setWebhooks] = useState([]);
   const [usuarios, setUsuarios] = useState({});
   const [erroPermissao, setErroPermissao] = useState("");
+  const [ambienteMercadoPago, setAmbienteMercadoPago] = useState({
+    tipo: "unknown",
+    texto: "Verificando ambiente Mercado Pago",
+  });
 
   const carregarUsuarios = useCallback(async () => {
     const usuariosSnapshot = await getDocs(collection(db, "users"));
@@ -158,6 +166,74 @@ export default function AdminPagamentos() {
     [carregarSubcolecaoPorUsuarios]
   );
 
+  const carregarWebhooksTecnicos = useCallback(async () => {
+    if (webhooksTecnicosIndisponiveisRef.current) {
+      return {
+        data: [],
+        permissaoNegada: true,
+      };
+    }
+
+    try {
+      const snapshot = await getDocs(
+        query(
+          collection(db, "logs", "webhooksMercadoPago", "eventos"),
+          orderBy("atualizadoEm", "desc"),
+          limit(LIMITE_REGISTROS)
+        )
+      );
+
+      return {
+        data: snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        })),
+        permissaoNegada: false,
+      };
+    } catch (error) {
+      if (!isPermissionError(error)) throw error;
+
+      webhooksTecnicosIndisponiveisRef.current = true;
+      return {
+        data: [],
+        permissaoNegada: true,
+      };
+    }
+  }, []);
+
+  const carregarAmbienteMercadoPago = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/health`);
+      const data = await response.json().catch(() => ({}));
+      const mercadoPago = data?.mercadoPago || {};
+
+      if (mercadoPago.producaoHabilitada) {
+        return {
+          tipo: "production",
+          texto: "Produção Mercado Pago habilitada",
+        };
+      }
+
+      if (mercadoPago.tokenTipo === "TEST") {
+        return {
+          tipo: "test",
+          texto: "Ambiente de teste Mercado Pago",
+        };
+      }
+
+      return {
+        tipo: "blocked",
+        texto: "Produção Mercado Pago aguardando configuração segura",
+      };
+    } catch (error) {
+      console.warn("Nao foi possivel verificar ambiente Mercado Pago:", error);
+      return {
+        tipo: "unknown",
+        texto: "Ambiente Mercado Pago não confirmado nesta tela",
+      };
+    }
+  }, []);
+
   const carregarDiagnostico = useCallback(async () => {
     setCarregando(true);
     setErroPermissao("");
@@ -172,20 +248,17 @@ export default function AdminPagamentos() {
         return;
       }
 
-      const mapaUsuarios = await carregarUsuarios();
+      const [mapaUsuarios, ambienteAtual] = await Promise.all([
+        carregarUsuarios(),
+        carregarAmbienteMercadoPago(),
+      ]);
       const [checkoutResult, pagamentosResult, webhooksResult] = await Promise.allSettled([
         carregarCollectionGroupComFallback(mapaUsuarios, "checkoutSessions"),
         carregarCollectionGroupComFallback(mapaUsuarios, "pagamentos"),
-        getDocs(
-          query(
-            collection(db, "logs", "webhooksMercadoPago", "eventos"),
-            orderBy("atualizadoEm", "desc"),
-            limit(LIMITE_REGISTROS)
-          )
-        ),
+        carregarWebhooksTecnicos(),
       ]);
 
-      const mensagensPermissao = [];
+      let diagnosticoParcial = false;
 
       const checkoutData = checkoutResult.status === "fulfilled"
         ? checkoutResult.value.data
@@ -194,36 +267,32 @@ export default function AdminPagamentos() {
         ? pagamentosResult.value.data
         : [];
       const webhooksData = webhooksResult.status === "fulfilled"
-        ? webhooksResult.value.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...docSnap.data(),
-        }))
+        ? webhooksResult.value.data
         : [];
 
       if (checkoutResult.status === "fulfilled" && checkoutResult.value.permissaoNegada) {
-        mensagensPermissao.push("checkoutSessions foram carregadas por usuario.");
+        diagnosticoParcial = true;
       }
 
       if (pagamentosResult.status === "fulfilled" && pagamentosResult.value.permissaoNegada) {
-        mensagensPermissao.push("pagamentos foram carregados por usuario.");
+        diagnosticoParcial = true;
       }
 
-      if (webhooksResult.status === "rejected") {
-        if (isPermissionError(webhooksResult.reason)) {
-          mensagensPermissao.push("logs de webhook nao estao liberados pelas regras atuais.");
-        } else {
-          throw webhooksResult.reason;
-        }
+      if (webhooksResult.status === "fulfilled" && webhooksResult.value.permissaoNegada) {
+        diagnosticoParcial = true;
       }
+
+      if (webhooksResult.status === "rejected") throw webhooksResult.reason;
 
       if (checkoutResult.status === "rejected") throw checkoutResult.reason;
       if (pagamentosResult.status === "rejected") throw pagamentosResult.reason;
 
+      setAmbienteMercadoPago(ambienteAtual);
       setUsuarios(mapaUsuarios);
       setCheckoutSessions(checkoutData);
       setPagamentos(pagamentosData);
       setWebhooks(webhooksData);
-      setErroPermissao(mensagensPermissao.join(" "));
+      setErroPermissao(diagnosticoParcial ? AVISO_DIAGNOSTICO_PARCIAL : "");
     } catch (error) {
       console.error("Erro ao carregar diagnostico de pagamentos:", error);
       if (isPermissionError(error)) {
@@ -237,8 +306,10 @@ export default function AdminPagamentos() {
       setCarregando(false);
     }
   }, [
+    carregarAmbienteMercadoPago,
     carregarCollectionGroupComFallback,
     carregarUsuarios,
+    carregarWebhooksTecnicos,
     isAdminMaster,
     showToast,
   ]);
@@ -294,6 +365,12 @@ export default function AdminPagamentos() {
       errosWebhook,
     };
   }, [checkoutSessions, pagamentos, webhooks]);
+
+  const AmbienteMercadoPagoIcon = ambienteMercadoPago.tipo === "production"
+    ? CheckCircle2
+    : ambienteMercadoPago.tipo === "test"
+      ? Clock3
+      : AlertTriangle;
 
   const renderUsuario = (uid) => {
     const usuario = usuarios[uid];
@@ -377,8 +454,8 @@ export default function AdminPagamentos() {
             Assinatura alterada apenas pelo webhook validado
           </span>
           <span>
-            <AlertTriangle size={18} />
-            Producao ainda bloqueada por token TEST-
+            <AmbienteMercadoPagoIcon size={18} />
+            {ambienteMercadoPago.texto}
           </span>
         </div>
       </div>

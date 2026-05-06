@@ -9,6 +9,30 @@ const allowProductionPayments = () => {
   return String(process.env.ALLOW_PRODUCTION_PAYMENTS || "false").toLowerCase() === "true";
 };
 
+const getMercadoPagoEnvironment = () => {
+  const token = getMercadoPagoToken();
+  const tokenTipo = token.startsWith("APP_USR")
+    ? "APP_USR"
+    : token.startsWith("TEST-")
+      ? "TEST"
+      : token
+        ? "OUTRO"
+        : "NAO_CONFIGURADO";
+  const productionAllowed = allowProductionPayments();
+
+  return {
+    tokenConfigurado: Boolean(token),
+    tokenTipo,
+    allowProductionPayments: productionAllowed,
+    producaoHabilitada: tokenTipo === "APP_USR" && productionAllowed,
+    ambiente: tokenTipo === "TEST"
+      ? "test"
+      : tokenTipo === "APP_USR" && productionAllowed
+        ? "production"
+        : "blocked",
+  };
+};
+
 const validarTokenMercadoPago = () => {
   const token = getMercadoPagoToken();
 
@@ -182,6 +206,7 @@ module.exports = {
   criarPreapprovalMercadoPago,
   getBoletoDataFromPayment,
   getCheckoutUrlFromPreapproval,
+  getMercadoPagoEnvironment,
   getMercadoPagoToken,
   getPaymentIdFromResponse,
   getPaymentStatusFromResponse,
