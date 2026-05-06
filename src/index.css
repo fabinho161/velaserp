@@ -4076,6 +4076,35 @@ tr:hover td {
   box-shadow: 0 10px 22px rgba(37, 99, 235, 0.16);
 }
 
+.admin-payments-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.admin-payments-actions button {
+  margin: 0;
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.admin-payments-actions .admin-cleanup-button {
+  border: 1px solid #fecaca;
+  background: #fff;
+  color: #b91c1c;
+  box-shadow: none;
+}
+
+.admin-payments-actions .admin-cleanup-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: #fef2f2;
+  box-shadow: 0 10px 22px rgba(185, 28, 28, 0.1);
+}
+
 .admin-payments-page .admin-summary-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
@@ -4444,6 +4473,10 @@ tr:hover td {
   }
 
   .admin-payments-page .admin-header button {
+    width: 100%;
+  }
+
+  .admin-payments-actions {
     width: 100%;
   }
 

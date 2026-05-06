@@ -16,6 +16,7 @@ import {
   CreditCard,
   RefreshCw,
   ShieldCheck,
+  Trash2,
   Webhook,
 } from "lucide-react";
 import { auth, db } from "../firebase";
@@ -110,6 +111,7 @@ export default function AdminPagamentos() {
   const [webhooks, setWebhooks] = useState([]);
   const [usuarios, setUsuarios] = useState({});
   const [erroPermissao, setErroPermissao] = useState("");
+  const [limpezaCarregando, setLimpezaCarregando] = useState(false);
   const [ambienteMercadoPago, setAmbienteMercadoPago] = useState({
     tipo: "unknown",
     texto: "Verificando ambiente Mercado Pago",
@@ -249,26 +251,33 @@ export default function AdminPagamentos() {
     }
   }, []);
 
-  const carregarDiagnosticoBackend = useCallback(async () => {
+  const chamarAdminBackend = useCallback(async (path, options = {}) => {
     const token = await auth.currentUser?.getIdToken();
 
     if (!token) {
       throw new Error("Sessão expirada. Faça login novamente.");
     }
 
-    const response = await fetch(`${API_URL}/api/admin/pagamentos/diagnostico`, {
+    const response = await fetch(`${API_URL}${path}`, {
+      ...options,
       headers: {
+        "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
+        ...(options.headers || {}),
       },
     });
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      throw new Error(data?.error || "Não foi possível carregar o diagnóstico administrativo.");
+      throw new Error(data?.error || "Não foi possível executar a operação administrativa.");
     }
 
     return data;
   }, []);
+
+  const carregarDiagnosticoBackend = useCallback(() => {
+    return chamarAdminBackend("/api/admin/pagamentos/diagnostico");
+  }, [chamarAdminBackend]);
 
   const carregarDiagnostico = useCallback(async () => {
     setCarregando(true);
@@ -369,6 +378,51 @@ export default function AdminPagamentos() {
     isAdminMaster,
     showToast,
   ]);
+
+  const limparRegistrosTeste = useCallback(async () => {
+    try {
+      setLimpezaCarregando(true);
+
+      const preview = await chamarAdminBackend("/api/admin/pagamentos/limpeza-testes/preview");
+      const resumoPreview = preview.resumo || {};
+      const total = Number(resumoPreview.total || 0);
+
+      if (total === 0) {
+        showToast("Nenhum registro de teste elegível para limpeza.", "success");
+        return;
+      }
+
+      const mensagemConfirmacao = [
+        "Limpeza administrativa segura",
+        "",
+        "Serão apagados somente registros com valor R$ 1,00 e status pending/cancelled/expired.",
+        "Registros approved ou com valor maior que R$ 1,00 nunca serão apagados.",
+        "",
+        `CheckoutSessions: ${resumoPreview.checkoutSessions || 0}`,
+        `Pagamentos: ${resumoPreview.pagamentos || 0}`,
+        `Total: ${total}`,
+        "",
+        "Deseja confirmar a limpeza?",
+      ].join("\n");
+
+      if (!window.confirm(mensagemConfirmacao)) {
+        return;
+      }
+
+      const resultado = await chamarAdminBackend("/api/admin/pagamentos/limpeza-testes", {
+        method: "POST",
+        body: JSON.stringify({ confirmar: true }),
+      });
+
+      showToast(`${resultado.apagados || 0} registros de teste apagados.`, "success");
+      await carregarDiagnostico();
+    } catch (error) {
+      console.error("Erro ao limpar registros de teste:", error);
+      showToast(error?.message || "Erro ao limpar registros de teste.", "error");
+    } finally {
+      setLimpezaCarregando(false);
+    }
+  }, [carregarDiagnostico, chamarAdminBackend, showToast]);
 
   useEffect(() => {
     // Tela administrativa de leitura carregada sob AdminRoute.
@@ -567,10 +621,22 @@ export default function AdminPagamentos() {
           </small>
         </div>
 
-        <button onClick={carregarDiagnostico} disabled={carregando}>
-          <RefreshCw size={17} />
-          {carregando ? "Atualizando..." : "Atualizar diagnostico"}
-        </button>
+        <div className="admin-payments-actions">
+          <button
+            type="button"
+            className="admin-cleanup-button"
+            onClick={limparRegistrosTeste}
+            disabled={carregando || limpezaCarregando}
+          >
+            <Trash2 size={17} />
+            {limpezaCarregando ? "Verificando..." : "Limpar testes"}
+          </button>
+
+          <button onClick={carregarDiagnostico} disabled={carregando}>
+            <RefreshCw size={17} />
+            {carregando ? "Atualizando..." : "Atualizar diagnostico"}
+          </button>
+        </div>
       </div>
 
       {erroPermissao && (
