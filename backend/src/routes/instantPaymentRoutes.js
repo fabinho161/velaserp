@@ -8,6 +8,7 @@ const {
   getPaymentStatusFromResponse,
   getPixDataFromPayment,
 } = require("../mercadoPago");
+const { executarCommitAuditoria, logAuditoriaInfo } = require("../utils/auditoriaFirestore");
 const { PLANOS_PAGOS, validarPlanoPago } = require("../utils/planos");
 
 const PAYMENT_METHODS = {
@@ -65,6 +66,12 @@ const createPaymentHandler = (method) => async (req, res) => {
   const uid = req.user.uid;
   const email = req.user.email || req.user.firebase?.identities?.email?.[0];
   const planoSolicitado = validarPlanoPago(req.body?.planoSolicitado || req.body?.plano);
+
+  logAuditoriaInfo(`${method}.create: uid recebido`, {
+    uid,
+    email,
+    planoSolicitado,
+  });
 
   if (!planoSolicitado) {
     res.status(400).json({
@@ -154,9 +161,24 @@ const createPaymentHandler = (method) => async (req, res) => {
       atualizadoEm: agora,
     };
 
-    await db.runTransaction(async (transaction) => {
-      transaction.set(pagamentoRef, pagamentoAuditoria);
-      transaction.set(checkoutRef, checkoutAuditoria);
+    await executarCommitAuditoria({
+      action: `${method}.create.persistencia_inicial`,
+      db,
+      uid,
+      refs: {
+        pagamento: pagamentoRef,
+        checkoutSession: checkoutRef,
+      },
+      extras: {
+        planoSolicitado,
+        metodoPagamento: method,
+        mercadoPagoPaymentId,
+        status,
+      },
+      commit: () => db.runTransaction(async (transaction) => {
+        transaction.set(pagamentoRef, pagamentoAuditoria);
+        transaction.set(checkoutRef, checkoutAuditoria);
+      }),
     });
 
     res.json({

@@ -3,6 +3,7 @@ require("dotenv").config();
 const cors = require("cors");
 const express = require("express");
 const helmet = require("helmet");
+const adminDiagnosticsRoutes = require("./routes/adminDiagnosticsRoutes");
 const checkoutRoutes = require("./routes/checkoutRoutes");
 const webhookRoutes = require("./routes/webhookRoutes");
 const { getMercadoPagoEnvironment } = require("./mercadoPago");
@@ -48,6 +49,7 @@ app.use("/api/checkout", checkoutRoutes);
 app.use("/api/pix", pixRouter);
 app.use("/api/boleto", boletoRouter);
 app.use("/api/webhooks", webhookRoutes);
+app.use("/api/admin", adminDiagnosticsRoutes);
 
 app.use((err, req, res, next) => {
   if (res.headersSent) {

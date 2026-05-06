@@ -8,7 +8,7 @@ import {
   query,
 } from "firebase/firestore";
 import { AlertTriangle, CheckCircle2, Clock3, RefreshCw } from "lucide-react";
-import { db } from "../firebase";
+import { auth, db } from "../firebase";
 import { useToast } from "../context/useToast";
 import { useERP } from "../context/useERP";
 import { moedaBR } from "../utils/formatters";
@@ -235,6 +235,27 @@ export default function AdminPagamentos() {
     }
   }, []);
 
+  const carregarDiagnosticoBackend = useCallback(async () => {
+    const token = await auth.currentUser?.getIdToken();
+
+    if (!token) {
+      throw new Error("Sessão expirada. Faça login novamente.");
+    }
+
+    const response = await fetch(`${API_URL}/api/admin/pagamentos/diagnostico`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data?.error || "Não foi possível carregar o diagnóstico administrativo.");
+    }
+
+    return data;
+  }, []);
+
   const carregarDiagnostico = useCallback(async () => {
     setCarregando(true);
     setErroPermissao("");
@@ -253,6 +274,21 @@ export default function AdminPagamentos() {
         carregarUsuarios(),
         carregarAmbienteMercadoPago(),
       ]);
+
+      try {
+        const diagnosticoBackend = await carregarDiagnosticoBackend();
+
+        setAmbienteMercadoPago(ambienteAtual);
+        setUsuarios(diagnosticoBackend.usuarios || mapaUsuarios);
+        setCheckoutSessions(diagnosticoBackend.checkoutSessions || []);
+        setPagamentos(diagnosticoBackend.pagamentos || []);
+        setWebhooks(diagnosticoBackend.webhooks || []);
+        setErroPermissao("");
+        return;
+      } catch (backendError) {
+        console.warn("Diagnóstico via backend indisponível, usando leitura Firestore client:", backendError);
+      }
+
       const [checkoutResult, pagamentosResult, webhooksResult] = await Promise.allSettled([
         carregarCollectionGroupComFallback(mapaUsuarios, "checkoutSessions"),
         carregarCollectionGroupComFallback(mapaUsuarios, "pagamentos"),
@@ -309,6 +345,7 @@ export default function AdminPagamentos() {
   }, [
     carregarAmbienteMercadoPago,
     carregarCollectionGroupComFallback,
+    carregarDiagnosticoBackend,
     carregarUsuarios,
     carregarWebhooksTecnicos,
     isAdminMaster,

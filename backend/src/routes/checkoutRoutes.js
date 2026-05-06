@@ -8,6 +8,7 @@ const {
   getPreapprovalIdFromResponse,
   getPreapprovalStatusFromResponse,
 } = require("../mercadoPago");
+const { executarCommitAuditoria, logAuditoriaInfo } = require("../utils/auditoriaFirestore");
 const { getReturnUrls } = require("../utils/datas");
 const { PLANOS_PAGOS, validarPlanoPago } = require("../utils/planos");
 
@@ -17,6 +18,12 @@ router.post("/mercado-pago", authFirebase, async (req, res) => {
   const uid = req.user.uid;
   const email = req.user.email || req.user.firebase?.identities?.email?.[0];
   const planoSolicitado = validarPlanoPago(req.body?.planoSolicitado || req.body?.plano);
+
+  logAuditoriaInfo("checkout.cartao: uid recebido", {
+    uid,
+    email,
+    planoSolicitado,
+  });
 
   if (!planoSolicitado) {
     res.status(400).json({
@@ -101,9 +108,23 @@ router.post("/mercado-pago", authFirebase, async (req, res) => {
       atualizadoEm: agora,
     };
 
-    await db.runTransaction(async (transaction) => {
-      transaction.set(checkoutRef, checkoutSession);
-      transaction.set(pagamentoRef, pagamentoPendente);
+    await executarCommitAuditoria({
+      action: "checkout.cartao.persistencia_inicial",
+      db,
+      uid,
+      refs: {
+        checkoutSession: checkoutRef,
+        pagamento: pagamentoRef,
+      },
+      extras: {
+        planoSolicitado,
+        mercadoPagoPreapprovalId,
+        mercadoPagoStatus,
+      },
+      commit: () => db.runTransaction(async (transaction) => {
+        transaction.set(checkoutRef, checkoutSession);
+        transaction.set(pagamentoRef, pagamentoPendente);
+      }),
     });
 
     res.json({

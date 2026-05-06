@@ -9,6 +9,11 @@ const {
   getPreapprovalIdFromWebhook,
   normalizarStatus,
 } = require("../utils/datas");
+const {
+  executarCommitAuditoria,
+  logAuditoriaInfo,
+  registrarErroAuditoria,
+} = require("../utils/auditoriaFirestore");
 const { PLANOS_PAGOS, normalizarPlano } = require("../utils/planos");
 
 const router = express.Router();
@@ -175,6 +180,11 @@ const getVencimentoPagamentoAvulso = (payment) => {
 const processarWebhookPagamento = async ({ db, logRef, paymentId, res }) => {
   let payment = null;
 
+  logAuditoriaInfo("webhook.payment: recebido", {
+    paymentId,
+    logPath: logRef.path,
+  });
+
   try {
     payment = await consultarPagamentoMercadoPago({ paymentId });
   } catch (error) {
@@ -334,7 +344,26 @@ const processarWebhookPagamento = async ({ db, logRef, paymentId, res }) => {
     ...webhookAuditoria,
   }, { merge: true });
 
-  await batch.commit();
+  await executarCommitAuditoria({
+    action: "webhook.payment.persistencia_aprovacao",
+    db,
+    uid,
+    refs: {
+      pagamento: pagamentoSnapshot.ref,
+      checkoutSession: checkoutRef,
+      webhookGlobal: logRef,
+      webhookUsuario: getUserWebhookLogRef(db, uid, logRef.id),
+      assinatura: assinaturaRef,
+    },
+    extras: {
+      paymentId: String(payment.id || paymentId),
+      planoSolicitado,
+      metodoPagamento,
+      statusMercadoPago,
+      assinaturaAtualizada: statusAtivaPlano,
+    },
+    commit: () => batch.commit(),
+  });
 
   res.status(200).json({
     ok: true,
@@ -357,7 +386,25 @@ router.post("/mercado-pago", async (req, res) => {
   const preapprovalId = getPreapprovalIdFromWebhook(req);
 
   try {
-    await logRef.set({
+    logAuditoriaInfo("webhook.mercado_pago: recebido", {
+      preapprovalId,
+      resourceType: getWebhookResourceType(req),
+      logPath: logRef.path,
+      query: req.query || {},
+    });
+
+    await executarCommitAuditoria({
+      action: "webhook.recebido.log_inicial",
+      db,
+      uid: null,
+      refs: {
+        webhookGlobal: logRef,
+      },
+      extras: {
+        preapprovalId,
+        resourceType: getWebhookResourceType(req),
+      },
+      commit: () => logRef.set({
       gateway: "mercado_pago",
       origem: "webhook_render",
       statusProcessamento: "received",
@@ -371,6 +418,7 @@ router.post("/mercado-pago", async (req, res) => {
         xMeliSignature: req.get("x-meli-signature") || null,
       },
       criadoEm: FieldValue.serverTimestamp(),
+      }),
     });
 
     if (!preapprovalId) {
@@ -543,7 +591,25 @@ router.post("/mercado-pago", async (req, res) => {
       ...webhookAuditoria,
     }, { merge: true });
 
-    await batch.commit();
+    await executarCommitAuditoria({
+      action: "webhook.preapproval.persistencia_aprovacao",
+      db,
+      uid,
+      refs: {
+        checkoutSession: checkoutSnapshot.ref,
+        pagamento: pagamentoRef,
+        webhookGlobal: logRef,
+        webhookUsuario: getUserWebhookLogRef(db, uid, logRef.id),
+        assinatura: assinaturaRef,
+      },
+      extras: {
+        preapprovalId: preapproval.id || preapprovalId,
+        planoSolicitado,
+        statusMercadoPago,
+        assinaturaAtualizada: statusAtivaPlano,
+      },
+      commit: () => batch.commit(),
+    });
 
     res.status(200).json({
       ok: true,
@@ -555,6 +621,12 @@ router.post("/mercado-pago", async (req, res) => {
     });
   } catch (error) {
     console.error("Erro ao processar webhook Mercado Pago", error);
+    await registrarErroAuditoria(db, "webhook.mercado_pago.erro_geral", error, {
+      preapprovalId,
+      logPath: logRef.path,
+      payload,
+      query: req.query || {},
+    });
     res.status(500).json({
       ok: false,
       error: "Erro ao processar webhook.",

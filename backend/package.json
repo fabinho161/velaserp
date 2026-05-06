@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "lint": "node --check src/server.js && node --check src/firebaseAdmin.js && node --check src/mercadoPago.js && node --check src/middlewares/authFirebase.js && node --check src/routes/checkoutRoutes.js && node --check src/routes/instantPaymentRoutes.js && node --check src/routes/webhookRoutes.js && node --check src/utils/planos.js && node --check src/utils/datas.js"
+    "lint": "node --check src/server.js && node --check src/firebaseAdmin.js && node --check src/mercadoPago.js && node --check src/middlewares/authFirebase.js && node --check src/routes/checkoutRoutes.js && node --check src/routes/instantPaymentRoutes.js && node --check src/routes/webhookRoutes.js && node --check src/routes/adminDiagnosticsRoutes.js && node --check src/utils/planos.js && node --check src/utils/datas.js && node --check src/utils/auditoriaFirestore.js"
   },
   "engines": {
     "node": "20.x"
