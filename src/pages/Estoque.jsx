@@ -3,6 +3,7 @@ import { useERP } from "../context/useERP";
 import { useTableSort } from "../hooks/useTableSort";
 import ActionMenu from "../components/ActionMenu";
 import { numeroBR } from "../utils/formatters";
+import { calcularEstoqueProdutos } from "../utils/estoqueProdutos";
 
 const ESTOQUE_MINIMO_CONFIG = "estoqueMinimoProdutos";
 
@@ -124,50 +125,7 @@ export default function Estoque() {
   // 🔹 ESTOQUE DE PRODUTOS ACABADOS
   // Estoque = Produzido - Vendido
   // ================================
-  const calcularEstoqueProdutos = () => {
-    const mapa = {};
-
-    producoes.forEach((producao) => {
-      if (!mapa[producao.produto]) {
-        mapa[producao.produto] = {
-          produto: producao.produto,
-          produzido: 0,
-          vendido: 0,
-          custoTotal: 0,
-        };
-      }
-
-      mapa[producao.produto].produzido += Number(producao.quantidade || 0);
-      mapa[producao.produto].custoTotal += Number(producao.custoTotal || 0);
-    });
-
-    vendas.forEach((venda) => {
-      if (venda.itens && Array.isArray(venda.itens)) {
-        venda.itens.forEach((item) => {
-          if (mapa[item.produto]) {
-            mapa[item.produto].vendido += Number(item.quantidade || 0);
-          }
-        });
-      } else if (venda.produto && mapa[venda.produto]) {
-        mapa[venda.produto].vendido += Number(venda.quantidade || 0);
-      }
-    });
-
-    return Object.values(mapa).map((item) => {
-      const saldo = item.produzido - item.vendido;
-      const custoMedio =
-        item.produzido > 0 ? item.custoTotal / item.produzido : 0;
-
-      return {
-        ...item,
-        saldo,
-        custoMedio,
-        valorEstoque: saldo * custoMedio,
-      };
-    });
-  };
-
-  const produtosEstoque = calcularEstoqueProdutos();
+  const produtosEstoque = calcularEstoqueProdutos({ producoes, vendas });
 
   // ================================
   // 🔹 RESUMOS

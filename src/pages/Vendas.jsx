@@ -8,6 +8,10 @@ import saasLogo from "../assets/saas-logo.png";
 import html2pdf from "html2pdf.js";
 import { dataBR, numeroBR } from "../utils/formatters";
 import {
+  calcularEstoqueProdutos as calcularEstoqueProdutosCompartilhado,
+  normalizarChaveProduto,
+} from "../utils/estoqueProdutos";
+import {
   alternarOrdenacao,
   extrairNumeroPedido,
   ordenarPorConfig,
@@ -247,61 +251,23 @@ export default function Vendas() {
   // 🔹 CALCULAR ESTOQUE DE PRODUTOS
   // Estoque = Produzido - Vendido
   // ================================
-  const calcularEstoqueProdutos = () => {
-    const estoque = {};
-
-    producoes.forEach((p) => {
-      const produto = textoSeguro(p.produto || p.nomeProduto);
-
-      if (!estoque[produto]) {
-        estoque[produto] = {
-          produto,
-          produzido: 0,
-          vendido: 0,
-          custoTotal: 0,
-        };
-      }
-
-      estoque[produto].produzido += Number(p.quantidade || 0);
-      estoque[produto].custoTotal += Number(p.custoTotal || 0);
-    });
-
-    vendas.forEach((venda, vendaIndex) => {
-      if (editIndex === vendaIndex) return;
-
-      if (venda.itens && Array.isArray(venda.itens)) {
-        venda.itens.forEach((item) => {
-          const produto = textoSeguro(item?.produto);
-
-          if (estoque[produto]) {
-            estoque[produto].vendido += Number(item?.quantidade || 0);
-          }
-        });
-      } else {
-        const produto = textoSeguro(venda.produto);
-
-        if (estoque[produto]) {
-          estoque[produto].vendido += Number(venda.quantidade || 0);
-        }
-      }
-    });
-
-    return Object.values(estoque).map((item) => ({
-      ...item,
-      saldo: item.produzido - item.vendido,
-      custoMedio:
-        item.produzido > 0 ? item.custoTotal / item.produzido : 0,
-    }));
-  };
-
-  const estoqueProdutos = calcularEstoqueProdutos();
+  const estoqueProdutos = calcularEstoqueProdutosCompartilhado({
+    producoes,
+    vendas,
+    ignorarVendaIndex: editIndex,
+  });
 
   const produtoSelecionado = estoqueProdutos.find(
     (p) => p.produto === itemAtual.produto
   );
 
   const quantidadeJaNoPedido = itens.reduce((total, item) => {
-    if (textoSeguro(item.produto) !== itemAtual.produto) return total;
+    if (
+      normalizarChaveProduto(textoSeguro(item.produto)) !==
+      normalizarChaveProduto(itemAtual.produto)
+    ) {
+      return total;
+    }
     return total + Number(item.quantidade || 0);
   }, 0);
 

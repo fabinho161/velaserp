@@ -1,8 +1,10 @@
 import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  AlertTriangle,
   MessageCircle,
   Search,
+  Trash2,
   UserPlus,
   X,
 } from "lucide-react";
@@ -110,6 +112,7 @@ export default function ClientesCRM() {
     vendas = [],
     addItem,
     updateItem,
+    deleteItem,
   } = useERP();
   const { showToast } = useToast();
   const { confirmar } = useConfirmacao();
@@ -133,6 +136,9 @@ export default function ClientesCRM() {
   const [clienteEditandoId, setClienteEditandoId] = useState(null);
   const [form, setForm] = useState(CLIENTE_INICIAL);
   const [clienteHistorico, setClienteHistorico] = useState(null);
+  const [clienteExclusao, setClienteExclusao] = useState(null);
+  const [clienteExclusaoBloqueada, setClienteExclusaoBloqueada] = useState(null);
+  const [excluindoCliente, setExcluindoCliente] = useState(false);
 
   const vendasValidas = useMemo(
     () =>
@@ -246,7 +252,7 @@ export default function ClientesCRM() {
     }
 
     if (diasParaRecompra !== null && diasParaRecompra < 0) {
-      statusRecompra = Math.abs(diasParaRecompra) > 30 ? "Inativo" : "Atrasado";
+      statusRecompra = "Atrasado";
     }
 
     return {
@@ -339,12 +345,16 @@ export default function ClientesCRM() {
 
       return clientesComMetricas.reduce(
         (acc, cliente) => {
-          if (cliente.ativo !== false) acc.ativos += 1;
+          const clienteAtivo = cliente.ativo !== false;
+
+          if (clienteAtivo) acc.ativos += 1;
           if (cliente.metricas.statusRecompra === "Próximo da recompra") {
             acc.proximos += 1;
           }
-          if (cliente.metricas.statusRecompra === "Atrasado") acc.atrasados += 1;
-          if (cliente.metricas.statusRecompra === "Inativo") acc.inativos += 1;
+          if (clienteAtivo && cliente.metricas.statusRecompra === "Atrasado") {
+            acc.atrasados += 1;
+          }
+          if (!clienteAtivo) acc.inativos += 1;
 
           acc.receita += Number(cliente.metricas.totalComprado || 0);
           acc.pedidos += Number(cliente.metricas.quantidadeDePedidos || 0);
@@ -433,6 +443,18 @@ export default function ClientesCRM() {
       return;
     }
 
+    const clienteAnterior = clienteEditandoId
+      ? clientesComerciais.find((cliente) => cliente.id === clienteEditandoId)
+      : null;
+    const clienteAtivo = form.ativo !== false;
+    let statusRelacionamento = form.statusRelacionamento;
+
+    if (!clienteAtivo) {
+      statusRelacionamento = "Inativo";
+    } else if (statusRelacionamento === "Inativo") {
+      statusRelacionamento = "Ativo";
+    }
+
     const dadosCliente = {
       ...form,
       nome,
@@ -444,13 +466,21 @@ export default function ClientesCRM() {
       documento: form.documento.trim(),
       empresaId,
       userId: user?.uid || "",
-      ativo: form.ativo !== false,
+      ativo: clienteAtivo,
+      statusRelacionamento,
       updatedAt: new Date(),
     };
 
     if (clienteEditandoId) {
       await updateItem("clientesComerciais", clienteEditandoId, dadosCliente);
-      showToast("Cliente atualizado com sucesso.", "success");
+
+      if (clienteAnterior?.ativo === false && clienteAtivo) {
+        showToast("Cliente reativado com sucesso.", "success");
+      } else if (clienteAnterior?.ativo !== false && !clienteAtivo) {
+        showToast("Cliente desativado.", "success");
+      } else {
+        showToast("Cliente atualizado com sucesso.", "success");
+      }
     } else {
       await addItem("clientesComerciais", {
         ...dadosCliente,
@@ -476,6 +506,59 @@ export default function ClientesCRM() {
     });
 
     showToast("Cliente desativado.", "success");
+  };
+
+  const obterMovimentacaoCliente = (cliente) => {
+    const metricas = cliente.metricas || calcularRecompra(cliente);
+    const compras = metricas.compras || obterComprasCliente(cliente);
+    const totalComprado = Number(metricas.totalComprado || cliente.totalComprado || 0);
+    const possuiHistoricoComercial = [
+      cliente.observacoes,
+      cliente.proximaAcao,
+      cliente.dataProximaAcao,
+    ].some((valor) => String(valor || "").trim());
+
+    return {
+      compras: compras.length,
+      totalComprado,
+      possuiHistoricoComercial,
+      podeExcluir:
+        totalComprado === 0 &&
+        compras.length === 0 &&
+        !possuiHistoricoComercial,
+    };
+  };
+
+  const solicitarExclusaoCliente = (cliente) => {
+    const movimentacao = obterMovimentacaoCliente(cliente);
+
+    if (!movimentacao.podeExcluir) {
+      setClienteExclusaoBloqueada({ ...cliente, movimentacao });
+      return;
+    }
+
+    setClienteExclusao({ ...cliente, movimentacao });
+  };
+
+  const confirmarExclusaoCliente = async () => {
+    if (!clienteExclusao || excluindoCliente) return;
+
+    setExcluindoCliente(true);
+
+    try {
+      const removido = await deleteItem("clientesComerciais", clienteExclusao.id);
+
+      if (removido === false) return;
+
+      if (clienteHistorico?.id === clienteExclusao.id) {
+        setClienteHistorico(null);
+      }
+
+      setClienteExclusao(null);
+      showToast("Cliente excluido com sucesso.", "success");
+    } finally {
+      setExcluindoCliente(false);
+    }
   };
 
   const abrirWhatsapp = (cliente) => {
@@ -774,6 +857,11 @@ export default function ClientesCRM() {
                             disabled: cliente.ativo === false,
                             onClick: () => desativarCliente(cliente),
                           },
+                          {
+                            label: "Excluir cliente",
+                            danger: true,
+                            onClick: () => solicitarExclusaoCliente(cliente),
+                          },
                         ].filter(Boolean)}
                       />
                     </td>
@@ -869,6 +957,36 @@ export default function ClientesCRM() {
                 </select>
               </label>
 
+              {clienteEditandoId && (
+                <label className="crm-toggle-field">
+                  <input
+                    type="checkbox"
+                    checked={form.ativo !== false}
+                    onChange={(e) => {
+                      const ativo = e.target.checked;
+
+                      let proximoStatusRelacionamento = form.statusRelacionamento;
+
+                      if (!ativo) {
+                        proximoStatusRelacionamento = "Inativo";
+                      } else if (proximoStatusRelacionamento === "Inativo") {
+                        proximoStatusRelacionamento = "Ativo";
+                      }
+
+                      setForm({
+                        ...form,
+                        ativo,
+                        statusRelacionamento: proximoStatusRelacionamento,
+                      });
+                    }}
+                  />
+                  <span>
+                    Cliente ativo
+                    <small>Desative para preservar histÃ³rico sem exibir na operaÃ§Ã£o.</small>
+                  </span>
+                </label>
+              )}
+
               {podeUsarCRMFollowUp && (
                 <label>
                   Relacionamento
@@ -936,6 +1054,83 @@ export default function ClientesCRM() {
               </button>
               <button type="button" onClick={salvarCliente}>
                 Salvar cliente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {clienteExclusaoBloqueada && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal-card crm-delete-modal-card">
+            <div className="crm-delete-modal-header">
+              <span className="crm-delete-icon warning">
+                <AlertTriangle size={24} />
+              </span>
+              <div>
+                <h3>ExclusÃ£o bloqueada</h3>
+                <p>{clienteExclusaoBloqueada.nome}</p>
+              </div>
+            </div>
+
+            <div className="crm-delete-warning">
+              Este cliente possui histÃ³rico comercial/financeiro. Utilize
+              "Desativar cliente" para preservar relatÃ³rios e auditoria.
+            </div>
+
+            <div className="crm-delete-summary">
+              <span>Vendas vinculadas</span>
+              <strong>{clienteExclusaoBloqueada.movimentacao.compras}</strong>
+              <span>Total comprado</span>
+              <strong>{moedaBR(clienteExclusaoBloqueada.movimentacao.totalComprado)}</strong>
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                onClick={() => setClienteExclusaoBloqueada(null)}
+              >
+                Entendi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {clienteExclusao && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal-card crm-delete-modal-card">
+            <div className="crm-delete-modal-header">
+              <span className="crm-delete-icon danger">
+                <Trash2 size={24} />
+              </span>
+              <div>
+                <h3>Excluir cliente</h3>
+                <p>{clienteExclusao.nome}</p>
+              </div>
+            </div>
+
+            <div className="crm-delete-warning danger">
+              Esta aÃ§Ã£o Ã© permanente. O cadastro serÃ¡ removido porque nÃ£o
+              existem vendas, total comprado ou histÃ³rico comercial vinculado.
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="sales-button-secondary"
+                disabled={excluindoCliente}
+                onClick={() => setClienteExclusao(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="sales-button-danger"
+                disabled={excluindoCliente}
+                onClick={confirmarExclusaoCliente}
+              >
+                {excluindoCliente ? "Excluindo..." : "Excluir cliente"}
               </button>
             </div>
           </div>

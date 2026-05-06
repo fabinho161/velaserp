@@ -4,6 +4,7 @@ import { useToast } from "../context/useToast";
 import { usePlano } from "../hooks/usePlano";
 import { useTableSort } from "../hooks/useTableSort";
 import { moedaBR, inteiroBR, dataBR, numeroBR } from "../utils/formatters";
+import { calcularEstoqueProdutos } from "../utils/estoqueProdutos";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import saasLogo from "../assets/saas-logo.png";
@@ -102,6 +103,11 @@ export default function Relatorios() {
     (total, producao) => total + Number(producao.quantidade ?? 0),
     0
   );
+  const produtosEstoqueCalculado = calcularEstoqueProdutos({
+    produtos,
+    producoes,
+    vendas,
+  });
 
   // ================================
   // 🔹 ALERTAS DE ESTOQUE
@@ -113,8 +119,8 @@ export default function Relatorios() {
     return estoqueMinimo > 0 && estoqueAtual <= estoqueMinimo;
   });
 
-  const produtosAbaixoMinimo = (produtos || []).filter((produto) => {
-    const estoqueAtual = Number(produto.estoqueAtual ?? produto.estoque ?? 0);
+  const produtosAbaixoMinimo = produtosEstoqueCalculado.filter((produto) => {
+    const estoqueAtual = Number(produto.saldo ?? 0);
     const estoqueMinimo = Number(produto.estoqueMinimo ?? 0);
 
     return estoqueMinimo > 0 && estoqueAtual <= estoqueMinimo;
@@ -136,15 +142,13 @@ export default function Relatorios() {
         };
       }),
       ...produtosAbaixoMinimo.map((produto) => {
-        const estoqueAtual = Number(
-          produto.estoqueAtual ?? produto.estoque ?? 0
-        );
+        const estoqueAtual = Number(produto.saldo ?? 0);
         const estoqueMinimo = Number(produto.estoqueMinimo ?? 0);
 
         return {
-          id: produto.id,
+          id: produto.id || produto.produto,
           tipo: "Produto",
-          item: produto.nome || "",
+          item: produto.produto || "",
           estoqueAtual,
           estoqueMinimo,
           situacao: "Estoque baixo",
@@ -610,15 +614,13 @@ const gerarCabecalhoPDF = async (doc, titulo) => {
               : "OK",
           ];
         }),
-        ...(produtos || []).map((produto) => {
-          const estoqueAtual = Number(
-            produto.estoqueAtual ?? produto.estoque ?? 0
-          );
+        ...produtosEstoqueCalculado.map((produto) => {
+          const estoqueAtual = Number(produto.saldo ?? 0);
           const estoqueMinimo = Number(produto.estoqueMinimo ?? 0);
 
           return [
             "Produto",
-            produto.nome || "-",
+            produto.produto || "-",
             numeroBR(estoqueAtual, 2),
             numeroBR(estoqueMinimo, 2),
             estoqueMinimo > 0 && estoqueAtual <= estoqueMinimo

@@ -445,13 +445,15 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
   }, [empresaId, getDocRef, showToast, user]);
 
   const deleteItem = useCallback(async (colecao, id) => {
-    if (!user || !empresaId || !id) return;
+    if (!user || !empresaId || !id) return false;
 
     try {
       await deleteDoc(getDocRef(colecao, id));
+      return true;
     } catch (error) {
       console.error(`Erro ao excluir ${colecao}:`, error);
       showToast("Erro ao excluir no Firebase. Veja o console.", "error");
+      return false;
     }
   }, [empresaId, getDocRef, showToast, user]);
 
