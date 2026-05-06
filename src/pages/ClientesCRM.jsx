@@ -1068,14 +1068,14 @@ export default function ClientesCRM() {
                 <AlertTriangle size={24} />
               </span>
               <div>
-                <h3>ExclusÃ£o bloqueada</h3>
+                <h3>Exclusão bloqueada</h3>
                 <p>{clienteExclusaoBloqueada.nome}</p>
               </div>
             </div>
 
             <div className="crm-delete-warning">
-              Este cliente possui histÃ³rico comercial/financeiro. Utilize
-              "Desativar cliente" para preservar relatÃ³rios e auditoria.
+              Este cliente possui histórico comercial/financeiro. Utilize
+              "Desativar cliente" para preservar relatórios e auditoria.
             </div>
 
             <div className="crm-delete-summary">
