@@ -55,7 +55,7 @@ export const PLANOS = {
   },
   basico: {
     nome: "Básico",
-    preco: 49,
+    preco: 1,
     empresas: 1,
     vendasMes: null,
     dre: false,
@@ -83,7 +83,7 @@ export const PLANOS = {
   },
   profissional: {
     nome: "Profissional",
-    preco: 99,
+    preco: 1,
     empresas: 3,
     vendasMes: null,
     dre: true,
