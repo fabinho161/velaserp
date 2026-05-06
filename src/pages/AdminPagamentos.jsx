@@ -7,7 +7,17 @@ import {
   orderBy,
   query,
 } from "firebase/firestore";
-import { AlertTriangle, CheckCircle2, Clock3, RefreshCw } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  Clock3,
+  Copy,
+  CreditCard,
+  RefreshCw,
+  ShieldCheck,
+  Webhook,
+} from "lucide-react";
 import { auth, db } from "../firebase";
 import { useToast } from "../context/useToast";
 import { useERP } from "../context/useERP";
@@ -79,7 +89,11 @@ const getStatusClass = (status) => {
     return "success";
   }
 
-  if (["cancelled", "paused", "rejected", "error", "failed"].includes(normalizado)) {
+  if (["cancelled", "canceled", "paused"].includes(normalizado)) {
+    return "neutral";
+  }
+
+  if (["rejected", "error", "failed"].includes(normalizado)) {
     return "danger";
   }
 
@@ -417,6 +431,88 @@ export default function AdminPagamentos() {
       ? Clock3
       : AlertTriangle;
 
+  const ultimaAtualizacao = useMemo(() => {
+    const registros = [...checkoutSessions, ...pagamentos, ...webhooks];
+    const ultimoTempo = registros.reduce((maior, registro) => {
+      return Math.max(
+        maior,
+        obterTempoSistema(registro.atualizadoEm || registro.criadoEm)
+      );
+    }, 0);
+
+    return ultimoTempo ? new Date(ultimoTempo).toLocaleString("pt-BR") : "Sem registros";
+  }, [checkoutSessions, pagamentos, webhooks]);
+
+  const metricCards = [
+    {
+      label: "Checkout sessions",
+      value: resumo.sessoes,
+      helper: "Ultimas sessoes criadas",
+      className: "admin-metric-blue",
+      icon: CreditCard,
+    },
+    {
+      label: "Aprovadas",
+      value: resumo.sessoesAprovadas,
+      helper: "Status autorizado/ativo",
+      className: "admin-metric-green",
+      icon: CheckCircle2,
+    },
+    {
+      label: "Pendentes",
+      value: resumo.sessoesPendentes,
+      helper: "Aguardando compensacao",
+      className: "admin-metric-amber",
+      icon: Clock3,
+    },
+    {
+      label: "Erros webhook",
+      value: resumo.errosWebhook,
+      helper: "Validacao ou token",
+      className: "admin-metric-red",
+      icon: AlertTriangle,
+    },
+  ];
+
+  const checklistItems = [
+    {
+      label: "Tela somente leitura",
+      badge: "Ativo",
+      icon: ShieldCheck,
+      tone: "success",
+    },
+    {
+      label: "Admin Master protegido por rota",
+      badge: "Ativo",
+      icon: CheckCircle2,
+      tone: "success",
+    },
+    {
+      label: "Assinatura alterada apenas pelo webhook validado",
+      badge: "Monitorado",
+      icon: Webhook,
+      tone: "warning",
+    },
+    {
+      label: ambienteMercadoPago.texto,
+      badge: ambienteMercadoPago.tipo === "production" ? "Producao" : "Ambiente",
+      icon: AmbienteMercadoPagoIcon,
+      tone: ambienteMercadoPago.tipo === "production" ? "success" : "warning",
+    },
+  ];
+
+  const copiarId = async (valor) => {
+    if (!valor || valor === "-") return;
+
+    try {
+      await navigator.clipboard.writeText(valor);
+      showToast("ID Mercado Pago copiado.", "success");
+    } catch (error) {
+      console.error("Erro ao copiar ID Mercado Pago:", error);
+      showToast("Nao foi possivel copiar o ID.", "error");
+    }
+  };
+
   const renderUsuario = (uid) => {
     const usuario = usuarios[uid];
 
@@ -434,14 +530,41 @@ export default function AdminPagamentos() {
     </span>
   );
 
+  const renderMercadoPagoId = (valor) => {
+    const id = valor || "-";
+
+    return (
+      <div className="admin-payment-id">
+        <span title={id}>{id}</span>
+        {valor && (
+          <button
+            type="button"
+            className="admin-copy-button"
+            onClick={() => copiarId(valor)}
+            aria-label="Copiar ID Mercado Pago"
+          >
+            <Copy size={14} />
+          </button>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="admin-page admin-payments-page">
-      <div className="admin-header page-header">
+      <div className="admin-header page-header admin-payments-hero">
         <div>
+          <span className="admin-payments-eyebrow">
+            <Activity size={15} />
+            Mercado Pago Monitor
+          </span>
           <h1 className="page-title">Diagnostico de Pagamentos</h1>
           <p className="page-subtitle">
-            Audite sessoes de checkout, pagamentos e webhooks do Mercado Pago antes de liberar producao.
+            Central de monitoramento financeiro integrada ao Mercado Pago.
           </p>
+          <small className="admin-payments-last-update">
+            Ultima atualizacao: {ultimaAtualizacao}
+          </small>
         </div>
 
         <button onClick={carregarDiagnostico} disabled={carregando}>
@@ -458,55 +581,58 @@ export default function AdminPagamentos() {
       )}
 
       <div className="admin-summary-grid">
-        <div className="card admin-metric admin-metric-blue">
-          <p>Checkout sessions</p>
-          <h2>{resumo.sessoes}</h2>
-          <small>Ultimas sessoes criadas</small>
-        </div>
+        {metricCards.map((metric) => {
+          const Icon = metric.icon;
 
-        <div className="card admin-metric admin-metric-green">
-          <p>Aprovadas</p>
-          <h2>{resumo.sessoesAprovadas}</h2>
-          <small>Status autorizado/ativo</small>
-        </div>
-
-        <div className="card admin-metric admin-metric-amber">
-          <p>Pendentes</p>
-          <h2>{resumo.sessoesPendentes}</h2>
-          <small>Aguardando compensacao</small>
-        </div>
-
-        <div className="card admin-metric admin-metric-red">
-          <p>Erros webhook</p>
-          <h2>{resumo.errosWebhook}</h2>
-          <small>Validacao ou token</small>
-        </div>
+          return (
+            <div className={`card admin-metric ${metric.className}`} key={metric.label}>
+              <div className="admin-metric-topline">
+                <p>{metric.label}</p>
+                <span>
+                  <Icon size={19} />
+                </span>
+              </div>
+              <h2>{metric.value}</h2>
+              <small>{metric.helper}</small>
+            </div>
+          );
+        })}
       </div>
 
       <div className="card admin-payment-checklist">
-        <h3>Checklist de auditoria</h3>
+        <div className="admin-table-card-header">
+          <div>
+            <h3>Checklist de auditoria</h3>
+            <p>Controles principais para acompanhar a saude do fluxo financeiro.</p>
+          </div>
+        </div>
         <div className="admin-payment-checklist-grid">
-          <span>
-            <CheckCircle2 size={18} />
-            Tela somente leitura
-          </span>
-          <span>
-            <CheckCircle2 size={18} />
-            Admin Master protegido por rota
-          </span>
-          <span>
-            <Clock3 size={18} />
-            Assinatura alterada apenas pelo webhook validado
-          </span>
-          <span>
-            <AmbienteMercadoPagoIcon size={18} />
-            {ambienteMercadoPago.texto}
-          </span>
+          {checklistItems.map((item) => {
+            const Icon = item.icon;
+
+            return (
+              <div className={`admin-audit-status admin-audit-status-${item.tone}`} key={item.label}>
+                <span className="admin-audit-icon">
+                  <Icon size={18} />
+                </span>
+                <div>
+                  <strong>{item.label}</strong>
+                  <small>{item.badge}</small>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
       <div className="card admin-table-card">
-        <h3>CheckoutSessions recentes</h3>
+        <div className="admin-table-card-header">
+          <div>
+            <h3>CheckoutSessions recentes</h3>
+            <p>Eventos de checkout gerados por cartao, PIX e boleto.</p>
+          </div>
+          <span>{checkoutSessions.length} registros</span>
+        </div>
 
         {carregando ? (
           <p className="admin-muted">Carregando sessoes...</p>
@@ -538,10 +664,11 @@ export default function AdminPagamentos() {
                       <td>{renderStatus(sessao.statusCheckout)}</td>
                       <td>{renderStatus(sessao.statusMercadoPago || sessao.mercadoPagoStatus)}</td>
                       <td className="admin-payment-code">
-                      {sessao.mercadoPagoPreapprovalId ||
-                        sessao.mercadoPagoPaymentId ||
-                        sessao.paymentId ||
-                        "-"}
+                        {renderMercadoPagoId(
+                          sessao.mercadoPagoPreapprovalId ||
+                            sessao.mercadoPagoPaymentId ||
+                            sessao.paymentId
+                        )}
                       </td>
                       <td>{formatarDataSistema(sessao.criadoEm)}</td>
                       <td>{formatarDataSistema(sessao.atualizadoEm)}</td>
@@ -566,7 +693,13 @@ export default function AdminPagamentos() {
       </div>
 
       <div className="card admin-table-card">
-        <h3>Pagamentos recentes</h3>
+        <div className="admin-table-card-header">
+          <div>
+            <h3>Pagamentos recentes</h3>
+            <p>Transacoes registradas com valor, status e origem financeira.</p>
+          </div>
+          <span>{pagamentos.length} registros</span>
+        </div>
 
         {carregando ? (
           <p className="admin-muted">Carregando pagamentos...</p>
@@ -593,7 +726,11 @@ export default function AdminPagamentos() {
                     <td>{renderStatus(pagamento.statusMercadoPago || pagamento.mercadoPagoStatus)}</td>
                     <td>{moedaBR(pagamento.valor || 0)}</td>
                     <td className="admin-payment-code">
-                      {pagamento.mercadoPagoPreapprovalId || pagamento.paymentId || "-"}
+                      {renderMercadoPagoId(
+                        pagamento.mercadoPagoPreapprovalId ||
+                          pagamento.mercadoPagoPaymentId ||
+                          pagamento.paymentId
+                      )}
                     </td>
                     <td>{formatarDataSistema(pagamento.atualizadoEm || pagamento.criadoEm)}</td>
                   </tr>
@@ -611,7 +748,13 @@ export default function AdminPagamentos() {
       </div>
 
       <div className="card admin-table-card">
-        <h3>Webhooks recentes</h3>
+        <div className="admin-table-card-header">
+          <div>
+            <h3>Webhooks recentes</h3>
+            <p>Eventos recebidos e processados pelo backend de pagamentos.</p>
+          </div>
+          <span>{webhooks.length} registros</span>
+        </div>
 
         {carregando ? (
           <p className="admin-muted">Carregando webhooks...</p>
@@ -637,10 +780,11 @@ export default function AdminPagamentos() {
                     <td>{renderUsuario(webhook.userId)}</td>
                     <td>{webhook.planoSolicitado || "-"}</td>
                     <td className="admin-payment-code">
-                      {webhook.mercadoPagoPreapprovalId ||
-                        webhook.mercadoPagoPaymentId ||
-                        webhook.paymentId ||
-                        "-"}
+                      {renderMercadoPagoId(
+                        webhook.mercadoPagoPreapprovalId ||
+                          webhook.mercadoPagoPaymentId ||
+                          webhook.paymentId
+                      )}
                     </td>
                     <td className="admin-payment-error">{webhook.erroValidacao || "-"}</td>
                     <td>{formatarDataSistema(webhook.atualizadoEm || webhook.criadoEm)}</td>
