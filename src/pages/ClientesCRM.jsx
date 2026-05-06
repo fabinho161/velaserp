@@ -982,7 +982,7 @@ export default function ClientesCRM() {
                   />
                   <span>
                     Cliente ativo
-                    <small>Desative para preservar histÃ³rico sem exibir na operaÃ§Ã£o.</small>
+                    <small>Desative para preservar histórico sem exibir na operação.</small>
                   </span>
                 </label>
               )}
@@ -1111,8 +1111,7 @@ export default function ClientesCRM() {
             </div>
 
             <div className="crm-delete-warning danger">
-              Esta aÃ§Ã£o Ã© permanente. O cadastro serÃ¡ removido porque nÃ£o
-              existem vendas, total comprado ou histÃ³rico comercial vinculado.
+              Esta ação é permanente. O cadastro será removido porque não existem vendas, total comprado ou histórico comercial vinculado.
             </div>
 
             <div className="modal-actions">
