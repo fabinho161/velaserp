@@ -166,10 +166,10 @@ export default function AdminPagamentos() {
     [carregarSubcolecaoPorUsuarios]
   );
 
-  const carregarWebhooksTecnicos = useCallback(async () => {
+  const carregarWebhooksTecnicos = useCallback(async (mapaUsuarios) => {
     if (webhooksTecnicosIndisponiveisRef.current) {
       return {
-        data: [],
+        data: await carregarSubcolecaoPorUsuarios(mapaUsuarios, "webhooksMercadoPago"),
         permissaoNegada: true,
       };
     }
@@ -186,6 +186,7 @@ export default function AdminPagamentos() {
       return {
         data: snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
+          path: docSnap.ref.path,
           ...docSnap.data(),
         })),
         permissaoNegada: false,
@@ -195,11 +196,11 @@ export default function AdminPagamentos() {
 
       webhooksTecnicosIndisponiveisRef.current = true;
       return {
-        data: [],
+        data: await carregarSubcolecaoPorUsuarios(mapaUsuarios, "webhooksMercadoPago"),
         permissaoNegada: true,
       };
     }
-  }, []);
+  }, [carregarSubcolecaoPorUsuarios]);
 
   const carregarAmbienteMercadoPago = useCallback(async () => {
     try {
@@ -255,7 +256,7 @@ export default function AdminPagamentos() {
       const [checkoutResult, pagamentosResult, webhooksResult] = await Promise.allSettled([
         carregarCollectionGroupComFallback(mapaUsuarios, "checkoutSessions"),
         carregarCollectionGroupComFallback(mapaUsuarios, "pagamentos"),
-        carregarWebhooksTecnicos(),
+        carregarWebhooksTecnicos(mapaUsuarios),
       ]);
 
       let diagnosticoParcial = false;
@@ -324,7 +325,10 @@ export default function AdminPagamentos() {
     return webhooks.reduce((acc, webhook) => {
       const chaves = [
         webhook.checkoutSessionId,
+        webhook.pagamentoId,
         webhook.mercadoPagoPreapprovalId,
+        webhook.mercadoPagoPaymentId,
+        webhook.paymentId,
       ].filter(Boolean);
 
       chaves.forEach((chave) => {
@@ -474,7 +478,7 @@ export default function AdminPagamentos() {
                   <th>Plano</th>
                   <th>Status checkout</th>
                   <th>Status Mercado Pago</th>
-                  <th>Preapproval ID</th>
+                  <th>ID Mercado Pago</th>
                   <th>Criado em</th>
                   <th>Atualizado em</th>
                   <th>Erro webhook</th>
@@ -493,7 +497,10 @@ export default function AdminPagamentos() {
                       <td>{renderStatus(sessao.statusCheckout)}</td>
                       <td>{renderStatus(sessao.statusMercadoPago || sessao.mercadoPagoStatus)}</td>
                       <td className="admin-payment-code">
-                        {sessao.mercadoPagoPreapprovalId || "-"}
+                      {sessao.mercadoPagoPreapprovalId ||
+                        sessao.mercadoPagoPaymentId ||
+                        sessao.paymentId ||
+                        "-"}
                       </td>
                       <td>{formatarDataSistema(sessao.criadoEm)}</td>
                       <td>{formatarDataSistema(sessao.atualizadoEm)}</td>
@@ -532,7 +539,7 @@ export default function AdminPagamentos() {
                   <th>Status pagamento</th>
                   <th>Status Mercado Pago</th>
                   <th>Valor</th>
-                  <th>Preapproval ID</th>
+                  <th>ID Mercado Pago</th>
                   <th>Atualizado em</th>
                 </tr>
               </thead>
@@ -576,20 +583,23 @@ export default function AdminPagamentos() {
                   <th>Status Mercado Pago</th>
                   <th>Usuario</th>
                   <th>Plano</th>
-                  <th>Preapproval ID</th>
+                  <th>ID Mercado Pago</th>
                   <th>Erro</th>
                   <th>Recebido em</th>
                 </tr>
               </thead>
               <tbody>
                 {webhooks.map((webhook) => (
-                  <tr key={webhook.id}>
+                  <tr key={webhook.path || webhook.id}>
                     <td>{renderStatus(webhook.statusProcessamento)}</td>
                     <td>{renderStatus(webhook.statusMercadoPago)}</td>
                     <td>{renderUsuario(webhook.userId)}</td>
                     <td>{webhook.planoSolicitado || "-"}</td>
                     <td className="admin-payment-code">
-                      {webhook.mercadoPagoPreapprovalId || "-"}
+                      {webhook.mercadoPagoPreapprovalId ||
+                        webhook.mercadoPagoPaymentId ||
+                        webhook.paymentId ||
+                        "-"}
                     </td>
                     <td className="admin-payment-error">{webhook.erroValidacao || "-"}</td>
                     <td>{formatarDataSistema(webhook.atualizadoEm || webhook.criadoEm)}</td>

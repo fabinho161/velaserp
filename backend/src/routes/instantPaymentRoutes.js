@@ -99,6 +99,11 @@ const createPaymentHandler = (method) => async (req, res) => {
       .doc(uid)
       .collection("pagamentos")
       .doc();
+    const checkoutRef = db
+      .collection("users")
+      .doc(uid)
+      .collection("checkoutSessions")
+      .doc(pagamentoRef.id);
     const payment = await criarPagamentoAvulsoMercadoPago({
       uid,
       email,
@@ -113,8 +118,7 @@ const createPaymentHandler = (method) => async (req, res) => {
     const agora = FieldValue.serverTimestamp();
     const dadosMetodo =
       method === "pix" ? getPixDataFromPayment(payment) : getBoletoDataFromPayment(payment);
-
-    await pagamentoRef.set({
+    const pagamentoAuditoria = {
       gateway: "mercado_pago",
       origem: method,
       planoSolicitado,
@@ -126,8 +130,33 @@ const createPaymentHandler = (method) => async (req, res) => {
       metodoPagamento: method,
       valor: PLANOS_PAGOS[planoSolicitado].valor,
       userId: uid,
+      checkoutSessionId: checkoutRef.id,
       criadoEm: agora,
       atualizadoEm: agora,
+    };
+    const checkoutAuditoria = {
+      gateway: "mercado_pago",
+      origem: method,
+      tipoPagamento: "avulso",
+      planoSolicitado,
+      planoNome: PLANOS_PAGOS[planoSolicitado].nome,
+      valor: PLANOS_PAGOS[planoSolicitado].valor,
+      statusCheckout: status === "approved" ? "approved" : status || "pending",
+      statusMercadoPago: status,
+      mercadoPagoStatus: status,
+      mercadoPagoPaymentId,
+      paymentId: mercadoPagoPaymentId,
+      metodoPagamento: method,
+      pagamentoId: pagamentoRef.id,
+      userId: uid,
+      modo: "pagamento_avulso",
+      criadoEm: agora,
+      atualizadoEm: agora,
+    };
+
+    await db.runTransaction(async (transaction) => {
+      transaction.set(pagamentoRef, pagamentoAuditoria);
+      transaction.set(checkoutRef, checkoutAuditoria);
     });
 
     res.json({

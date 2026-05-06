@@ -99,6 +99,14 @@ const getUidFromPagamentoSnapshot = (pagamentoSnapshot) => {
   return pagamentoSnapshot.data()?.userId || pagamentoSnapshot.ref.parent.parent?.id || null;
 };
 
+const getUserWebhookLogRef = (db, uid, logId) => {
+  return db
+    .collection("users")
+    .doc(uid)
+    .collection("webhooksMercadoPago")
+    .doc(logId);
+};
+
 const getValorPreapproval = (preapproval, checkoutSession) => {
   const valorMercadoPago = Number(preapproval.auto_recurring?.transaction_amount);
   if (Number.isFinite(valorMercadoPago)) return valorMercadoPago;
@@ -238,6 +246,12 @@ const processarWebhookPagamento = async ({ db, logRef, paymentId, res }) => {
   const statusAtivaPlano = statusMercadoPago === "approved";
   const valorPago = getValorPagamento(payment, pagamento);
   const metodoPagamento = getMetodoPagamento(payment, pagamento);
+  const checkoutSessionId = pagamento.checkoutSessionId || pagamentoSnapshot.id;
+  const checkoutRef = db
+    .collection("users")
+    .doc(uid)
+    .collection("checkoutSessions")
+    .doc(checkoutSessionId);
   const assinaturaRef = db
     .collection("users")
     .doc(uid)
@@ -261,6 +275,26 @@ const processarWebhookPagamento = async ({ db, logRef, paymentId, res }) => {
     ultimoWebhookLogId: logRef.id,
   }, { merge: true });
 
+  batch.set(checkoutRef, {
+    gateway: "mercado_pago",
+    origem: pagamento.origem || metodoPagamento,
+    tipoPagamento: "avulso",
+    planoSolicitado,
+    planoNome: PLANOS_PAGOS[planoSolicitado].nome,
+    valor: valorPago,
+    statusCheckout: statusAtivaPlano ? "approved" : statusMercadoPago || "pending",
+    statusMercadoPago,
+    mercadoPagoStatus: statusMercadoPago,
+    mercadoPagoPaymentId: String(payment.id || paymentId),
+    paymentId: String(payment.id || paymentId),
+    metodoPagamento,
+    pagamentoId: pagamentoSnapshot.id,
+    userId: uid,
+    modo: "pagamento_avulso",
+    atualizadoEm: agora,
+    ultimoWebhookLogId: logRef.id,
+  }, { merge: true });
+
   if (statusAtivaPlano) {
     batch.set(assinaturaRef, {
       plano: planoSolicitado,
@@ -275,18 +309,29 @@ const processarWebhookPagamento = async ({ db, logRef, paymentId, res }) => {
     }, { merge: true });
   }
 
-  batch.set(logRef, {
+  const webhookAuditoria = {
     statusProcessamento: statusAtivaPlano
       ? "payment_validated_subscription_activated"
       : "payment_validated_status_registered",
     mercadoPagoPaymentId: String(payment.id || paymentId),
+    paymentId: String(payment.id || paymentId),
     statusMercadoPago,
+    checkoutSessionId,
     pagamentoId: pagamentoSnapshot.id,
     userId: uid,
     planoSolicitado,
     metodoPagamento,
     assinaturaAtualizada: statusAtivaPlano,
     atualizadoEm: agora,
+  };
+
+  batch.set(logRef, webhookAuditoria, { merge: true });
+  batch.set(getUserWebhookLogRef(db, uid, logRef.id), {
+    gateway: "mercado_pago",
+    origem: "webhook_render",
+    method: "POST",
+    criadoEm: agora,
+    ...webhookAuditoria,
   }, { merge: true });
 
   await batch.commit();
@@ -476,7 +521,7 @@ router.post("/mercado-pago", async (req, res) => {
       }, { merge: true });
     }
 
-    batch.set(logRef, {
+    const webhookAuditoria = {
       statusProcessamento: statusAtivaPlano
         ? "validated_subscription_activated"
         : "validated_status_registered",
@@ -487,6 +532,15 @@ router.post("/mercado-pago", async (req, res) => {
       planoSolicitado,
       assinaturaAtualizada: statusAtivaPlano,
       atualizadoEm: agora,
+    };
+
+    batch.set(logRef, webhookAuditoria, { merge: true });
+    batch.set(getUserWebhookLogRef(db, uid, logRef.id), {
+      gateway: "mercado_pago",
+      origem: "webhook_render",
+      method: req.method,
+      criadoEm: agora,
+      ...webhookAuditoria,
     }, { merge: true });
 
     await batch.commit();
