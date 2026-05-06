@@ -5,6 +5,7 @@ const express = require("express");
 const helmet = require("helmet");
 const checkoutRoutes = require("./routes/checkoutRoutes");
 const webhookRoutes = require("./routes/webhookRoutes");
+const { boletoRouter, pixRouter } = require("./routes/instantPaymentRoutes");
 
 const app = express();
 
@@ -40,6 +41,8 @@ app.get("/health", (req, res) => {
 });
 
 app.use("/api/checkout", checkoutRoutes);
+app.use("/api/pix", pixRouter);
+app.use("/api/boleto", boletoRouter);
 app.use("/api/webhooks", webhookRoutes);
 
 app.use((err, req, res, next) => {

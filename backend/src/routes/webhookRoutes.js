@@ -1,6 +1,9 @@
 const express = require("express");
 const { FieldValue, getDb } = require("../firebaseAdmin");
-const { consultarPreapprovalMercadoPago } = require("../mercadoPago");
+const {
+  consultarPagamentoMercadoPago,
+  consultarPreapprovalMercadoPago,
+} = require("../mercadoPago");
 const {
   getDataInputValue,
   getPreapprovalIdFromWebhook,
@@ -28,6 +31,24 @@ const getCheckoutSessionFromExternalReference = async (db, externalReference) =>
   return snapshot.exists ? snapshot : null;
 };
 
+const getPagamentoFromExternalReference = async (db, externalReference) => {
+  const match = String(externalReference || "").match(
+    /^users\/([^/]+)\/pagamentos\/([^/]+)$/
+  );
+
+  if (!match) return null;
+
+  const [, uid, pagamentoId] = match;
+  const ref = db
+    .collection("users")
+    .doc(uid)
+    .collection("pagamentos")
+    .doc(pagamentoId);
+  const snapshot = await ref.get();
+
+  return snapshot.exists ? snapshot : null;
+};
+
 const localizarCheckoutSession = async (db, preapproval) => {
   const mercadoPagoPreapprovalId = preapproval.id;
 
@@ -49,8 +70,33 @@ const localizarCheckoutSession = async (db, preapproval) => {
   return sessionsSnapshot.empty ? null : sessionsSnapshot.docs[0];
 };
 
+const localizarPagamento = async (db, payment) => {
+  const mercadoPagoPaymentId = String(payment.id || "");
+
+  if (payment.external_reference) {
+    const snapshot = await getPagamentoFromExternalReference(
+      db,
+      payment.external_reference
+    );
+
+    if (snapshot) return snapshot;
+  }
+
+  const pagamentosSnapshot = await db
+    .collectionGroup("pagamentos")
+    .where("mercadoPagoPaymentId", "==", mercadoPagoPaymentId)
+    .limit(1)
+    .get();
+
+  return pagamentosSnapshot.empty ? null : pagamentosSnapshot.docs[0];
+};
+
 const getUidFromCheckoutSnapshot = (checkoutSnapshot) => {
   return checkoutSnapshot.data()?.userId || checkoutSnapshot.ref.parent.parent?.id || null;
+};
+
+const getUidFromPagamentoSnapshot = (pagamentoSnapshot) => {
+  return pagamentoSnapshot.data()?.userId || pagamentoSnapshot.ref.parent.parent?.id || null;
 };
 
 const getValorPreapproval = (preapproval, checkoutSession) => {
@@ -62,6 +108,197 @@ const getValorPreapproval = (preapproval, checkoutSession) => {
 
   const plano = PLANOS_PAGOS[checkoutSession.planoSolicitado];
   return plano?.valor || 0;
+};
+
+const getValorPagamento = (payment, pagamento) => {
+  const valorMercadoPago = Number(payment.transaction_amount);
+  if (Number.isFinite(valorMercadoPago)) return valorMercadoPago;
+
+  const valorPagamento = Number(pagamento.valor);
+  if (Number.isFinite(valorPagamento)) return valorPagamento;
+
+  const plano = PLANOS_PAGOS[pagamento.planoSolicitado];
+  return plano?.valor || 0;
+};
+
+const getWebhookResourceType = (req) => {
+  const payload = req.body || {};
+  const query = req.query || {};
+  const rawType = String(
+    payload.type ||
+    payload.topic ||
+    payload.action ||
+    query.type ||
+    query.topic ||
+    ""
+  ).toLowerCase();
+
+  if (rawType.includes("payment")) return "payment";
+  if (rawType.includes("preapproval") || rawType.includes("subscription")) {
+    return "preapproval";
+  }
+
+  return "preapproval";
+};
+
+const getMetodoPagamento = (payment, pagamento) => {
+  const metodoSalvo = String(pagamento.metodoPagamento || "").toLowerCase();
+  if (metodoSalvo) return metodoSalvo;
+
+  const paymentMethodId = String(payment.payment_method_id || "").toLowerCase();
+  if (paymentMethodId === "pix") return "pix";
+  if (paymentMethodId === "bolbradesco") return "boleto";
+
+  return paymentMethodId || "mercado_pago";
+};
+
+const getVencimentoPagamentoAvulso = (payment) => {
+  const base = payment.date_approved || payment.date_last_updated || new Date().toISOString();
+  const date = new Date(base);
+
+  if (Number.isNaN(date.getTime())) {
+    return getDataInputValue(null);
+  }
+
+  date.setDate(date.getDate() + 30);
+  return date.toISOString().slice(0, 10);
+};
+
+const processarWebhookPagamento = async ({ db, logRef, paymentId, res }) => {
+  let payment = null;
+
+  try {
+    payment = await consultarPagamentoMercadoPago({ paymentId });
+  } catch (error) {
+    await logRef.set({
+      statusProcessamento: "payment_validation_failed",
+      mercadoPagoPaymentId: paymentId,
+      erroValidacao: error.message,
+      atualizadoEm: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    res.status(200).json({
+      ok: true,
+      received: true,
+      processed: false,
+      reason: "mercado_pago_payment_validation_failed",
+      logId: logRef.id,
+    });
+    return;
+  }
+
+  const statusMercadoPago = normalizarStatus(payment.status);
+  const pagamentoSnapshot = await localizarPagamento(db, payment);
+
+  if (!pagamentoSnapshot) {
+    await logRef.set({
+      statusProcessamento: "payment_validated_payment_not_found",
+      mercadoPagoPaymentId: payment.id || paymentId,
+      statusMercadoPago,
+      atualizadoEm: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    res.status(200).json({
+      ok: true,
+      received: true,
+      processed: false,
+      reason: "payment_document_not_found",
+      logId: logRef.id,
+    });
+    return;
+  }
+
+  const pagamento = pagamentoSnapshot.data();
+  const uid = getUidFromPagamentoSnapshot(pagamentoSnapshot);
+  const planoSolicitado = normalizarPlano(
+    pagamento.planoSolicitado || payment.metadata?.plano_solicitado
+  );
+
+  if (!uid || !PLANOS_PAGOS[planoSolicitado]) {
+    await logRef.set({
+      statusProcessamento: "payment_validated_invalid_document",
+      mercadoPagoPaymentId: payment.id || paymentId,
+      statusMercadoPago,
+      pagamentoId: pagamentoSnapshot.id,
+      userId: uid,
+      planoSolicitado,
+      atualizadoEm: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    res.status(200).json({
+      ok: true,
+      received: true,
+      processed: false,
+      reason: "invalid_payment_document",
+      logId: logRef.id,
+    });
+    return;
+  }
+
+  const statusAtivaPlano = statusMercadoPago === "approved";
+  const valorPago = getValorPagamento(payment, pagamento);
+  const metodoPagamento = getMetodoPagamento(payment, pagamento);
+  const assinaturaRef = db
+    .collection("users")
+    .doc(uid)
+    .collection("assinatura")
+    .doc("plano");
+  const agora = FieldValue.serverTimestamp();
+  const batch = db.batch();
+
+  batch.set(pagamentoSnapshot.ref, {
+    gateway: "mercado_pago",
+    origem: pagamento.origem || metodoPagamento,
+    planoSolicitado,
+    mercadoPagoPaymentId: String(payment.id || paymentId),
+    paymentId: String(payment.id || paymentId),
+    statusMercadoPago,
+    statusPagamento: statusAtivaPlano ? "approved" : statusMercadoPago || "pending",
+    metodoPagamento,
+    valor: valorPago,
+    userId: uid,
+    atualizadoEm: agora,
+    ultimoWebhookLogId: logRef.id,
+  }, { merge: true });
+
+  if (statusAtivaPlano) {
+    batch.set(assinaturaRef, {
+      plano: planoSolicitado,
+      status: "active",
+      vencimento: getVencimentoPagamentoAvulso(payment),
+      formaPagamento: metodoPagamento,
+      valorPago,
+      ativadoManual: false,
+      mercadoPagoPaymentId: String(payment.id || paymentId),
+      gateway: "mercado_pago",
+      atualizadoEm: agora,
+    }, { merge: true });
+  }
+
+  batch.set(logRef, {
+    statusProcessamento: statusAtivaPlano
+      ? "payment_validated_subscription_activated"
+      : "payment_validated_status_registered",
+    mercadoPagoPaymentId: String(payment.id || paymentId),
+    statusMercadoPago,
+    pagamentoId: pagamentoSnapshot.id,
+    userId: uid,
+    planoSolicitado,
+    metodoPagamento,
+    assinaturaAtualizada: statusAtivaPlano,
+    atualizadoEm: agora,
+  }, { merge: true });
+
+  await batch.commit();
+
+  res.status(200).json({
+    ok: true,
+    received: true,
+    processed: true,
+    assinaturaAtualizada: statusAtivaPlano,
+    statusMercadoPago,
+    logId: logRef.id,
+  });
 };
 
 router.post("/mercado-pago", async (req, res) => {
@@ -103,6 +340,16 @@ router.post("/mercado-pago", async (req, res) => {
         processed: false,
         reason: "missing_preapproval_id",
         logId: logRef.id,
+      });
+      return;
+    }
+
+    if (getWebhookResourceType(req) === "payment") {
+      await processarWebhookPagamento({
+        db,
+        logRef,
+        paymentId: preapprovalId,
+        res,
       });
       return;
     }

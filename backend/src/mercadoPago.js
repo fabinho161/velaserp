@@ -1,4 +1,4 @@
-const { MercadoPagoConfig, PreApproval } = require("mercadopago");
+const { MercadoPagoConfig, Payment, PreApproval } = require("mercadopago");
 const { PLANOS_PAGOS } = require("./utils/planos");
 
 const getMercadoPagoToken = () => {
@@ -26,6 +26,11 @@ const validarTokenMercadoPago = () => {
 const getPreApprovalClient = (token) => {
   const client = new MercadoPagoConfig({ accessToken: token });
   return new PreApproval(client);
+};
+
+const getPaymentClient = (token) => {
+  const client = new MercadoPagoConfig({ accessToken: token });
+  return new Payment(client);
 };
 
 const criarPreapprovalMercadoPago = async ({
@@ -59,11 +64,91 @@ const criarPreapprovalMercadoPago = async ({
   });
 };
 
+const criarPagamentoAvulsoMercadoPago = async ({
+  uid,
+  email,
+  planoSolicitado,
+  pagamentoId,
+  paymentMethodId,
+  payer = {},
+  dateOfExpiration,
+}) => {
+  const token = validarTokenMercadoPago();
+  const plano = PLANOS_PAGOS[planoSolicitado];
+  const payment = getPaymentClient(token);
+  const payerEmail = payer.email || email;
+
+  return payment.create({
+    body: {
+      description: `Renovar ERP - Plano ${plano.nome}`,
+      external_reference: `users/${uid}/pagamentos/${pagamentoId}`,
+      payment_method_id: paymentMethodId,
+      transaction_amount: plano.valor,
+      installments: 1,
+      date_of_expiration: dateOfExpiration,
+      payer: {
+        ...payer,
+        email: payerEmail,
+      },
+      metadata: {
+        user_id: uid,
+        plano_solicitado: planoSolicitado,
+        pagamento_id: pagamentoId,
+        origem: "renovar_erp_pagamento_avulso",
+      },
+    },
+  });
+};
+
 const consultarPreapprovalMercadoPago = async ({ preapprovalId }) => {
   const token = validarTokenMercadoPago();
   const preApproval = getPreApprovalClient(token);
 
   return preApproval.get({ id: preapprovalId });
+};
+
+const consultarPagamentoMercadoPago = async ({ paymentId }) => {
+  const token = validarTokenMercadoPago();
+  const payment = getPaymentClient(token);
+
+  return payment.get({ id: paymentId });
+};
+
+const getPaymentIdFromResponse = (payment = {}) => {
+  const id = payment.id || payment.response?.id || "";
+  return id ? String(id) : null;
+};
+
+const getPaymentStatusFromResponse = (payment = {}) => {
+  return payment.status || payment.response?.status || "pending";
+};
+
+const getPixDataFromPayment = (payment = {}) => {
+  const transactionData =
+    payment.point_of_interaction?.transaction_data ||
+    payment.response?.point_of_interaction?.transaction_data ||
+    {};
+
+  return {
+    qr_code: transactionData.qr_code || "",
+    qr_code_base64: transactionData.qr_code_base64 || "",
+    copia_cola: transactionData.qr_code || "",
+  };
+};
+
+const getBoletoDataFromPayment = (payment = {}) => {
+  const transactionDetails =
+    payment.transaction_details ||
+    payment.response?.transaction_details ||
+    {};
+
+  return {
+    boleto_url: transactionDetails.external_resource_url || "",
+    barcode:
+      transactionDetails.digitable_line ||
+      transactionDetails.barcode?.content ||
+      "",
+  };
 };
 
 const getCheckoutUrlFromPreapproval = (preapproval = {}) => {
@@ -92,9 +177,15 @@ const getPreapprovalDateCreatedFromResponse = (preapproval = {}) => {
 
 module.exports = {
   consultarPreapprovalMercadoPago,
+  consultarPagamentoMercadoPago,
+  criarPagamentoAvulsoMercadoPago,
   criarPreapprovalMercadoPago,
+  getBoletoDataFromPayment,
   getCheckoutUrlFromPreapproval,
   getMercadoPagoToken,
+  getPaymentIdFromResponse,
+  getPaymentStatusFromResponse,
+  getPixDataFromPayment,
   getPreapprovalDateCreatedFromResponse,
   getPreapprovalIdFromResponse,
   getPreapprovalStatusFromResponse,
