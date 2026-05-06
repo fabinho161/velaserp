@@ -112,6 +112,8 @@ export default function AdminPagamentos() {
   const [usuarios, setUsuarios] = useState({});
   const [erroPermissao, setErroPermissao] = useState("");
   const [limpezaCarregando, setLimpezaCarregando] = useState(false);
+  const [limpezaExecutando, setLimpezaExecutando] = useState(false);
+  const [previewLimpeza, setPreviewLimpeza] = useState(null);
   const [ambienteMercadoPago, setAmbienteMercadoPago] = useState({
     tipo: "unknown",
     texto: "Verificando ambiente Mercado Pago",
@@ -379,7 +381,7 @@ export default function AdminPagamentos() {
     showToast,
   ]);
 
-  const limparRegistrosTeste = useCallback(async () => {
+  const abrirModalLimpezaTeste = useCallback(async () => {
     try {
       setLimpezaCarregando(true);
 
@@ -392,35 +394,37 @@ export default function AdminPagamentos() {
         return;
       }
 
-      const mensagemConfirmacao = [
-        "Limpeza administrativa segura",
-        "",
-        "Serão apagados somente registros com valor R$ 1,00 e status pending/cancelled/expired.",
-        "Registros approved ou com valor maior que R$ 1,00 nunca serão apagados.",
-        "",
-        `CheckoutSessions: ${resumoPreview.checkoutSessions || 0}`,
-        `Pagamentos: ${resumoPreview.pagamentos || 0}`,
-        `Total: ${total}`,
-        "",
-        "Deseja confirmar a limpeza?",
-      ].join("\n");
+      setPreviewLimpeza(preview);
+    } catch (error) {
+      console.error("Erro ao preparar limpeza de teste:", error);
+      showToast(error?.message || "Erro ao preparar limpeza de testes.", "error");
+    } finally {
+      setLimpezaCarregando(false);
+    }
+  }, [chamarAdminBackend, showToast]);
 
-      if (!window.confirm(mensagemConfirmacao)) {
-        return;
-      }
+  const fecharModalLimpeza = () => {
+    if (limpezaExecutando) return;
+    setPreviewLimpeza(null);
+  };
 
-      const resultado = await chamarAdminBackend("/api/admin/pagamentos/limpeza-testes", {
+  const confirmarLimpezaTeste = useCallback(async () => {
+    try {
+      setLimpezaExecutando(true);
+
+      await chamarAdminBackend("/api/admin/pagamentos/limpeza-testes", {
         method: "POST",
         body: JSON.stringify({ confirmar: true }),
       });
 
-      showToast(`${resultado.apagados || 0} registros de teste apagados.`, "success");
+      showToast("Registros de teste removidos com sucesso.", "success");
+      setPreviewLimpeza(null);
       await carregarDiagnostico();
     } catch (error) {
       console.error("Erro ao limpar registros de teste:", error);
       showToast(error?.message || "Erro ao limpar registros de teste.", "error");
     } finally {
-      setLimpezaCarregando(false);
+      setLimpezaExecutando(false);
     }
   }, [carregarDiagnostico, chamarAdminBackend, showToast]);
 
@@ -604,6 +608,8 @@ export default function AdminPagamentos() {
     );
   };
 
+  const resumoLimpeza = previewLimpeza?.resumo || {};
+
   return (
     <div className="admin-page admin-payments-page">
       <div className="admin-header page-header admin-payments-hero">
@@ -625,8 +631,8 @@ export default function AdminPagamentos() {
           <button
             type="button"
             className="admin-cleanup-button"
-            onClick={limparRegistrosTeste}
-            disabled={carregando || limpezaCarregando}
+            onClick={abrirModalLimpezaTeste}
+            disabled={carregando || limpezaCarregando || limpezaExecutando}
           >
             <Trash2 size={17} />
             {limpezaCarregando ? "Verificando..." : "Limpar testes"}
@@ -867,6 +873,71 @@ export default function AdminPagamentos() {
           </div>
         )}
       </div>
+
+      {previewLimpeza && (
+        <div className="admin-cleanup-modal-overlay" role="dialog" aria-modal="true">
+          <section className="admin-cleanup-modal-card">
+            <div className="admin-cleanup-modal-icon">
+              <AlertTriangle size={24} />
+            </div>
+
+            <div className="admin-cleanup-modal-header">
+              <span>Limpeza administrativa</span>
+              <h3>Remover registros de teste?</h3>
+              <p>
+                Esta acao remove somente registros com valor R$ 1,00 e status
+                pending, cancelled ou expired.
+              </p>
+            </div>
+
+            <div className="admin-cleanup-summary-grid">
+              <div>
+                <span>CheckoutSessions</span>
+                <strong>{resumoLimpeza.checkoutSessions || 0}</strong>
+              </div>
+              <div>
+                <span>Pagamentos</span>
+                <strong>{resumoLimpeza.pagamentos || 0}</strong>
+              </div>
+              <div>
+                <span>Total</span>
+                <strong>{resumoLimpeza.total || 0}</strong>
+              </div>
+            </div>
+
+            <div className="admin-cleanup-safety">
+              <div>
+                <CheckCircle2 size={17} />
+                Registros approved nao serao apagados.
+              </div>
+              <div>
+                <CheckCircle2 size={17} />
+                Registros acima de R$ 1,00 nao serao apagados.
+              </div>
+            </div>
+
+            <div className="admin-cleanup-modal-actions">
+              <button
+                type="button"
+                className="admin-cleanup-cancel"
+                onClick={fecharModalLimpeza}
+                disabled={limpezaExecutando}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="admin-cleanup-confirm"
+                onClick={confirmarLimpezaTeste}
+                disabled={limpezaExecutando}
+              >
+                {limpezaExecutando && <span className="admin-cleanup-spinner" />}
+                {limpezaExecutando ? "Limpando..." : "Limpar testes"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
