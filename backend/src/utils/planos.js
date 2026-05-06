@@ -1,7 +1,7 @@
 const PLANOS_PAGOS = {
   basico: {
     nome: "Basico",
-    valor: 49,
+    valor: 1,
   },
   profissional: {
     nome: "Profissional",
