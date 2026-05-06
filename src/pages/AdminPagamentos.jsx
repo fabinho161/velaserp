@@ -283,7 +283,11 @@ export default function AdminPagamentos() {
         setCheckoutSessions(diagnosticoBackend.checkoutSessions || []);
         setPagamentos(diagnosticoBackend.pagamentos || []);
         setWebhooks(diagnosticoBackend.webhooks || []);
-        setErroPermissao("");
+        setErroPermissao(
+          diagnosticoBackend.parcial
+            ? "Diagnóstico carregado com avisos. Alguns registros técnicos não puderam ser lidos, mas os dados disponíveis foram exibidos."
+            : ""
+        );
         return;
       } catch (backendError) {
         console.warn("Diagnóstico via backend indisponível, usando leitura Firestore client:", backendError);

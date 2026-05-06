@@ -33,13 +33,9 @@ const ordenarPorAtualizacao = (items) => {
 
 const limitarRegistros = (items) => ordenarPorAtualizacao(items).slice(0, LIMITE_REGISTROS);
 
-const getUidFromDoc = (docSnap) => {
-  return docSnap.ref.parent.parent?.id || "";
-};
-
 const mapDoc = (docSnap, uidFallback = "") => ({
   id: docSnap.id,
-  uid: uidFallback || getUidFromDoc(docSnap),
+  uid: uidFallback,
   path: docSnap.ref.path,
   ...docSnap.data(),
 });
@@ -57,43 +53,68 @@ const carregarUsuarios = async (db) => {
   }, {});
 };
 
-const carregarCollectionGroup = async (db, colecao) => {
-  const snapshot = await db
-    .collectionGroup(colecao)
-    .orderBy("atualizadoEm", "desc")
-    .limit(LIMITE_REGISTROS)
-    .get();
+const carregarSubcolecaoUsuario = async (db, uid, colecao, falhas) => {
+  try {
+    const snapshot = await db
+      .collection("users")
+      .doc(uid)
+      .collection(colecao)
+      .limit(LIMITE_REGISTROS)
+      .get();
 
-  return snapshot.docs.map((docSnap) => mapDoc(docSnap));
+    return snapshot.docs.map((docSnap) => mapDoc(docSnap, uid));
+  } catch (error) {
+    logAuditoriaError(`admin.diagnostico.${colecao}: falha ao ler usuario`, error, {
+      uid,
+      path: `users/${uid}/${colecao}`,
+    });
+    falhas.push({
+      bloco: colecao,
+      uid,
+      mensagem: error.message || String(error),
+      codigo: error.code || null,
+    });
+    return [];
+  }
 };
 
-const carregarWebhooks = async (db, usuarios) => {
-  const [logsTecnicos, logsPorUsuario] = await Promise.all([
-    db
+const carregarSubcolecoesUsuarios = async (db, usuarios, colecao, falhas) => {
+  const listas = await Promise.all(
+    Object.keys(usuarios).map((uid) =>
+      carregarSubcolecaoUsuario(db, uid, colecao, falhas)
+    )
+  );
+
+  return limitarRegistros(listas.flat());
+};
+
+const carregarWebhooksGlobais = async (db, falhas) => {
+  try {
+    const snapshot = await db
       .collection("logs")
       .doc("webhooksMercadoPago")
       .collection("eventos")
-      .orderBy("atualizadoEm", "desc")
       .limit(LIMITE_REGISTROS)
-      .get()
-      .then((snapshot) => snapshot.docs.map((docSnap) => mapDoc(docSnap)))
-      .catch((error) => {
-        logAuditoriaError("admin.diagnostico.webhooks_globais: falha", error);
-        return [];
-      }),
-    Promise.all(
-      Object.keys(usuarios).map(async (uid) => {
-        const snapshot = await db
-          .collection("users")
-          .doc(uid)
-          .collection("webhooksMercadoPago")
-          .orderBy("atualizadoEm", "desc")
-          .limit(LIMITE_REGISTROS)
-          .get();
+      .get();
 
-        return snapshot.docs.map((docSnap) => mapDoc(docSnap, uid));
-      })
-    ).then((listas) => listas.flat()),
+    return snapshot.docs.map((docSnap) => mapDoc(docSnap));
+  } catch (error) {
+    logAuditoriaError("admin.diagnostico.webhooks_globais: falha", error, {
+      path: "logs/webhooksMercadoPago/eventos",
+    });
+    falhas.push({
+      bloco: "webhooksGlobais",
+      mensagem: error.message || String(error),
+      codigo: error.code || null,
+    });
+    return [];
+  }
+};
+
+const carregarWebhooks = async (db, usuarios, falhas) => {
+  const [logsTecnicos, logsPorUsuario] = await Promise.all([
+    carregarWebhooksGlobais(db, falhas),
+    carregarSubcolecoesUsuarios(db, usuarios, "webhooksMercadoPago", falhas),
   ]);
 
   const porPathOuId = new Map();
@@ -133,10 +154,11 @@ router.get("/pagamentos/diagnostico", authFirebase, async (req, res) => {
     }
 
     const usuarios = await carregarUsuarios(db);
+    const falhas = [];
     const [checkoutSessions, pagamentos, webhooks] = await Promise.all([
-      carregarCollectionGroup(db, "checkoutSessions"),
-      carregarCollectionGroup(db, "pagamentos"),
-      carregarWebhooks(db, usuarios),
+      carregarSubcolecoesUsuarios(db, usuarios, "checkoutSessions", falhas),
+      carregarSubcolecoesUsuarios(db, usuarios, "pagamentos", falhas),
+      carregarWebhooks(db, usuarios, falhas),
     ]);
 
     logAuditoriaInfo("admin.diagnostico: carregado", {
@@ -144,10 +166,13 @@ router.get("/pagamentos/diagnostico", authFirebase, async (req, res) => {
       checkoutSessions: checkoutSessions.length,
       pagamentos: pagamentos.length,
       webhooks: webhooks.length,
+      falhasParciais: falhas.length,
     });
 
     res.json({
       ok: true,
+      parcial: falhas.length > 0,
+      falhas,
       usuarios,
       checkoutSessions,
       pagamentos,
