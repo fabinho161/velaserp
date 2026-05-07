@@ -74,6 +74,8 @@ export default function Sidebar() {
       items: [
         { path: "/planos", label: "Planos", icon: CreditCard },
         { path: "/configuracoes", label: "Configurações", icon: Settings },
+        { path: "/parametros-empresa", label: "Parâmetros Empresa", icon: Settings },
+        { path: "/parametros-empresa", label: "Parâmetros Empresa", icon: Settings },
       ],
     },
     {

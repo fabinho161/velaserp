@@ -22,6 +22,7 @@ import Configuracoes from "./pages/Configuracoes";
 import AdminClientes from "./pages/AdminClientes";
 import AdminPagamentos from "./pages/AdminPagamentos";
 import Planos from "./pages/Planos";
+import ParametrosEmpresa from "./pages/ParametrosEmpresa";
 import PagamentoRetorno from "./pages/PagamentoRetorno";
 
 export default function App() {
@@ -105,6 +106,7 @@ export default function App() {
             <Route path="/pagamento/pendente" element={<PagamentoRetorno status="pendente" />} />
             <Route path="/pagamento/erro" element={<PagamentoRetorno status="erro" />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
+            <Route path="/parametros-empresa" element={<ParametrosEmpresa />} />
             <Route path="/admin" element={<Navigate to="/admin/clientes" replace />} />
             <Route
               path="/admin/clientes"
