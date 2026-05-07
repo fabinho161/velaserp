@@ -5,6 +5,7 @@ import { useConfirmacao } from "../context/useConfirmacao";
 import { useTableSort } from "../hooks/useTableSort";
 import ActionMenu from "../components/ActionMenu";
 import { moedaBR, numeroBR } from "../utils/formatters";
+import { useParametros } from "../hooks/useParametros";
 
 export default function Produtos() {
   // ================================
@@ -13,6 +14,11 @@ export default function Produtos() {
   const { insumos, produtos, addItem, updateItem, deleteItem } = useERP();
   const { showToast } = useToast();
   const { confirmar } = useConfirmacao();
+  const { tiposProduto = [] } = useParametros();
+
+  const tiposProdutoAtivos = tiposProduto.filter(
+    (tipo) => tipo.ativo
+  );
 
   // ================================
   // 🔹 FORMULÁRIO DO PRODUTO
@@ -20,7 +26,7 @@ export default function Produtos() {
   const [form, setForm] = useState({
     codigo: "",
     nome: "",
-    tipoProduto: "unitario",
+    tipoProduto: tiposProdutoAtivos[0]?.id || "",
     tipo: "Geral",
     pesoUnidade: "",
     conteudoPorProduto: "",
@@ -85,11 +91,20 @@ export default function Produtos() {
   // ================================
   const custoUnitario = calcularCustoUnitario();
 
-  const tipoProduto = form.tipoProduto || "unitario";
-  const produtoSimples = tipoProduto === "simples";
+  const tipoProduto = form.tipoProduto || tiposProdutoAtivos[0]?.id || "";
+
+  const produtoSelecionado = tiposProduto.find(
+    (tipo) => tipo.id === tipoProduto
+  );
+
+  const nomeTipoProduto = produtoSelecionado?.nome || "Unitário";
+
+  const produtoSimples = nomeTipoProduto !== "Unitário";
+
   const conteudoPorProduto = Number(
     form.conteudoPorProduto || form.qtdPorMaco || 0
   );
+
   const qtdProducao = Number(form.qtdProducao || 0);
   const precoVenda = Number(form.precoVenda || 0);
 
@@ -99,8 +114,7 @@ export default function Produtos() {
 
   const lucro = precoVenda - custoProducao;
 
-  const margem =
-    precoVenda > 0 ? (lucro / precoVenda) * 100 : 0;
+  const margem = precoVenda > 0 ? (lucro / precoVenda) * 100 : 0;
 
   const valorUnitario = produtoSimples
     ? precoVenda
@@ -181,7 +195,7 @@ export default function Produtos() {
     setForm({
       codigo: "",
       nome: "",
-      tipoProduto: "unitario",
+      tipoProduto: tiposProdutoAtivos[0]?.id || "",
       tipo: "Geral",
       pesoUnidade: "",
       conteudoPorProduto: "",
@@ -362,17 +376,19 @@ export default function Produtos() {
           <label>
             Tipo de produto
             <select
-              value={tipoProduto}
+              value={form.tipoProduto}
               onChange={(e) =>
                 setForm({
                   ...form,
                   tipoProduto: e.target.value,
-                  qtdPorMaco: e.target.value === "simples" ? "" : form.qtdPorMaco,
                 })
               }
             >
-              <option value="unitario">Unitário</option>
-              <option value="simples">Caixa / Kit / Pacote</option>
+              {tiposProdutoAtivos.map((tipo) => (
+                <option key={tipo.id} value={tipo.id}>
+                  {tipo.nome}
+                </option>
+              ))}
             </select>
           </label>
 

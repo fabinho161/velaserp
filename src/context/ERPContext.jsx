@@ -146,16 +146,22 @@ export function ERPProvider({ children }) {
 // ================================
 // 🔹 TROCAR EMPRESA ATIVA
 // ================================
-const trocarEmpresa = useCallback((id) => {
-  setEmpresaId(id);
-  setInsumos([]);
-  setProdutos([]);
-  setProducoes([]);
-  setVendas([]);
-  setDespesas([]);
-  setClientesComerciais([]);
-  setConfiguracoes({});
-}, []);
+    const trocarEmpresa = useCallback((id) => {
+      if (!id) return;
+
+      if (user?.uid) {
+        localStorage.setItem(`renovarEmpresaAtiva_${user.uid}`, id);
+      }
+
+      setEmpresaId(id);
+      setInsumos([]);
+      setProdutos([]);
+      setProducoes([]);
+      setVendas([]);
+      setDespesas([]);
+      setClientesComerciais([]);
+      setConfiguracoes({});
+    }, [user]);
 
 // ================================
 // 🔹 CRIAR NOVA EMPRESA
@@ -242,7 +248,20 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
             }));
 
             setEmpresas(lista);
-            setEmpresaId(lista[0].id);
+
+            setEmpresaId((empresaAtual) => {
+              if (empresaAtual && lista.some((empresa) => empresa.id === empresaAtual)) {
+                return empresaAtual;
+              }
+
+              const empresaSalva = localStorage.getItem(`renovarEmpresaAtiva_${user.uid}`);
+
+              if (empresaSalva && lista.some((empresa) => empresa.id === empresaSalva)) {
+                return empresaSalva;
+              }
+
+              return lista[0].id;
+            });
           }
         } catch (error) {
           console.error("Erro ao carregar empresas:", error);

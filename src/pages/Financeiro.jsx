@@ -8,6 +8,7 @@ import { useConfirmacao } from "../context/useConfirmacao";
 import { usePlano } from "../hooks/usePlano";
 import { useTableSort } from "../hooks/useTableSort";
 import { moedaBR, inteiroBR, dataBR, numeroBR } from "../utils/formatters";
+import { useParametros } from "../hooks/useParametros";
 
 const obterStatusFinanceiroVenda = (statusPagamento) => {
   const status = String(statusPagamento || "pendente").trim().toLowerCase();
@@ -32,6 +33,11 @@ export default function Financeiro() {
   const { showToast } = useToast();
   const { confirmar } = useConfirmacao();
   const { podeUsarDRE } = usePlano();
+  const { categoriasDespesa = [] } = useParametros();
+
+  const categoriasDespesaAtivas = categoriasDespesa.filter(
+    (categoria) => categoria.ativo
+  );
   const ordenacaoFluxo = useTableSort({
     chave: "data",
     direcao: "desc",
@@ -40,6 +46,7 @@ export default function Financeiro() {
     chave: "data",
     direcao: "desc",
   });
+  
 
   // ================================
   // 🔹 FORMULÁRIO DE DESPESA
@@ -572,14 +579,19 @@ const margemLiquida =
           value={form.categoria}
           onChange={(e) => setForm({ ...form, categoria: e.target.value })}
         >
-          <option value="">Categoria</option>
-          <option value="Insumos">Insumos</option>
-          <option value="Energia">Energia</option>
-          <option value="Frete">Frete</option>
-          <option value="Embalagem">Embalagem</option>
-          <option value="Manutenção">Manutenção</option>
-          <option value="Marketing">Marketing</option>
-          <option value="Outros">Outros</option>
+          <option value="">Selecione uma categoria</option>
+
+          {categoriasDespesaAtivas.length > 0 ? (
+            categoriasDespesaAtivas.map((categoria) => (
+              <option key={categoria.id} value={categoria.nome}>
+                {categoria.nome}
+              </option>
+            ))
+          ) : (
+            <option value="" disabled>
+              Nenhuma categoria ativa
+            </option>
+          )}
         </select>
 
         <input

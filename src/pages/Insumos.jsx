@@ -5,6 +5,7 @@ import { useConfirmacao } from "../context/useConfirmacao";
 import { useTableSort } from "../hooks/useTableSort";
 import ActionMenu from "../components/ActionMenu";
 import { moedaBR, numeroBR, dataBR } from "../utils/formatters";
+import { useParametros } from "../hooks/useParametros";
 
 export default function Insumos() {
   // ================================
@@ -13,13 +14,16 @@ export default function Insumos() {
   const { insumos, producoes, addItem, updateItem, deleteItem } = useERP();
   const { showToast } = useToast();
   const { confirmar } = useConfirmacao();
+  const { unidadesMedida = [] } = useParametros();
+
+  const unidadesAtivas = unidadesMedida.filter((unidade) => unidade.ativo);
 
   // ================================
   // 🔹 FORMULÁRIO DE INSUMO
   // ================================
   const [novoInsumo, setNovoInsumo] = useState({
     nome: "",
-    unidade: "kg",
+    unidade: unidadesAtivas[0]?.id || "kg",
   });
 
   // ================================
@@ -146,7 +150,7 @@ export default function Insumos() {
   const limparInsumo = () => {
     setNovoInsumo({
       nome: "",
-      unidade: "kg",
+      unidade: unidadesAtivas[0]?.id || "kg",
     });
 
     setEditInsumoIndex(null);
@@ -438,11 +442,11 @@ export default function Insumos() {
             setNovoInsumo({ ...novoInsumo, unidade: e.target.value })
           }
         >
-          <option value="kg">kg</option>
-          <option value="un">unidade</option>
-          <option value="kWh">kWh</option>
-          <option value="m">metro</option>
-          <option value="pacote">pacote</option>
+          {unidadesAtivas.map((unidade) => (
+            <option key={unidade.id} value={unidade.id}>
+              {unidade.nome}
+            </option>
+          ))}
         </select>
 
         <button onClick={salvarInsumo}>
