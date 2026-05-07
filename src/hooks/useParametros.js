@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { collection, doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
@@ -44,7 +44,7 @@ export function useParametros() {
     // Ensure the path is correct and doesn't allow overwriting parameters between companies
   }, [user, empresaId]);
 
-  const loadParametros = useCallback(async (paramType, setState, defaultValues) => {
+  const loadParametros = useCallback((paramType, setState, defaultValues) => {
     if (!user || !empresaId) return;
 
     const paramRef = getParamRef(paramType);
@@ -76,10 +76,18 @@ export function useParametros() {
     const unsubscribeCategoriasDespesa = loadParametros("categoriasDespesa", setCategoriasDespesa, defaultParams.categoriasDespesa);
 
     return () => {
-      unsubscribeUnidadesMedida();
-      unsubscribeTiposProduto();
-      unsubscribeCategoriasDespesa();
-    };
+      if (typeof unsubscribeUnidadesMedida === "function") {
+          unsubscribeUnidadesMedida();
+        }
+
+        if (typeof unsubscribeTiposProduto === "function") {
+          unsubscribeTiposProduto();
+        }
+
+        if (typeof unsubscribeCategoriasDespesa === "function") {
+          unsubscribeCategoriasDespesa();
+        }
+      };
   }, [user, empresaId, loadParametros]);
 
   const updateParamDoc = useCallback(async (paramType, newItems) => {

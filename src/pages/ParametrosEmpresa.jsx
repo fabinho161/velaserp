@@ -1,226 +1,424 @@
+import React, { useMemo, useState } from "react";
+import {
+  Check,
+  Edit3,
+  Eye,
+  EyeOff,
+  Plus,
+  Search,
+  Settings2,
+  SlidersHorizontal,
+  Tag,
+  Trash2,
+  X,
+} from "lucide-react";
+import { useParametros } from "../hooks/useParametros";
+import { useToast } from "../context/useToast";
 
-import React, { useState, useEffect } from 'react';
-import { useParametros } from '../hooks/useParametros';
-import { useToast } from '../context/useToast';
+const grupos = {
+  unidadesMedida: {
+    titulo: "Unidades de Medida",
+    descricao: "Defina as unidades usadas em insumos, estoque e produção.",
+    icone: SlidersHorizontal,
+  },
+  tiposProduto: {
+    titulo: "Tipos de Produto",
+    descricao: "Organize os tipos usados no cadastro de produtos e ficha técnica.",
+    icone: Tag,
+  },
+  categoriasDespesa: {
+    titulo: "Categorias de Despesa",
+    descricao: "Padronize as categorias utilizadas no financeiro.",
+    icone: Settings2,
+  },
+};
 
-const ParametrosEmpresa = () => {
-  const { 
-    unidadesMedida,
-    tiposProduto,
-    categoriasDespesa,
+export default function ParametrosEmpresa() {
+  const {
+    unidadesMedida = [],
+    tiposProduto = [],
+    categoriasDespesa = [],
     adicionarParametro,
     editarParametro,
     desativarParametro,
     excluirParametro,
   } = useParametros();
+
   const { showToast } = useToast();
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('unidadesMedida'); // unidadesMedida, tiposProduto, categoriasDespesa
+  const [activeTab, setActiveTab] = useState("unidadesMedida");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [newItemName, setNewItemName] = useState("");
   const [editingItem, setEditingItem] = useState(null);
-  const [newItemName, setNewItemName] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
-  const handleAddItem = async (paramType) => {
-    if (newItemName.trim() === '') {
-      showToast('O nome do parâmetro não pode ser vazio.', 'warning');
+  const listas = {
+    unidadesMedida,
+    tiposProduto,
+    categoriasDespesa,
+  };
+
+  const itensAtuais = listas[activeTab] || [];
+  const grupoAtual = grupos[activeTab];
+  const IconeGrupo = grupoAtual.icone;
+
+  const itensFiltrados = useMemo(() => {
+    const termo = searchTerm.trim().toLowerCase();
+
+    return itensAtuais
+      .filter((item) => item?.nome?.toLowerCase().includes(termo))
+      .sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [itensAtuais, searchTerm]);
+
+  const totalAtivos = itensAtuais.filter((item) => item.ativo).length;
+  const totalInativos = itensAtuais.length - totalAtivos;
+
+  async function handleAddItem() {
+    const nome = newItemName.trim();
+
+    if (!nome) {
+      showToast("Informe o nome do parâmetro.", "warning");
       return;
     }
-    await adicionarParametro(paramType, newItemName);
-    setNewItemName('');
-  };
 
-  const handleEditItem = async (paramType, id, newName, activeStatus) => {
-    await editarParametro(paramType, id, newName, activeStatus);
-    setEditingItem(null);
-  };
+    await adicionarParametro(activeTab, nome);
+    setNewItemName("");
+  }
 
-  const handleToggleActive = async (paramType, id, currentStatus) => {
-    await desativarParametro(paramType, id, !currentStatus);
-  };
+  async function handleSaveEdit() {
+    const nome = editingItem?.nome?.trim();
 
-  const handleDeleteItem = async (paramType, id) => {
-    if (window.confirm('Tem certeza que deseja excluir este parâmetro?')) {
-      await excluirParametro(paramType, id);
+    if (!nome) {
+      showToast("Informe o nome do parâmetro.", "warning");
+      return;
     }
-  };
 
-  const filteredItems = (items) => {
-    return items.filter(item => 
-      item.nome.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  };
+    await editarParametro(activeTab, editingItem.id, nome, editingItem.ativo);
+    setEditingItem(null);
+  }
 
-  const renderParameterCard = (paramType, title, items) => (
-    <div className="bg-white shadow-md rounded-lg p-6 mb-6">
-      <h2 className="text-2xl font-semibold text-gray-800 mb-4">{title}</h2>
-      
-      {/* Search and New Item Input */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-4">
-        <input
-          type="text"
-          placeholder="Buscar parâmetro..."
-          className="flex-grow p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Novo nome..."
-            className="p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-            value={newItemName}
-            onChange={(e) => setNewItemName(e.target.value)}
-          />
-          <button 
-            onClick={() => handleAddItem(paramType)}
-            className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors"
-          >
-            Novo Parâmetro
-          </button>
-        </div>
-      </div>
+  async function handleConfirmDelete() {
+    if (!deleteTarget) return;
 
-      {/* Empty State */}
-      {items.length === 0 && searchTerm === '' && (
-        <div className="text-center text-gray-500 py-8">
-          <p>Nenhum parâmetro de {title.toLowerCase()} encontrado.</p>
-          <p>Comece adicionando um novo!</p>
-        </div>
-      )}
-
-      {/* No Search Results */}
-      {filteredItems(items).length === 0 && searchTerm !== '' && (
-        <div className="text-center text-gray-500 py-8">
-          <p>Nenhum resultado para "{searchTerm}" em {title.toLowerCase()}.</p>
-        </div>
-      )}
-
-      {/* Parameter List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredItems(items).map(item => (
-          <div key={item.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-md shadow-sm">
-            {editingItem?.id === item.id ? (
-              <input
-                type="text"
-                value={editingItem.nome}
-                onChange={(e) => setEditingItem({ ...editingItem, nome: e.target.value })}
-                className="flex-grow p-1 border border-blue-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400"
-              />
-            ) : (
-              <span className="text-gray-700 font-medium">{item.nome}</span>
-            )}
-            
-            <div className="flex items-center gap-2">
-              <span 
-                className={`px-2 py-1 text-xs font-semibold rounded-full ${item.ativo ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
-              >
-                {item.ativo ? 'Ativo' : 'Inativo'}
-              </span>
-              
-              {editingItem?.id === item.id ? (
-                <>
-                  <button 
-                    onClick={() => handleEditItem(paramType, item.id, editingItem.nome, editingItem.ativo)}
-                    className="text-green-600 hover:text-green-800 transition-colors"
-                    title="Salvar"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                  <button 
-                    onClick={() => setEditingItem(null)}
-                    className="text-gray-500 hover:text-gray-700 transition-colors"
-                    title="Cancelar"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button 
-                    onClick={() => setEditingItem({ ...item })} 
-                    className="text-blue-600 hover:text-blue-800 transition-colors"
-                    title="Editar"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
-                      <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                  <button 
-                    onClick={() => handleToggleActive(paramType, item.id, item.ativo)}
-                    className={`${item.ativo ? 'text-yellow-600 hover:text-yellow-800' : 'text-green-600 hover:text-green-800'} transition-colors`}
-                    title={item.ativo ? 'Desativar' : 'Ativar'}
-                  >
-                    {item.ativo ? (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                      </svg>
-                    ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                      </svg>
-                    )}
-                  </button>
-                  <button 
-                    onClick={() => handleDeleteItem(paramType, item.id)} 
-                    className="text-red-600 hover:text-red-800 transition-colors"
-                    title="Excluir"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm6 0a1 1 0 11-2 0v6a1 1 0 112 0V8z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+    await excluirParametro(activeTab, deleteTarget.id);
+    setDeleteTarget(null);
+  }
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 lg:p-8 bg-gray-100 min-h-screen">
-      <h1 className="text-3xl font-bold text-gray-900 mb-6">Configuração de Parâmetros da Empresa</h1>
+    <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                <Settings2 size={14} />
+                Configurações operacionais
+              </div>
 
-      <div className="mb-6 flex space-x-4 border-b border-gray-300">
-        <button 
-          className={`py-2 px-4 text-sm font-medium focus:outline-none ${activeTab === 'unidadesMedida' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-800'}`}
-          onClick={() => setActiveTab('unidadesMedida')}
-        >
-          Unidades de Medida
-        </button>
-        <button 
-          className={`py-2 px-4 text-sm font-medium focus:outline-none ${activeTab === 'tiposProduto' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-800'}`}
-          onClick={() => setActiveTab('tiposProduto')}
-        >
-          Tipos de Produto
-        </button>
-        <button 
-          className={`py-2 px-4 text-sm font-medium focus:outline-none ${activeTab === 'categoriasDespesa' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-800'}`}
-          onClick={() => setActiveTab('categoriasDespesa')}
-        >
-          Categorias de Despesa
-        </button>
+              <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
+                Parâmetros da Empresa
+              </h1>
+
+              <p className="mt-2 max-w-3xl text-sm text-slate-500">
+                Personalize listas utilizadas no ERP por empresa. Cada empresa
+                mantém suas próprias unidades, tipos de produto e categorias.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-center sm:min-w-80">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xl font-bold text-slate-900">{itensAtuais.length}</p>
+                <p className="text-xs text-slate-500">Total</p>
+              </div>
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                <p className="text-xl font-bold text-emerald-700">{totalAtivos}</p>
+                <p className="text-xs text-emerald-700">Ativos</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xl font-bold text-slate-600">{totalInativos}</p>
+                <p className="text-xs text-slate-500">Inativos</p>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          {Object.entries(grupos).map(([key, grupo]) => {
+            const Icone = grupo.icone;
+            const ativo = activeTab === key;
+            const total = listas[key]?.length || 0;
+
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => {
+                  setActiveTab(key);
+                  setSearchTerm("");
+                  setNewItemName("");
+                  setEditingItem(null);
+                }}
+                className={`rounded-2xl border p-4 text-left shadow-sm transition ${
+                  ativo
+                    ? "border-blue-600 bg-blue-600 text-white shadow-blue-100"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`rounded-xl p-2 ${
+                        ativo ? "bg-white/15" : "bg-slate-100"
+                      }`}
+                    >
+                      <Icone size={20} />
+                    </span>
+                    <div>
+                      <p className="font-semibold">{grupo.titulo}</p>
+                      <p
+                        className={`text-xs ${
+                          ativo ? "text-blue-100" : "text-slate-500"
+                        }`}
+                      >
+                        {total} parâmetro(s)
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <main className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 p-5 sm:p-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="rounded-xl bg-blue-50 p-3 text-blue-700">
+                  <IconeGrupo size={22} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">
+                    {grupoAtual.titulo}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {grupoAtual.descricao}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="relative">
+                  <Search
+                    size={16}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Buscar parâmetro..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-50 sm:w-64"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Novo parâmetro..."
+                    value={newItemName}
+                    onChange={(e) => setNewItemName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleAddItem();
+                    }}
+                    className="h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-50 sm:w-56"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={handleAddItem}
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
+                  >
+                    <Plus size={16} />
+                    <span className="hidden sm:inline">Adicionar</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 sm:p-6">
+            {itensFiltrados.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm">
+                  <Search size={22} />
+                </div>
+                <h3 className="text-base font-semibold text-slate-800">
+                  Nenhum parâmetro encontrado
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  {searchTerm
+                    ? "Tente buscar por outro nome."
+                    : "Comece adicionando o primeiro parâmetro deste grupo."}
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {itensFiltrados.map((item) => {
+                  const editando = editingItem?.id === item.id;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-200 hover:shadow-md"
+                    >
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="min-w-0 flex-1">
+                          {editando ? (
+                            <input
+                              type="text"
+                              value={editingItem.nome}
+                              onChange={(e) =>
+                                setEditingItem({
+                                  ...editingItem,
+                                  nome: e.target.value,
+                                })
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handleSaveEdit();
+                                if (e.key === "Escape") setEditingItem(null);
+                              }}
+                              className="h-11 w-full rounded-xl border border-blue-300 bg-blue-50/40 px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50"
+                              autoFocus
+                            />
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="text-base font-semibold text-slate-900">
+                                {item.nome}
+                              </h3>
+                              <span
+                                className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                  item.ativo
+                                    ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                                    : "bg-slate-100 text-slate-500 ring-1 ring-slate-200"
+                                }`}
+                              >
+                                {item.ativo ? "Ativo" : "Inativo"}
+                              </span>
+                            </div>
+                          )}
+
+                          <p className="mt-1 text-xs text-slate-400">
+                            ID: {item.id}
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          {editando ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={handleSaveEdit}
+                                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                              >
+                                <Check size={16} />
+                                Salvar
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setEditingItem(null)}
+                                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                              >
+                                <X size={16} />
+                                Cancelar
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setEditingItem({ ...item })}
+                                className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+                              >
+                                <Edit3 size={16} />
+                                Editar
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  desativarParametro(activeTab, item.id, !item.ativo)
+                                }
+                                className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                                  item.ativo
+                                    ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                    : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                }`}
+                              >
+                                {item.ativo ? <EyeOff size={16} /> : <Eye size={16} />}
+                                {item.ativo ? "Desativar" : "Ativar"}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setDeleteTarget(item)}
+                                className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100"
+                              >
+                                <Trash2 size={16} />
+                                Excluir
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </main>
       </div>
 
-      {/* Loading State - not directly from useParametros, assuming it fetches initially */}
-      {(!unidadesMedida || !tiposProduto || !categoriasDespesa) && (
-        <div className="text-center text-gray-500 py-8">
-          <p>Carregando parâmetros...</p>
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600">
+              <Trash2 size={22} />
+            </div>
+
+            <h3 className="text-lg font-bold text-slate-900">
+              Excluir parâmetro?
+            </h3>
+
+            <p className="mt-2 text-sm text-slate-500">
+              Você está prestes a excluir{" "}
+              <strong className="text-slate-800">{deleteTarget.nome}</strong>.
+              Essa ação não deve ser usada se o parâmetro já estiver vinculado a
+              registros antigos.
+            </p>
+
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+              >
+                Sim, excluir
+              </button>
+            </div>
+          </div>
         </div>
       )}
-
-      {/* Render based on active tab */}
-      {activeTab === 'unidadesMedida' && renderParameterCard('unidadesMedida', 'Unidades de Medida', unidadesMedida)}
-      {activeTab === 'tiposProduto' && renderParameterCard('tiposProduto', 'Tipos de Produto', tiposProduto)}
-      {activeTab === 'categoriasDespesa' && renderParameterCard('categoriasDespesa', 'Categorias de Despesa', categoriasDespesa)}
     </div>
   );
-};
-
-export default ParametrosEmpresa;
+}
