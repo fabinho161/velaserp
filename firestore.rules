@@ -1,0 +1,284 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function userCompanyPath(uid, empresaId) {
+      return /databases/$(database)/documents/users/$(uid)/empresas/$(empresaId);
+    }
+
+    function authCompanyPath(uid, empresaId) {
+      return /databases/$(database)/documents/usuariosPorAuth/$(uid)/empresas/$(empresaId);
+    }
+
+    function companyUserPath(ownerUid, empresaId, usuarioEmpresaId) {
+      return /databases/$(database)/documents/users/$(ownerUid)/empresas/$(empresaId)/usuariosEmpresa/$(usuarioEmpresaId);
+    }
+
+    function invitePath(token) {
+      return /databases/$(database)/documents/convitesEmpresa/$(token);
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isAdminMaster() {
+      return signedIn() &&
+        exists(userPath(request.auth.uid)) &&
+        get(userPath(request.auth.uid)).data.role == "admin_master";
+    }
+
+    function isOwnCompanyDocument(userId) {
+      return !request.resource.data.keys().hasAny(["ownerUid"]) ||
+        request.resource.data.ownerUid == userId;
+    }
+
+    function isExistingOwnCompanyDocument(userId) {
+      return !resource.data.keys().hasAny(["ownerUid"]) ||
+        resource.data.ownerUid == userId;
+    }
+
+    function isSafeCompanyPointerUpdate(userId) {
+      return isOwner(userId) &&
+        resource.data.keys().hasAny(["ownerUid"]) &&
+        resource.data.ownerUid != userId &&
+        request.resource.data.ownerUid == resource.data.ownerUid &&
+        request.resource.data.conviteToken == resource.data.conviteToken &&
+        request.resource.data.perfil == resource.data.perfil &&
+        request.resource.data.status == resource.data.status;
+    }
+
+    function hasValidCompanyLink(linkPath, ownerUid, empresaId) {
+      return signedIn() &&
+        exists(linkPath) &&
+        get(linkPath).data.ownerUid == ownerUid &&
+        get(linkPath).data.status == "ativo" &&
+        get(linkPath).data.usuarioEmpresaId is string &&
+        exists(companyUserPath(
+          ownerUid,
+          empresaId,
+          get(linkPath).data.usuarioEmpresaId
+        )) &&
+        get(companyUserPath(
+          ownerUid,
+          empresaId,
+          get(linkPath).data.usuarioEmpresaId
+        )).data.uidAuth == request.auth.uid &&
+        get(companyUserPath(
+          ownerUid,
+          empresaId,
+          get(linkPath).data.usuarioEmpresaId
+        )).data.status == "ativo" &&
+        get(companyUserPath(
+          ownerUid,
+          empresaId,
+          get(linkPath).data.usuarioEmpresaId
+        )).data.convitePendente == false;
+    }
+
+    function hasActiveCompanyMembership(ownerUid, empresaId) {
+      return hasValidCompanyLink(authCompanyPath(request.auth.uid, empresaId), ownerUid, empresaId) ||
+        hasValidCompanyLink(userCompanyPath(request.auth.uid, empresaId), ownerUid, empresaId);
+    }
+
+    function hasCompanyAdminLink(linkPath, ownerUid, empresaId) {
+      return hasValidCompanyLink(linkPath, ownerUid, empresaId) &&
+        get(companyUserPath(
+          ownerUid,
+          empresaId,
+          get(linkPath).data.usuarioEmpresaId
+        )).data.perfil == "administrador_empresa";
+    }
+
+    function hasCompanyAdminMembership(ownerUid, empresaId) {
+      return hasCompanyAdminLink(authCompanyPath(request.auth.uid, empresaId), ownerUid, empresaId) ||
+        hasCompanyAdminLink(userCompanyPath(request.auth.uid, empresaId), ownerUid, empresaId);
+    }
+
+    function hasCompanyAccess(ownerUid, empresaId) {
+      return isOwner(ownerUid) || isAdminMaster() || hasActiveCompanyMembership(ownerUid, empresaId);
+    }
+
+    function isCompanyAdmin(ownerUid, empresaId) {
+      return isOwner(ownerUid) || isAdminMaster() || hasCompanyAdminMembership(ownerUid, empresaId);
+    }
+
+    function isValidPendingInvite(token, ownerUid, empresaId) {
+      return signedIn() &&
+        token is string &&
+        exists(invitePath(token)) &&
+        get(invitePath(token)).data.status == "pendente" &&
+        get(invitePath(token)).data.ownerUid == ownerUid &&
+        get(invitePath(token)).data.empresaId == empresaId &&
+        get(invitePath(token)).data.email == request.auth.token.email;
+    }
+
+    function isValidInviteForCompanyLink(token, ownerUid, empresaId) {
+      return isValidPendingInvite(token, ownerUid, empresaId) ||
+        (
+          signedIn() &&
+          token is string &&
+          exists(invitePath(token)) &&
+          get(invitePath(token)).data.status == "aceito" &&
+          get(invitePath(token)).data.ownerUid == ownerUid &&
+          get(invitePath(token)).data.empresaId == empresaId &&
+          get(invitePath(token)).data.email == request.auth.token.email &&
+          get(invitePath(token)).data.uidAuth == request.auth.uid
+        );
+    }
+
+    function isCreatingInvitedCompanyPointer(userId, empresaId) {
+      return isOwner(userId) &&
+        request.resource.data.ownerUid is string &&
+        request.resource.data.ownerUid != userId &&
+        request.resource.data.conviteToken is string &&
+        request.resource.data.status == "ativo" &&
+        isValidInviteForCompanyLink(
+          request.resource.data.conviteToken,
+          request.resource.data.ownerUid,
+          empresaId
+        );
+    }
+
+    function isAcceptingUsuarioEmpresa(ownerUid, empresaId) {
+      return signedIn() &&
+        resource.data.status == "pendente" &&
+        resource.data.email == request.auth.token.email &&
+        resource.data.conviteToken is string &&
+        isValidPendingInvite(resource.data.conviteToken, ownerUid, empresaId) &&
+        request.resource.data.uidAuth == request.auth.uid &&
+        request.resource.data.status == "ativo" &&
+        request.resource.data.convitePendente == false &&
+        request.resource.data.email == resource.data.email &&
+        request.resource.data.perfil == resource.data.perfil &&
+        request.resource.data.dono == resource.data.dono;
+    }
+
+    function isAcceptingConvite() {
+      return signedIn() &&
+        resource.data.status == "pendente" &&
+        resource.data.email == request.auth.token.email &&
+        request.resource.data.ownerUid == resource.data.ownerUid &&
+        request.resource.data.empresaId == resource.data.empresaId &&
+        request.resource.data.usuarioEmpresaId == resource.data.usuarioEmpresaId &&
+        request.resource.data.email == resource.data.email &&
+        request.resource.data.status == "aceito" &&
+        request.resource.data.uidAuth == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(["status", "aceitoEm", "uidAuth", "atualizadoEm"]);
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdminMaster();
+      allow create: if isOwner(userId) || isAdminMaster();
+      allow update: if isOwner(userId) || isAdminMaster();
+      allow delete: if isAdminMaster();
+
+      match /assinatura/{documentId} {
+        allow read: if isOwner(userId) || isAdminMaster();
+        allow write: if isOwner(userId) || isAdminMaster();
+      }
+
+      match /empresas/{empresaId} {
+        allow read: if hasCompanyAccess(userId, empresaId) || isOwner(userId) || isAdminMaster();
+        allow create: if (
+          isOwner(userId) &&
+          (isOwnCompanyDocument(userId) || isCreatingInvitedCompanyPointer(userId, empresaId))
+        ) || isAdminMaster();
+        allow update: if isAdminMaster() ||
+          (
+            isOwner(userId) &&
+            (
+              (isExistingOwnCompanyDocument(userId) && isOwnCompanyDocument(userId)) ||
+              isSafeCompanyPointerUpdate(userId)
+            )
+          );
+        allow delete: if isOwner(userId) || isAdminMaster();
+
+        match /usuariosEmpresa/{usuarioId} {
+          allow read: if hasCompanyAccess(userId, empresaId);
+          allow create: if isCompanyAdmin(userId, empresaId) &&
+            request.resource.data.status == "pendente" &&
+            request.resource.data.convitePendente == true &&
+            request.resource.data.uidAuth == null;
+          allow update: if isCompanyAdmin(userId, empresaId) ||
+            isAcceptingUsuarioEmpresa(userId, empresaId);
+          allow delete: if isCompanyAdmin(userId, empresaId) && resource.data.dono != true;
+        }
+
+        match /configuracoes/{documentId} {
+          allow read, write: if hasCompanyAccess(userId, empresaId);
+        }
+
+        match /parametros/{documentId} {
+          allow read, write: if hasCompanyAccess(userId, empresaId);
+        }
+
+        match /insumos/{documentId} {
+          allow read, write: if hasCompanyAccess(userId, empresaId);
+        }
+
+        match /produtos/{documentId} {
+          allow read, write: if hasCompanyAccess(userId, empresaId);
+        }
+
+        match /producoes/{documentId} {
+          allow read, write: if hasCompanyAccess(userId, empresaId);
+        }
+
+        match /vendas/{documentId} {
+          allow read, write: if hasCompanyAccess(userId, empresaId);
+        }
+
+        match /despesas/{documentId} {
+          allow read, write: if hasCompanyAccess(userId, empresaId);
+        }
+
+        match /clientesComerciais/{documentId} {
+          allow read, write: if hasCompanyAccess(userId, empresaId);
+        }
+      }
+    }
+
+    match /usuariosPorAuth/{uidAuth}/empresas/{empresaId} {
+      allow read: if isOwner(uidAuth) || isAdminMaster();
+      allow create: if isCreatingInvitedCompanyPointer(uidAuth, empresaId) || isAdminMaster();
+      allow update: if isOwner(uidAuth) &&
+        resource.data.ownerUid == request.resource.data.ownerUid &&
+        resource.data.usuarioEmpresaId == request.resource.data.usuarioEmpresaId &&
+        request.resource.data.status == "ativo";
+      allow delete: if isAdminMaster();
+    }
+
+    match /convitesEmpresa/{token} {
+      allow list: if false;
+      allow get: if resource.data.status == "pendente" ||
+        (
+          signedIn() &&
+          (
+            resource.data.email == request.auth.token.email ||
+            isCompanyAdmin(resource.data.ownerUid, resource.data.empresaId)
+          )
+        );
+      allow create: if signedIn() &&
+        request.resource.data.status == "pendente" &&
+        request.resource.data.token == token &&
+        isCompanyAdmin(request.resource.data.ownerUid, request.resource.data.empresaId);
+      allow update: if isCompanyAdmin(resource.data.ownerUid, resource.data.empresaId) ||
+        isAcceptingConvite();
+      allow delete: if false;
+    }
+
+    match /logs/{document=**} {
+      allow read, write: if isAdminMaster();
+    }
+  }
+}

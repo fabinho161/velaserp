@@ -23,11 +23,12 @@ import EmpresaSwitcher from "./EmpresaSwitcher";
 import saasLogo from "../assets/saas-logo.png";
 import { useERP } from "../context/useERP";
 import { usePlano } from "../hooks/usePlano";
+import { PERMISSOES_EMPRESA } from "../config/perfisEmpresa";
 
 const NOME_SAAS = "Renovar ERP";
 
 export default function Sidebar() {
-  const { configuracoes, isAdminMaster } = useERP();
+  const { configuracoes, isAdminMaster, temPermissaoEmpresaAtual } = useERP();
   const {
     podeUsarCRMComercial,
     podeUsarRelatoriosAvancados,
@@ -35,51 +36,66 @@ export default function Sidebar() {
   } = usePlano();
   const [menuAberto, setMenuAberto] = useState(false);
 
+  const podeVerMenu = (permissao, permitidoPorPlano = true) =>
+    permitidoPorPlano && temPermissaoEmpresaAtual?.(permissao);
+
   const menuSections = [
     {
       title: "Principal",
-      items: [{ path: "/", label: "Dashboard", icon: LayoutDashboard }],
+      items: podeVerMenu(PERMISSOES_EMPRESA.dashboard)
+        ? [{ path: "/", label: "Dashboard", icon: LayoutDashboard }]
+        : [],
     },
     {
-      title: "Operação",
+      title: "Operacao",
       items: [
-        { path: "/insumos", label: "Insumos", icon: Package },
-        { path: "/produtos", label: "Produtos", icon: Boxes },
-        { path: "/producao", label: "Produção", icon: Factory },
-        { path: "/estoque", label: "Estoque", icon: Warehouse },
-      ],
+        podeVerMenu(PERMISSOES_EMPRESA.insumos) &&
+          { path: "/insumos", label: "Insumos", icon: Package },
+        podeVerMenu(PERMISSOES_EMPRESA.produtos) &&
+          { path: "/produtos", label: "Produtos", icon: Boxes },
+        podeVerMenu(PERMISSOES_EMPRESA.producao) &&
+          { path: "/producao", label: "Producao", icon: Factory },
+        podeVerMenu(PERMISSOES_EMPRESA.estoque) &&
+          { path: "/estoque", label: "Estoque", icon: Warehouse },
+      ].filter(Boolean),
     },
     {
       title: "Comercial",
       items: [
-        ...(podeUsarVendas
+        ...(podeVerMenu(PERMISSOES_EMPRESA.vendas, podeUsarVendas)
           ? [{ path: "/vendas", label: "Vendas", icon: ShoppingCart }]
           : []),
-        ...(podeUsarCRMComercial
+        ...(podeVerMenu(PERMISSOES_EMPRESA.crm, podeUsarCRMComercial)
           ? [{ path: "/clientes", label: "CRM", icon: Users }]
           : []),
       ],
     },
     {
-      title: "Gestão",
+      title: "Gestao",
       items: [
-        { path: "/financeiro", label: "Financeiro", icon: Wallet },
-        ...(podeUsarRelatoriosAvancados
-          ? [{ path: "/relatorios", label: "Relatórios", icon: FileText }]
+        ...(podeVerMenu(PERMISSOES_EMPRESA.financeiro)
+          ? [{ path: "/financeiro", label: "Financeiro", icon: Wallet }]
+          : []),
+        ...(podeVerMenu(PERMISSOES_EMPRESA.relatorios, podeUsarRelatoriosAvancados)
+          ? [{ path: "/relatorios", label: "Relatorios", icon: FileText }]
           : []),
       ],
     },
     {
       title: "Conta",
       items: [
-        { path: "/planos", label: "Planos", icon: CreditCard },
-        { path: "/configuracoes", label: "Configurações", icon: Settings },
-        { path: "/parametros-empresa", label: "Parâmetros Empresa", icon: Settings },
-        
-      ],
+        podeVerMenu(PERMISSOES_EMPRESA.planos) &&
+          { path: "/planos", label: "Planos", icon: CreditCard },
+        podeVerMenu(PERMISSOES_EMPRESA.configuracoes) &&
+          { path: "/configuracoes", label: "Configuracoes", icon: Settings },
+        podeVerMenu(PERMISSOES_EMPRESA.parametros) &&
+          { path: "/parametros-empresa", label: "Parametros Empresa", icon: Settings },
+        podeVerMenu(PERMISSOES_EMPRESA.usuariosEmpresa) &&
+          { path: "/usuarios-empresa", label: "Usuarios da Empresa", icon: Users },
+      ].filter(Boolean),
     },
     {
-      title: "Administração",
+      title: "Administracao",
       items: isAdminMaster
         ? [
             { path: "/admin/clientes", label: "Admin Clientes", icon: ShieldCheck },
@@ -199,7 +215,7 @@ export default function Sidebar() {
         <div className="sidebar-footer">
           <div className="sidebar-user">
             <span className="sidebar-user-label">Logado como</span>
-            <strong>{auth.currentUser?.email || "Usuário"}</strong>
+            <strong>{auth.currentUser?.email || "Usuario"}</strong>
           </div>
 
           <button className="logout-button" onClick={sair}>

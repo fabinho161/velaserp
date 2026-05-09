@@ -103,7 +103,7 @@ export const PLANOS = {
     nome: "Profissional",
     preco: 99,
     empresas: 5,
-    usuarios: 10,
+    usuarios: 8,
     vendasMes: null,
     dre: true,
     pdfProfissional: true,
@@ -113,7 +113,7 @@ export const PLANOS = {
     recursos: [
       "Tudo do Básico",
       "Até 5 empresas",
-      "Até 10 usuários",
+      "Até 8 usuários",
       "DRE completo",
       "PDF profissional com logo",
       "CRM inteligente",
@@ -163,6 +163,8 @@ export const assinaturaGratisPadrao = {
   formaPagamento: "manual",
   valorPago: 0,
   observacao: "",
+  limiteUsuariosManual: null,
+  motivoLiberacaoUsuarios: "",
 };
 
 export const getPlanoConfig = (plano = "gratis") => {
@@ -171,4 +173,19 @@ export const getPlanoConfig = (plano = "gratis") => {
 
 export const getPlanoNivel = (plano = "gratis") => {
   return PLANO_ORDEM[plano] ?? PLANO_ORDEM.gratis;
+};
+
+export const normalizarLimiteUsuariosManual = (limite) => {
+  const numero = Number(limite);
+  return Number.isFinite(numero) && numero > 0 ? Math.floor(numero) : null;
+};
+
+export const getLimiteUsuariosEfetivo = (plano = "gratis", limiteManual = null) => {
+  const limitePlano = getPlanoConfig(plano).usuarios;
+  const limiteManualNormalizado = normalizarLimiteUsuariosManual(limiteManual);
+
+  if (limitePlano === null) return limiteManualNormalizado;
+  if (!limiteManualNormalizado) return limitePlano;
+
+  return Math.max(limitePlano, limiteManualNormalizado);
 };

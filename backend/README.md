@@ -8,6 +8,7 @@ Este backend cuida apenas de pagamentos:
 - receber webhook do Mercado Pago;
 - validar o evento consultando a API do Mercado Pago;
 - atualizar `users/{uid}/assinatura/plano` no Firestore somente quando o status validado for `authorized` ou `active`.
+- enviar emails de convite de usuarios da empresa sem expor chaves no front-end.
 
 Firebase Auth e Firestore continuam sendo usados. O token do Mercado Pago nunca deve ir para o front-end React.
 
@@ -37,9 +38,20 @@ MERCADO_PAGO_ACCESS_TOKEN=TEST-seu-token
 FIREBASE_SERVICE_ACCOUNT_JSON={}
 CORS_ORIGINS=https://renovarerp.com.br,http://localhost:5173,http://127.0.0.1:5173
 ALLOW_PRODUCTION_PAYMENTS=false
+EMAIL_FROM="Renovar ERP <convites@renovarerp.com.br>"
+RESEND_API_KEY=
+SENDGRID_API_KEY=
 ```
 
 `FIREBASE_SERVICE_ACCOUNT_JSON` deve receber o JSON completo da service account do Firebase. Não versione esse conteúdo.
+
+Para envio real de convites, configure um provedor de email:
+
+- `RESEND_API_KEY`: chave da Resend.
+- `SENDGRID_API_KEY`: chave da SendGrid, usada se Resend nao estiver configurada.
+- `EMAIL_FROM`: remetente validado no provedor, por exemplo `Renovar ERP <convites@seudominio.com>`.
+
+Nao coloque chaves reais no React ou no repositorio.
 
 ## Render
 
@@ -78,10 +90,29 @@ POST /api/webhooks/mercado-pago
 
 Configure essa URL no Mercado Pago usando a URL pública do Render.
 
+Convites:
+
+```txt
+POST /api/convites/enviar
+Authorization: Bearer <firebase_id_token>
+Content-Type: application/json
+```
+
+Body:
+
+```json
+{
+  "token": "token-do-convite"
+}
+```
+
+O endpoint valida se o usuario autenticado e Admin Master ou Administrador da Empresa antes de enviar. O log do envio fica no convite, no usuario convidado e em `logs/convitesEmail/envios`.
+
 ## Segurança
 
 - Não commitar `.env`.
 - Não expor `MERCADO_PAGO_ACCESS_TOKEN` no React.
+- Não expor `RESEND_API_KEY` ou `SENDGRID_API_KEY` no React.
 - Não ativar plano no clique do botão.
 - O webhook sempre consulta o Mercado Pago antes de atualizar assinatura.
 - Por enquanto `ALLOW_PRODUCTION_PAYMENTS=false` mantém o fluxo preso a token `TEST-`.

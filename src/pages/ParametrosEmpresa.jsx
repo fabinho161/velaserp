@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Check,
   Edit3,
@@ -55,13 +55,20 @@ export default function ParametrosEmpresa() {
   const [editingItem, setEditingItem] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  const currentItems = useMemo(
+    () => {
+      if (activeTab === "unidadesMedida") return unidadesMedida;
+      if (activeTab === "tiposProduto") return tiposProduto;
+      if (activeTab === "categoriasDespesa") return categoriasDespesa;
+      return [];
+    },
+    [activeTab, categoriasDespesa, tiposProduto, unidadesMedida]
+  );
   const lists = {
     unidadesMedida,
     tiposProduto,
     categoriasDespesa,
   };
-
-  const currentItems = lists[activeTab] || [];
   const currentGroup = PARAM_GROUPS[activeTab];
   const CurrentIcon = currentGroup.icon;
 

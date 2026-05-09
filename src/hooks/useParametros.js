@@ -31,7 +31,7 @@ const defaultParams = {
 };
 
 export function useParametros() {
-  const { user, empresaId } = useERP();
+  const { user, empresaId, empresaOwnerUid } = useERP();
   const { showToast } = useToast();
 
   const [unidadesMedida, setUnidadesMedida] = useState(defaultParams.unidadesMedida);
@@ -40,9 +40,17 @@ export function useParametros() {
 
   const getParamRef = useCallback((paramType) => {
     if (!user || !empresaId) return null;
-    return doc(db, "users", user.uid, "empresas", empresaId, "parametros", paramType);
+    return doc(
+      db,
+      "users",
+      empresaOwnerUid || user.uid,
+      "empresas",
+      empresaId,
+      "parametros",
+      paramType
+    );
     // Ensure the path is correct and doesn't allow overwriting parameters between companies
-  }, [user, empresaId]);
+  }, [user, empresaId, empresaOwnerUid]);
 
   const loadParametros = useCallback((paramType, setState, defaultValues) => {
     if (!user || !empresaId) return;

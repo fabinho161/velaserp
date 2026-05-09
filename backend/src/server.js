@@ -4,6 +4,7 @@ const cors = require("cors");
 const express = require("express");
 const helmet = require("helmet");
 const adminDiagnosticsRoutes = require("./routes/adminDiagnosticsRoutes");
+const conviteRoutes = require("./routes/conviteRoutes");
 const checkoutRoutes = require("./routes/checkoutRoutes");
 const webhookRoutes = require("./routes/webhookRoutes");
 const { getMercadoPagoEnvironment } = require("./mercadoPago");
@@ -48,6 +49,7 @@ app.get("/health", (req, res) => {
 app.use("/api/checkout", checkoutRoutes);
 app.use("/api/pix", pixRouter);
 app.use("/api/boleto", boletoRouter);
+app.use("/api/convites", conviteRoutes);
 app.use("/api/webhooks", webhookRoutes);
 app.use("/api/admin", adminDiagnosticsRoutes);
 

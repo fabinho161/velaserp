@@ -6,12 +6,17 @@ import {
   getDocs,
   setDoc,
 } from "firebase/firestore";
-import { db } from "../firebase";
+import { auth, db } from "../firebase";
 import { useToast } from "../context/useToast";
 import { useTableSort } from "../hooks/useTableSort";
 import ActionMenu from "../components/ActionMenu";
 import { dataBR, moedaBR } from "../utils/formatters";
-import { PLANOS, assinaturaGratisPadrao } from "../config/planos";
+import {
+  PLANOS,
+  assinaturaGratisPadrao,
+  getLimiteUsuariosEfetivo,
+  normalizarLimiteUsuariosManual,
+} from "../config/planos";
 
 const assinaturaPadraoCliente = assinaturaGratisPadrao;
 const planos = Object.keys(PLANOS);
@@ -60,6 +65,12 @@ const prepararFormAssinatura = (assinatura = {}) => ({
       : String(assinatura.valorPago),
   formaPagamento: assinatura.formaPagamento || "",
   observacao: assinatura.observacao || "",
+  limiteUsuariosManual:
+    assinatura.limiteUsuariosManual === null ||
+    assinatura.limiteUsuariosManual === undefined
+      ? ""
+      : String(assinatura.limiteUsuariosManual),
+  motivoLiberacaoUsuarios: assinatura.motivoLiberacaoUsuarios || "",
 });
 
 const normalizarValorPago = (valor) => {
@@ -69,12 +80,21 @@ const normalizarValorPago = (valor) => {
   return Number.isFinite(numero) ? numero : null;
 };
 
+const getLimitePlanoUsuarios = (plano) =>
+  PLANOS[plano]?.usuarios ?? PLANOS.gratis.usuarios;
+
 export default function AdminClientes() {
   const { showToast } = useToast();
   const [clientes, setClientes] = useState([]);
   const [formularios, setFormularios] = useState({});
   const [carregando, setCarregando] = useState(true);
   const [salvandoUid, setSalvandoUid] = useState(null);
+  const [clienteLimite, setClienteLimite] = useState(null);
+  const [limiteForm, setLimiteForm] = useState({
+    limiteUsuariosManual: "",
+    motivoLiberacaoUsuarios: "",
+  });
+  const [salvandoLimite, setSalvandoLimite] = useState(false);
   const ordenacaoClientes = useTableSort({
     chave: "cliente",
     direcao: "asc",
@@ -178,6 +198,82 @@ export default function AdminClientes() {
     }
   };
 
+  const abrirModalLimiteUsuarios = (cliente) => {
+    const assinatura = prepararFormAssinatura(
+      formularios[cliente.uid] || cliente.assinatura
+    );
+
+    setClienteLimite(cliente);
+    setLimiteForm({
+      limiteUsuariosManual: assinatura.limiteUsuariosManual || "",
+      motivoLiberacaoUsuarios: assinatura.motivoLiberacaoUsuarios || "",
+    });
+  };
+
+  const fecharModalLimite = () => {
+    if (salvandoLimite) return;
+
+    setClienteLimite(null);
+    setLimiteForm({
+      limiteUsuariosManual: "",
+      motivoLiberacaoUsuarios: "",
+    });
+  };
+
+  const limparLimiteUsuarios = () => {
+    setLimiteForm({
+      limiteUsuariosManual: "",
+      motivoLiberacaoUsuarios: "",
+    });
+  };
+
+  const salvarLimiteUsuarios = async () => {
+    if (!clienteLimite) return;
+
+    const limiteRaw = String(limiteForm.limiteUsuariosManual || "").trim();
+    const limiteNumero = limiteRaw === "" ? 0 : Number(limiteRaw);
+
+    if (!Number.isFinite(limiteNumero) || limiteNumero < 0) {
+      showToast("Informe um limite manual valido, sem numero negativo.", "warning");
+      return;
+    }
+
+    const limiteManual = normalizarLimiteUsuariosManual(limiteNumero);
+    const assinaturaRef = doc(db, "users", clienteLimite.uid, "assinatura", "plano");
+
+    setSalvandoLimite(true);
+
+    try {
+      await setDoc(assinaturaRef, {
+        limiteUsuariosManual: limiteManual,
+        motivoLiberacaoUsuarios: limiteManual
+          ? String(limiteForm.motivoLiberacaoUsuarios || "").trim()
+          : "",
+        limiteUsuariosAtualizadoPor: auth.currentUser?.uid || "",
+        limiteUsuariosAtualizadoEm: new Date(),
+        atualizadoEm: new Date(),
+      }, { merge: true });
+
+      showToast(
+        limiteManual
+          ? "Limite manual de usuarios atualizado com sucesso."
+          : "Limite manual de usuarios removido com sucesso.",
+        "success"
+      );
+      setClienteLimite(null);
+      setLimiteForm({
+        limiteUsuariosManual: "",
+        motivoLiberacaoUsuarios: "",
+      });
+      await carregarClientes();
+    } catch (error) {
+      console.error("Erro ao atualizar limite de usuarios:", error);
+      showToast("Erro ao atualizar limite de usuarios.", "error");
+    } finally {
+      setSalvandoLimite(false);
+    }
+  };
+
   const totais = useMemo(() => {
     return clientes.reduce((acc, cliente) => {
       const status = cliente.assinatura?.status || "active";
@@ -214,6 +310,11 @@ export default function AdminClientes() {
         vencimento: form.vencimento || "",
         formaPagamento: form.formaPagamento || "",
         valorPago: normalizarValorPago(form.valorPago) ?? 0,
+        limiteUsuariosPlano: getLimitePlanoUsuarios(form.plano),
+        limiteUsuariosManual:
+          normalizarLimiteUsuariosManual(form.limiteUsuariosManual) || 0,
+        limiteUsuariosEfetivo:
+          getLimiteUsuariosEfetivo(form.plano, form.limiteUsuariosManual) || 0,
         observacao: form.observacao || "",
       };
 
@@ -295,6 +396,9 @@ export default function AdminClientes() {
                 <th>{renderCabecalhoOrdenavel("Vencimento", "vencimento", ordenacaoClientes)}</th>
                 <th>{renderCabecalhoOrdenavel("Pagamento", "formaPagamento", ordenacaoClientes)}</th>
                 <th>{renderCabecalhoOrdenavel("Valor", "valorPago", ordenacaoClientes)}</th>
+                <th>{renderCabecalhoOrdenavel("Limite plano", "limiteUsuariosPlano", ordenacaoClientes)}</th>
+                <th>{renderCabecalhoOrdenavel("Limite manual", "limiteUsuariosManual", ordenacaoClientes)}</th>
+                <th>{renderCabecalhoOrdenavel("Limite efetivo", "limiteUsuariosEfetivo", ordenacaoClientes)}</th>
                 <th>{renderCabecalhoOrdenavel("Observação", "observacao", ordenacaoClientes)}</th>
                 <th>Ações</th>
               </tr>
@@ -303,6 +407,14 @@ export default function AdminClientes() {
             <tbody>
               {clientesOrdenados.map((cliente) => {
                 const form = formularios[cliente.uid] || assinaturaPadraoCliente;
+                const limitePlanoUsuarios = getLimitePlanoUsuarios(form.plano);
+                const limiteManualUsuarios = normalizarLimiteUsuariosManual(
+                  form.limiteUsuariosManual
+                );
+                const limiteEfetivoUsuarios = getLimiteUsuariosEfetivo(
+                  form.plano,
+                  form.limiteUsuariosManual
+                );
 
                 return (
                   <tr key={cliente.uid}>
@@ -379,6 +491,22 @@ export default function AdminClientes() {
                       </small>
                     </td>
 
+                    <td>{limitePlanoUsuarios}</td>
+
+                    <td>
+                      {limiteManualUsuarios ? (
+                        <span className="admin-user-limit-manual">
+                          {limiteManualUsuarios}
+                        </span>
+                      ) : (
+                        <span className="admin-muted">Sem override</span>
+                      )}
+                    </td>
+
+                    <td>
+                      <strong>{limiteEfetivoUsuarios}</strong>
+                    </td>
+
                     <td>
                       <textarea
                         value={form.observacao}
@@ -399,6 +527,10 @@ export default function AdminClientes() {
                             disabled: salvandoUid === cliente.uid,
                             onClick: () => salvarPlano(cliente),
                           },
+                          {
+                            label: "Ajustar limite de usuarios",
+                            onClick: () => abrirModalLimiteUsuarios(cliente),
+                          },
                         ]}
                       />
                     </td>
@@ -408,13 +540,119 @@ export default function AdminClientes() {
 
               {clientes.length === 0 && (
                 <tr>
-                  <td colSpan="11">Nenhum cliente encontrado.</td>
+                  <td colSpan="14">Nenhum cliente encontrado.</td>
                 </tr>
               )}
             </tbody>
           </table>
         )}
       </div>
+
+      {clienteLimite && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal-card admin-user-limit-modal">
+            <h3>Ajustar limite de usuarios</h3>
+            <p className="admin-user-limit-subtitle">
+              {clienteLimite.email || clienteLimite.nome || clienteLimite.uid}
+            </p>
+
+            {(() => {
+              const assinatura = prepararFormAssinatura(
+                formularios[clienteLimite.uid] || clienteLimite.assinatura
+              );
+              const limitePlanoUsuarios = getLimitePlanoUsuarios(assinatura.plano);
+              const limiteManualUsuarios = normalizarLimiteUsuariosManual(
+                limiteForm.limiteUsuariosManual
+              );
+              const limiteEfetivoUsuarios = getLimiteUsuariosEfetivo(
+                assinatura.plano,
+                limiteForm.limiteUsuariosManual
+              );
+
+              return (
+                <>
+                  <div className="admin-user-limit-grid">
+                    <div>
+                      <span>Plano atual</span>
+                      <strong>{assinatura.plano}</strong>
+                    </div>
+                    <div>
+                      <span>Limite do plano</span>
+                      <strong>{limitePlanoUsuarios}</strong>
+                    </div>
+                    <div>
+                      <span>Limite manual</span>
+                      <strong>{limiteManualUsuarios || "Sem override"}</strong>
+                    </div>
+                    <div>
+                      <span>Limite efetivo</span>
+                      <strong>{limiteEfetivoUsuarios}</strong>
+                    </div>
+                  </div>
+
+                  <label>
+                    Limite manual de usuarios
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={limiteForm.limiteUsuariosManual}
+                      onChange={(e) =>
+                        setLimiteForm({
+                          ...limiteForm,
+                          limiteUsuariosManual: e.target.value,
+                        })
+                      }
+                      placeholder="Ex: 5"
+                    />
+                  </label>
+
+                  <label>
+                    Motivo da liberacao
+                    <textarea
+                      rows="3"
+                      value={limiteForm.motivoLiberacaoUsuarios}
+                      onChange={(e) =>
+                        setLimiteForm({
+                          ...limiteForm,
+                          motivoLiberacaoUsuarios: e.target.value,
+                        })
+                      }
+                      placeholder="Ex: liberacao comercial aprovada pelo suporte"
+                    />
+                  </label>
+                </>
+              );
+            })()}
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="confirm-secondary"
+                onClick={fecharModalLimite}
+                disabled={salvandoLimite}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="confirm-secondary"
+                onClick={limparLimiteUsuarios}
+                disabled={salvandoLimite}
+              >
+                Limpar limite manual
+              </button>
+              <button
+                type="button"
+                onClick={salvarLimiteUsuarios}
+                disabled={salvandoLimite}
+              >
+                {salvandoLimite ? "Salvando..." : "Salvar limite"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1716,6 +1716,82 @@ tr:hover td {
   font-weight: 800;
 }
 
+.admin-user-limit-manual {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.admin-user-limit-modal {
+  max-width: 680px;
+}
+
+.admin-user-limit-subtitle {
+  margin: -6px 0 18px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.admin-user-limit-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.admin-user-limit-grid div {
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.admin-user-limit-grid span,
+.admin-user-limit-grid strong {
+  display: block;
+}
+
+.admin-user-limit-grid span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-user-limit-grid strong {
+  margin-top: 5px;
+  color: #0f172a;
+  font-size: 17px;
+}
+
+.admin-user-limit-modal label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 12px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .admin-user-limit-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .admin-user-limit-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ================================
    PLANOS
 ================================ */
@@ -5635,5 +5711,325 @@ button,
 
   .modal-actions button {
     width: 100%;
+  }
+}
+
+/* ================================
+   USUARIOS DA EMPRESA
+================================ */
+.users-company-page {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.users-company-header button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.users-company-summary {
+  margin-bottom: 0;
+}
+
+.users-company-limit-alert {
+  justify-content: space-between;
+}
+
+.users-company-table-card {
+  overflow: visible;
+}
+
+.users-company-table-header,
+.users-company-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.users-company-table-header h3,
+.users-company-modal-header h3 {
+  margin: 0 0 4px;
+}
+
+.users-company-table-header p,
+.users-company-modal-header p {
+  margin: 0;
+  color: #64748b;
+}
+
+.users-company-table-header > span {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.users-company-user-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.users-company-user-cell strong {
+  color: #0f172a;
+}
+
+.users-company-user-cell small,
+.users-company-auth-id {
+  color: #64748b;
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.users-company-email-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.users-company-email-status small {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.users-company-modal {
+  max-width: 620px;
+}
+
+.users-company-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.users-company-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.users-company-form-grid input,
+.users-company-form-grid select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.users-company-form-grid label:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+.users-company-owner-note {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 8px;
+  color: #92400e;
+  background: #fef3c7;
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .users-company-header,
+  .users-company-table-header,
+  .users-company-modal-header {
+    flex-direction: column;
+  }
+
+  .users-company-header button,
+  .users-company-limit-alert button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .users-company-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ================================
+   ACEITE DE CONVITE
+================================ */
+.invite-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 42px 18px;
+  background:
+    linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(16, 185, 129, 0.08)),
+    #f8fafc;
+}
+
+.invite-card {
+  width: min(960px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.invite-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.invite-header h1 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 32px;
+}
+
+.invite-header p {
+  margin: 0;
+  color: #64748b;
+  max-width: 620px;
+}
+
+.invite-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #991b1b;
+  background: #fef2f2;
+  font-weight: 700;
+}
+
+.invite-details {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.invite-details > div,
+.invite-auth-box,
+.invite-guidance {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fff;
+}
+
+.invite-details span,
+.invite-auth-box span {
+  display: block;
+  margin-bottom: 4px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.invite-details strong,
+.invite-auth-box strong {
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.invite-login-box {
+  display: grid;
+  gap: 16px;
+}
+
+.invite-guidance {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #334155;
+}
+
+.invite-guidance span {
+  color: #64748b;
+}
+
+.invite-login-shell {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.invite-login-shell .login-page {
+  min-height: auto;
+  grid-template-columns: 1fr;
+}
+
+.invite-login-shell .login-brand-panel {
+  display: none;
+}
+
+.invite-login-shell .login-form-panel {
+  min-height: auto;
+  padding: 24px;
+}
+
+.invite-login-shell .login-card {
+  box-shadow: none;
+  max-width: 520px;
+}
+
+.invite-auth-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.invite-auth-box p {
+  margin: 0;
+  color: #64748b;
+}
+
+.invite-auth-box button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+@media (max-width: 920px) {
+  .invite-details {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .invite-auth-box {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .invite-auth-box button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .invite-page {
+    padding: 18px 10px;
+  }
+
+  .invite-header h1 {
+    font-size: 26px;
+  }
+
+  .invite-details {
+    grid-template-columns: 1fr;
+  }
+
+  .invite-login-shell .login-form-panel {
+    padding: 16px;
   }
 }

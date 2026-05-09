@@ -1,6 +1,12 @@
 import { useMemo } from "react";
 import { useERP } from "../context/useERP";
-import { assinaturaGratisPadrao, getPlanoConfig, getPlanoNivel } from "../config/planos";
+import {
+  assinaturaGratisPadrao,
+  getLimiteUsuariosEfetivo,
+  getPlanoConfig,
+  getPlanoNivel,
+  normalizarLimiteUsuariosManual,
+} from "../config/planos";
 
 export function usePlano() {
   const {
@@ -23,6 +29,14 @@ export function usePlano() {
     const assinaturaAtiva = status === "active";
 
     const limiteEmpresas = limites.empresas;
+    const limiteUsuariosPlano = limites.usuarios;
+    const limiteUsuariosManual = normalizarLimiteUsuariosManual(
+      assinatura.limiteUsuariosManual
+    );
+    const limiteUsuariosEfetivo = getLimiteUsuariosEfetivo(
+      planoAtual,
+      limiteUsuariosManual
+    );
     const limiteVendasMes = limites.vendasMes;
 
     const podeCriarEmpresa =
@@ -42,6 +56,7 @@ export function usePlano() {
       isProfissional: planoAtual === "profissional",
       isPremium: planoAtual === "premium",
       podeCriarEmpresa,
+      podeCriarUsuarioEmpresa: isAdminMaster || assinaturaAtiva,
       podeUsarVendas:
         isAdminMaster || assinaturaAtiva && Boolean(limites.vendas),
       podeUsarDRE: isAdminMaster || assinaturaAtiva && Boolean(limites.dre),
@@ -62,6 +77,10 @@ export function usePlano() {
       podeUsarCRMFollowUp:
         isAdminMaster || assinaturaAtiva && Boolean(limites.crmFollowUp),
       limiteEmpresas: isAdminMaster ? null : limiteEmpresas,
+      limiteUsuarios: isAdminMaster ? null : limiteUsuariosEfetivo,
+      limiteUsuariosPlano,
+      limiteUsuariosManual,
+      limiteUsuariosEfetivo,
       limiteVendasMes: isAdminMaster ? null : limiteVendasMes,
     };
   }, [assinaturaUsuario, empresas, isAdminMaster, perfilCarregando]);
