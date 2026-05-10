@@ -1,8 +1,30 @@
+const nodemailer = require("nodemailer");
+
 const getEmailFrom = () =>
   process.env.EMAIL_FROM ||
   process.env.RESEND_FROM_EMAIL ||
   process.env.SENDGRID_FROM_EMAIL ||
   "Renovar ERP <convites@renovarerp.com.br>";
+
+const isSmtpConfigurado = () =>
+  Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+
+const parseSmtpSecure = () => {
+  const valor = String(process.env.SMTP_SECURE || "").trim().toLowerCase();
+
+  if (["true", "1", "yes", "sim"].includes(valor)) return true;
+  if (["false", "0", "no", "nao", "não"].includes(valor)) return false;
+
+  return Number(process.env.SMTP_PORT || 0) === 465;
+};
+
+const getSmtpPort = () => {
+  const port = Number(process.env.SMTP_PORT || "");
+
+  if (Number.isFinite(port) && port > 0) return port;
+
+  return parseSmtpSecure() ? 465 : 587;
+};
 
 const escapeHtml = (value) =>
   String(value || "")
@@ -106,6 +128,35 @@ const enviarComSendGrid = async ({ assunto, html, texto, para }) => {
   };
 };
 
+const enviarComSmtp = async ({ assunto, html, texto, para }) => {
+  const transport = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: getSmtpPort(),
+    secure: parseSmtpSecure(),
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+
+  const response = await transport.sendMail({
+    from: getEmailFrom(),
+    to: para,
+    subject: assunto,
+    text: texto,
+    html,
+  });
+
+  return {
+    provider: "smtp",
+    response: {
+      messageId: response.messageId || null,
+      accepted: response.accepted || [],
+      rejected: response.rejected || [],
+    },
+  };
+};
+
 const enviarEmailConvite = async ({ nome, nomeEmpresa, perfil, linkConvite, para }) => {
   const assunto = "Voce foi convidado para acessar o Renovar ERP";
   const { html, texto } = montarConteudoConvite({
@@ -114,6 +165,10 @@ const enviarEmailConvite = async ({ nome, nomeEmpresa, perfil, linkConvite, para
     perfil,
     linkConvite,
   });
+
+  if (isSmtpConfigurado()) {
+    return enviarComSmtp({ assunto, html, texto, para });
+  }
 
   if (process.env.RESEND_API_KEY) {
     return enviarComResend({ assunto, html, texto, para });
@@ -124,7 +179,7 @@ const enviarEmailConvite = async ({ nome, nomeEmpresa, perfil, linkConvite, para
   }
 
   const error = new Error(
-    "Nenhum provedor de email configurado. Configure RESEND_API_KEY ou SENDGRID_API_KEY."
+    "Nenhum provedor de email configurado. Configure SMTP_HOST/SMTP_USER/SMTP_PASS, RESEND_API_KEY ou SENDGRID_API_KEY."
   );
   error.code = "EMAIL_PROVIDER_NOT_CONFIGURED";
   throw error;

@@ -39,6 +39,11 @@ FIREBASE_SERVICE_ACCOUNT_JSON={}
 CORS_ORIGINS=https://renovarerp.com.br,http://localhost:5173,http://127.0.0.1:5173
 ALLOW_PRODUCTION_PAYMENTS=false
 EMAIL_FROM="Renovar ERP <convites@renovarerp.com.br>"
+SMTP_HOST=
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=
+SMTP_PASS=
 RESEND_API_KEY=
 SENDGRID_API_KEY=
 ```
@@ -47,9 +52,12 @@ SENDGRID_API_KEY=
 
 Para envio real de convites, configure um provedor de email:
 
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`: credenciais SMTP, por exemplo Hostinger.
 - `RESEND_API_KEY`: chave da Resend.
 - `SENDGRID_API_KEY`: chave da SendGrid, usada se Resend nao estiver configurada.
 - `EMAIL_FROM`: remetente validado no provedor, por exemplo `Renovar ERP <convites@seudominio.com>`.
+
+Quando SMTP estiver configurado, ele sera usado primeiro. Se SMTP nao estiver configurado, o backend tenta Resend e depois SendGrid.
 
 Nao coloque chaves reais no React ou no repositorio.
 
@@ -112,7 +120,7 @@ O endpoint valida se o usuario autenticado e Admin Master ou Administrador da Em
 
 - Não commitar `.env`.
 - Não expor `MERCADO_PAGO_ACCESS_TOKEN` no React.
-- Não expor `RESEND_API_KEY` ou `SENDGRID_API_KEY` no React.
+- Não expor `SMTP_PASS`, `RESEND_API_KEY` ou `SENDGRID_API_KEY` no React.
 - Não ativar plano no clique do botão.
 - O webhook sempre consulta o Mercado Pago antes de atualizar assinatura.
 - Por enquanto `ALLOW_PRODUCTION_PAYMENTS=false` mantém o fluxo preso a token `TEST-`.

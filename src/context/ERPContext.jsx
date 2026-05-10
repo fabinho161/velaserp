@@ -28,7 +28,10 @@ import {
 
 const assinaturaPadrao = assinaturaGratisPadrao;
 const DIAS_EXPIRACAO_CONVITE = 7;
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:10000";
+const API_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_URL ||
+  "http://localhost:10000";
 
 const gerarTokenConvite = () => {
   if (globalThis.crypto?.randomUUID) {
@@ -641,7 +644,24 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     if (!user || !token) return false;
 
     try {
-      const idToken = await user.getIdToken();
+      const usuarioAuth = auth.currentUser;
+
+      console.info("Firebase Auth antes de enviar convite", {
+        currentUser: Boolean(usuarioAuth),
+        uid: usuarioAuth?.uid || null,
+      });
+
+      if (!usuarioAuth) {
+        throw new Error("Usuario autenticado nao encontrado.");
+      }
+
+      const idToken = await usuarioAuth.getIdToken(true);
+
+      console.info("Firebase ID Token para convite gerado", {
+        uid: usuarioAuth.uid,
+        tokenLength: idToken.length,
+      });
+
       const response = await fetch(`${API_URL}/api/convites/enviar`, {
         method: "POST",
         headers: {
