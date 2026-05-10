@@ -5,7 +5,7 @@ import { doc, getDoc, runTransaction } from "firebase/firestore";
 import { CheckCircle2, Clock3, LogOut, ShieldAlert } from "lucide-react";
 import { auth, db } from "../firebase";
 import Login from "./Login";
-import { getPerfilEmpresaConfig } from "../config/perfisEmpresa";
+import { getPerfilEmpresaConfig, normalizarRoleEmpresa } from "../config/perfisEmpresa";
 import { useToast } from "../context/useToast";
 
 const dataSistema = (valor) => {
@@ -153,6 +153,17 @@ export default function AceitarConvite() {
           throw new Error("O e-mail autenticado nao corresponde ao convite.");
         }
 
+        const roleConvite = normalizarRoleEmpresa(dadosConvite);
+
+        console.info("Aceite de convite validado", {
+          conviteId: token,
+          empresaId: dadosConvite.empresaId,
+          usuarioEmpresaId: dadosConvite.usuarioEmpresaId,
+          uidAuth: usuarioAuth.uid,
+          role: roleConvite,
+          roleOriginal: dadosConvite.role || dadosConvite.perfil || dadosConvite.profile || null,
+        });
+
         const usuarioEmpresaRef = doc(
           db,
           "users",
@@ -183,7 +194,7 @@ export default function AceitarConvite() {
           usuarioEmpresaId: dadosConvite.usuarioEmpresaId,
           conviteToken: token,
           email: dadosConvite.email,
-          perfil: dadosConvite.perfil,
+          role: roleConvite,
           status: "ativo",
           convitePendente: false,
           vinculadoPorConvite: true,
@@ -192,6 +203,7 @@ export default function AceitarConvite() {
         };
 
         transaction.update(usuarioEmpresaRef, {
+          role: roleConvite,
           status: "ativo",
           uidAuth: usuarioAuth.uid,
           convitePendente: false,
@@ -203,6 +215,7 @@ export default function AceitarConvite() {
           status: "aceito",
           aceitoEm: agora,
           uidAuth: usuarioAuth.uid,
+          role: roleConvite,
           atualizadoEm: agora,
         });
 
@@ -219,6 +232,12 @@ export default function AceitarConvite() {
       });
 
       localStorage.setItem(`renovarEmpresaAtiva_${usuarioAuth.uid}`, convite.empresaId);
+      console.info("Aceite de convite concluido", {
+        conviteId: token,
+        empresaId: convite.empresaId,
+        uidAuth: usuarioAuth.uid,
+        role: normalizarRoleEmpresa(convite),
+      });
       showToast("Convite aceito com sucesso.", "success");
       navigate("/");
     } catch (error) {
@@ -236,7 +255,7 @@ export default function AceitarConvite() {
   };
 
   const perfilLabel = convite
-    ? getPerfilEmpresaConfig(convite.perfil).label
+    ? getPerfilEmpresaConfig(normalizarRoleEmpresa(convite)).label
     : "Perfil nao informado";
 
   return (

@@ -10,12 +10,13 @@ import {
   PERFIS_EMPRESA,
   PERFIL_DONO_EMPRESA,
   getPerfilEmpresaConfig,
+  normalizarRoleEmpresa,
 } from "../config/perfisEmpresa";
 
 const usuarioInicial = {
   nome: "",
   email: "",
-  perfil: "visualizacao",
+  role: "visualizacao",
 };
 
 const formatarDataSistema = (valor) => {
@@ -228,14 +229,14 @@ export default function UsuariosEmpresa() {
     setForm({
       nome: usuarioEmpresa.nome || "",
       email: usuarioEmpresa.email || "",
-      perfil: usuarioEmpresa.perfil || "visualizacao",
+      role: normalizarRoleEmpresa(usuarioEmpresa),
     });
   };
 
   const salvarPerfil = async () => {
     if (!usuarioEditando) return;
 
-    if (usuarioEditando.dono && form.perfil !== PERFIL_DONO_EMPRESA) {
+    if (usuarioEditando.dono && form.role !== PERFIL_DONO_EMPRESA) {
       showToast("O dono da empresa deve permanecer como administrador.", "warning");
       return;
     }
@@ -244,7 +245,7 @@ export default function UsuariosEmpresa() {
 
     try {
       const atualizado = await atualizarUsuarioEmpresa(usuarioEditando.id, {
-        perfil: form.perfil,
+        role: normalizarRoleEmpresa(form.role),
       });
 
       if (atualizado) {
@@ -421,7 +422,9 @@ export default function UsuariosEmpresa() {
 
               <tbody>
                 {usuariosOrdenados.map((usuarioEmpresa) => {
-                  const perfilConfig = getPerfilEmpresaConfig(usuarioEmpresa.perfil);
+                  const perfilConfig = getPerfilEmpresaConfig(
+                    normalizarRoleEmpresa(usuarioEmpresa)
+                  );
                   const statusAtual = normalizarStatus(usuarioEmpresa.status);
                   const usuarioAtual =
                     usuarioEmpresa.uidAuth &&
@@ -569,8 +572,8 @@ export default function UsuariosEmpresa() {
               <label>
                 Perfil
                 <select
-                  value={form.perfil}
-                  onChange={(e) => setForm({ ...form, perfil: e.target.value })}
+                  value={form.role}
+                  onChange={(e) => setForm({ ...form, role: e.target.value })}
                 >
                   {Object.entries(PERFIS_EMPRESA).map(([key, perfil]) => (
                     <option key={key} value={key}>
@@ -611,9 +614,9 @@ export default function UsuariosEmpresa() {
               <label>
                 Perfil
                 <select
-                  value={form.perfil}
+                  value={form.role}
                   disabled={usuarioEditando.dono}
-                  onChange={(e) => setForm({ ...form, perfil: e.target.value })}
+                  onChange={(e) => setForm({ ...form, role: e.target.value })}
                 >
                   {Object.entries(PERFIS_EMPRESA).map(([key, perfil]) => (
                     <option key={key} value={key}>

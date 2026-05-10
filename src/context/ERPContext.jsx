@@ -22,6 +22,7 @@ import {
 import {
   PERFIL_DONO_EMPRESA,
   getPermissoesPerfilEmpresa,
+  normalizarRoleEmpresa,
   perfilEmpresaSomenteLeitura,
   temPermissaoEmpresa,
 } from "../config/perfisEmpresa";
@@ -58,7 +59,9 @@ const montarIndiceConvite = ({
   usuarioEmpresaId,
   nome,
   email,
+  role,
   perfil,
+  profile,
   nomeEmpresa,
   criadoEm,
   expiraEm,
@@ -69,7 +72,7 @@ const montarIndiceConvite = ({
   usuarioEmpresaId,
   nome,
   email,
-  perfil,
+  role: normalizarRoleEmpresa(role || perfil || profile),
   nomeEmpresa: nomeEmpresa || "",
   status: "pendente",
   criadoEm,
@@ -79,7 +82,7 @@ const montarIndiceConvite = ({
 const montarDadosDonoEmpresa = (usuario, dadosAtuais = {}) => ({
   nome: usuario.displayName || dadosAtuais.nome || usuario.email || "Dono da conta",
   email: usuario.email || dadosAtuais.email || "",
-  perfil: PERFIL_DONO_EMPRESA,
+  role: PERFIL_DONO_EMPRESA,
   status: "ativo",
   uidAuth: usuario.uid,
   atualizadoEm: new Date(),
@@ -610,7 +613,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
         id: user.uid,
         nome: user.displayName || user.email || "Dono da conta",
         email: user.email || "",
-        perfil: PERFIL_DONO_EMPRESA,
+        role: PERFIL_DONO_EMPRESA,
         status: "ativo",
         uidAuth: user.uid,
         convitePendente: false,
@@ -621,7 +624,9 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     return null;
   }, [empresaOwnerUid, user, usuariosEmpresa]);
 
-  const perfilEmpresaAtual = usuarioEmpresaAtual?.perfil || PERFIL_DONO_EMPRESA;
+  const perfilEmpresaAtual = normalizarRoleEmpresa(
+    usuarioEmpresaAtual || PERFIL_DONO_EMPRESA
+  );
   const permissoesEmpresaAtual = useMemo(
     () => getPermissoesPerfilEmpresa(perfilEmpresaAtual),
     [perfilEmpresaAtual]
@@ -692,7 +697,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     }
   }, [showToast, user]);
 
-  const criarUsuarioEmpresa = useCallback(async ({ nome, email, perfil }) => {
+  const criarUsuarioEmpresa = useCallback(async ({ nome, email, role, perfil }) => {
     const usuariosEmpresaRef = getUsuariosEmpresaRef();
 
     if (!user || !empresaId || !usuariosEmpresaRef) {
@@ -702,8 +707,9 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
 
     const nomeTratado = String(nome || "").trim();
     const emailTratado = String(email || "").trim().toLowerCase();
+    const roleTratado = normalizarRoleEmpresa(role || perfil);
 
-    if (!nomeTratado || !emailTratado || !perfil) {
+    if (!nomeTratado || !emailTratado || !roleTratado) {
       showToast("Preencha nome, e-mail e perfil do usuÃ¡rio.", "warning");
       return false;
     }
@@ -743,7 +749,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     const dadosUsuarioEmpresa = {
       nome: nomeTratado,
       email: emailTratado,
-      perfil,
+      role: roleTratado,
       status: "pendente",
       uidAuth: null,
       criadoEm,
@@ -769,7 +775,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
         usuarioEmpresaId: usuarioEmpresaRef.id,
         nome: nomeTratado,
         email: emailTratado,
-        perfil,
+        role: roleTratado,
         nomeEmpresa: empresaAtual?.nome || "",
         criadoEm,
         expiraEm,
@@ -809,8 +815,18 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     if (!usuarioEmpresaRef) return false;
 
     try {
+      const dadosAtualizados = { ...dados };
+
+      if (dadosAtualizados.role || dadosAtualizados.perfil || dadosAtualizados.profile) {
+        dadosAtualizados.role = normalizarRoleEmpresa(
+          dadosAtualizados.role || dadosAtualizados.perfil || dadosAtualizados.profile
+        );
+        delete dadosAtualizados.perfil;
+        delete dadosAtualizados.profile;
+      }
+
       await updateDoc(usuarioEmpresaRef, {
-        ...dados,
+        ...dadosAtualizados,
         atualizadoEm: new Date(),
       });
       return true;
@@ -876,7 +892,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
         usuarioEmpresaId: id,
         nome: usuarioEmpresa.nome || "",
         email: usuarioEmpresa.email || "",
-        perfil: usuarioEmpresa.perfil || "visualizacao",
+        role: normalizarRoleEmpresa(usuarioEmpresa),
         nomeEmpresa: empresaAtual?.nome || "",
         criadoEm,
         expiraEm,

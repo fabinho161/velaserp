@@ -1,6 +1,7 @@
-const PERFIL_ADMIN_EMPRESA = "administrador_empresa";
+const ROLE_ADMIN_EMPRESA = "administrador_empresa";
+const ROLE_EMPRESA_PADRAO = "visualizacao";
 
-const PERFIS_EMPRESA_LABELS = {
+const ROLES_EMPRESA_LABELS = {
   administrador_empresa: "Administrador da Empresa",
   financeiro: "Financeiro",
   producao: "Producao",
@@ -9,13 +10,24 @@ const PERFIS_EMPRESA_LABELS = {
   visualizacao: "Visualizacao",
 };
 
-const getPerfilEmpresaLabel = (perfil) =>
-  PERFIS_EMPRESA_LABELS[perfil] || PERFIS_EMPRESA_LABELS.visualizacao;
+const normalizarRoleEmpresa = (valor = ROLE_EMPRESA_PADRAO) => {
+  const role =
+    typeof valor === "object"
+      ? valor?.role || valor?.perfil || valor?.profile
+      : valor;
+  const roleTratado = String(role || ROLE_EMPRESA_PADRAO).trim();
 
-const isPerfilAdminEmpresa = (perfil) => perfil === PERFIL_ADMIN_EMPRESA;
+  return ROLES_EMPRESA_LABELS[roleTratado] ? roleTratado : ROLE_EMPRESA_PADRAO;
+};
+
+const getRoleEmpresaLabel = (role) =>
+  ROLES_EMPRESA_LABELS[normalizarRoleEmpresa(role)] || ROLES_EMPRESA_LABELS.visualizacao;
+
+const isRoleAdminEmpresa = (role) => normalizarRoleEmpresa(role) === ROLE_ADMIN_EMPRESA;
 
 module.exports = {
-  getPerfilEmpresaLabel,
-  isPerfilAdminEmpresa,
-  PERFIL_ADMIN_EMPRESA,
+  getRoleEmpresaLabel,
+  isRoleAdminEmpresa,
+  normalizarRoleEmpresa,
+  ROLE_ADMIN_EMPRESA,
 };

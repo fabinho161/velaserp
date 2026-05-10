@@ -3,8 +3,9 @@ const authFirebase = require("../middlewares/authFirebase");
 const { FieldValue, getDb } = require("../firebaseAdmin");
 const { enviarEmailConvite } = require("../services/emailConvites");
 const {
-  getPerfilEmpresaLabel,
-  isPerfilAdminEmpresa,
+  getRoleEmpresaLabel,
+  isRoleAdminEmpresa,
+  normalizarRoleEmpresa,
 } = require("../utils/perfisEmpresa");
 const {
   logAuditoriaError,
@@ -59,11 +60,19 @@ const podeEnviarConvite = async ({ db, empresaRef, uid }) => {
   }
 
   const usuarioEmpresa = await carregarUsuarioEmpresaAtual(empresaRef, uid);
+  const role = normalizarRoleEmpresa(usuarioEmpresa);
+
+  console.info("Permissao para envio de convite avaliada", {
+    uid,
+    usuarioEmpresaId: usuarioEmpresa?.id || null,
+    status: usuarioEmpresa?.status || null,
+    role,
+  });
 
   return Boolean(
     usuarioEmpresa &&
     normalizarStatus(usuarioEmpresa.status) === "ativo" &&
-    isPerfilAdminEmpresa(usuarioEmpresa.perfil)
+    isRoleAdminEmpresa(role)
   );
 };
 
@@ -236,7 +245,23 @@ router.post("/enviar", authFirebase, async (req, res) => {
     const emailDestino = normalizarEmail(convite.email);
     const nomeEmpresa = empresaSnapshot.data()?.nome || "Empresa Renovar ERP";
     const linkConvite = `${getFrontendBaseUrl()}/aceitar-convite/${token}`;
-    const perfil = getPerfilEmpresaLabel(convite.perfil || usuarioEmpresa.perfil);
+    const role = normalizarRoleEmpresa(
+      convite.role ||
+        usuarioEmpresa.role ||
+        convite.perfil ||
+        usuarioEmpresa.perfil ||
+        convite.profile ||
+        usuarioEmpresa.profile
+    );
+    const perfil = getRoleEmpresaLabel(role);
+
+    console.info("Role do convite resolvido para envio", {
+      token,
+      usuarioEmpresaId: convite.usuarioEmpresaId,
+      role,
+      roleConvite: convite.role || null,
+      roleUsuarioEmpresa: usuarioEmpresa.role || null,
+    });
 
     try {
       const resultado = await enviarEmailConvite({

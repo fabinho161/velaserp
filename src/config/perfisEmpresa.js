@@ -67,16 +67,26 @@ export const PERFIS_EMPRESA = {
 export const PERFIL_EMPRESA_PADRAO = "visualizacao";
 export const PERFIL_DONO_EMPRESA = "administrador_empresa";
 
-export const getPerfilEmpresaConfig = (perfil = PERFIL_EMPRESA_PADRAO) =>
-  PERFIS_EMPRESA[perfil] || PERFIS_EMPRESA[PERFIL_EMPRESA_PADRAO];
+export const normalizarRoleEmpresa = (valor = PERFIL_EMPRESA_PADRAO) => {
+  const role =
+    typeof valor === "object"
+      ? valor?.role || valor?.perfil || valor?.profile
+      : valor;
+  const roleTratado = String(role || PERFIL_EMPRESA_PADRAO).trim();
 
-export const getPermissoesPerfilEmpresa = (perfil) =>
-  getPerfilEmpresaConfig(perfil).permissoes || [];
+  return PERFIS_EMPRESA[roleTratado] ? roleTratado : PERFIL_EMPRESA_PADRAO;
+};
 
-export const temPermissaoEmpresa = (perfil, permissao) => {
-  const permissoes = getPermissoesPerfilEmpresa(perfil);
+export const getPerfilEmpresaConfig = (role = PERFIL_EMPRESA_PADRAO) =>
+  PERFIS_EMPRESA[normalizarRoleEmpresa(role)] || PERFIS_EMPRESA[PERFIL_EMPRESA_PADRAO];
+
+export const getPermissoesPerfilEmpresa = (role) =>
+  getPerfilEmpresaConfig(role).permissoes || [];
+
+export const temPermissaoEmpresa = (role, permissao) => {
+  const permissoes = getPermissoesPerfilEmpresa(role);
   return permissoes.includes("*") || permissoes.includes(permissao);
 };
 
-export const perfilEmpresaSomenteLeitura = (perfil) =>
-  Boolean(getPerfilEmpresaConfig(perfil).somenteLeitura);
+export const perfilEmpresaSomenteLeitura = (role) =>
+  Boolean(getPerfilEmpresaConfig(role).somenteLeitura);
