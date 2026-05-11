@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import {
+  BookOpen,
   LayoutDashboard,
   Package,
   Boxes,
@@ -29,6 +30,7 @@ const NOME_SAAS = "Renovar ERP";
 
 export default function Sidebar() {
   const { configuracoes, isAdminMaster, temPermissaoEmpresaAtual } = useERP();
+  const location = useLocation();
   const {
     podeUsarCRMComercial,
     podeUsarRelatoriosAvancados,
@@ -38,6 +40,7 @@ export default function Sidebar() {
 
   const podeVerMenu = (permissao, permitidoPorPlano = true) =>
     permitidoPorPlano && temPermissaoEmpresaAtual?.(permissao);
+  const estaEmAdminSaaS = location.pathname.startsWith("/admin");
 
   const menuSections = [
     {
@@ -93,6 +96,18 @@ export default function Sidebar() {
         podeVerMenu(PERMISSOES_EMPRESA.usuariosEmpresa) &&
           { path: "/usuarios-empresa", label: "Usuarios da Empresa", icon: Users },
       ].filter(Boolean),
+    },
+    {
+      title: "Ajuda",
+      items: estaEmAdminSaaS
+        ? []
+        : [
+            {
+              path: "/central-aprendizagem",
+              label: "Central de Aprendizagem",
+              icon: BookOpen,
+            },
+          ],
     },
     {
       title: "Administracao",

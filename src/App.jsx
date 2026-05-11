@@ -29,6 +29,7 @@ import ParametrosEmpresa from "./pages/ParametrosEmpresa";
 import PagamentoRetorno from "./pages/PagamentoRetorno";
 import UsuariosEmpresa from "./pages/UsuariosEmpresa";
 import AceitarConvite from "./pages/AceitarConvite";
+import CentralAprendizagem from "./pages/CentralAprendizagem";
 
 function AuthenticatedApp() {
   const {
@@ -168,6 +169,14 @@ function AuthenticatedApp() {
             element={(
               <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.usuariosEmpresa}>
                 <UsuariosEmpresa />
+              </EmpresaPermissionRoute>
+            )}
+          />
+          <Route
+            path="/central-aprendizagem"
+            element={(
+              <EmpresaPermissionRoute>
+                <CentralAprendizagem />
               </EmpresaPermissionRoute>
             )}
           />
