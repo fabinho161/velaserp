@@ -151,12 +151,6 @@ export default function AceitarConvite() {
         `renovarEmpresaAtiva_${usuarioAuth.uid}`,
         data.empresaId || convite.empresaId
       );
-      console.info("Aceite de convite concluido", {
-        conviteId: token,
-        empresaId: data.empresaId || convite.empresaId,
-        uidAuth: usuarioAuth.uid,
-        role: data.role || normalizarRoleEmpresa(convite),
-      });
       showToast("Convite aceito com sucesso.", "success");
       navigate("/", { replace: true });
     } catch (error) {

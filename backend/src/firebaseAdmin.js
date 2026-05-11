@@ -51,11 +51,6 @@ const getFirebaseApp = () => {
     projectId: firebaseProjectId || undefined,
   });
 
-  console.info("Firebase Admin inicializado", {
-    projectId: firebaseProjectId,
-    clientEmail: serviceAccount.client_email,
-  });
-
   return firebaseApp;
 };
 

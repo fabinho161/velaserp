@@ -651,21 +651,11 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     try {
       const usuarioAuth = auth.currentUser;
 
-      console.info("Firebase Auth antes de enviar convite", {
-        currentUser: Boolean(usuarioAuth),
-        uid: usuarioAuth?.uid || null,
-      });
-
       if (!usuarioAuth) {
         throw new Error("Usuario autenticado nao encontrado.");
       }
 
       const idToken = await usuarioAuth.getIdToken(true);
-
-      console.info("Firebase ID Token para convite gerado", {
-        uid: usuarioAuth.uid,
-        tokenLength: idToken.length,
-      });
 
       const response = await fetch(`${API_URL}/api/convites/enviar`, {
         method: "POST",

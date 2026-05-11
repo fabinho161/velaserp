@@ -62,13 +62,6 @@ const podeEnviarConvite = async ({ db, empresaRef, uid }) => {
   const usuarioEmpresa = await carregarUsuarioEmpresaAtual(empresaRef, uid);
   const role = normalizarRoleEmpresa(usuarioEmpresa);
 
-  console.info("Permissao para envio de convite avaliada", {
-    uid,
-    usuarioEmpresaId: usuarioEmpresa?.id || null,
-    status: usuarioEmpresa?.status || null,
-    role,
-  });
-
   return Boolean(
     usuarioEmpresa &&
     normalizarStatus(usuarioEmpresa.status) === "ativo" &&
@@ -328,14 +321,6 @@ router.post("/aceitar", authFirebase, async (req, res) => {
       };
     });
 
-    console.info("Convite aceito via backend", {
-      uid,
-      token,
-      empresaId: resultado.empresaId,
-      usuarioEmpresaId: resultado.usuarioEmpresaId,
-      role: resultado.role,
-    });
-
     res.json({
       ok: true,
       ...resultado,
@@ -472,14 +457,6 @@ router.post("/enviar", authFirebase, async (req, res) => {
         usuarioEmpresa.profile
     );
     const perfil = getRoleEmpresaLabel(role);
-
-    console.info("Role do convite resolvido para envio", {
-      token,
-      usuarioEmpresaId: convite.usuarioEmpresaId,
-      role,
-      roleConvite: convite.role || null,
-      roleUsuarioEmpresa: usuarioEmpresa.role || null,
-    });
 
     try {
       const resultado = await enviarEmailConvite({
