@@ -691,7 +691,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     const usuariosEmpresaRef = getUsuariosEmpresaRef();
 
     if (!user || !empresaId || !usuariosEmpresaRef) {
-      showToast("Empresa ainda nÃ£o carregou. Aguarde e tente novamente.", "warning");
+      showToast("Empresa ainda não carregou. Aguarde e tente novamente.", "warning");
       return false;
     }
 
@@ -700,7 +700,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     const roleTratado = normalizarRoleEmpresa(role || perfil);
 
     if (!nomeTratado || !emailTratado || !roleTratado) {
-      showToast("Preencha nome, e-mail e perfil do usuÃ¡rio.", "warning");
+      showToast("Preencha nome, e-mail e perfil do usuário.", "warning");
       return false;
     }
 
@@ -716,7 +716,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     const totalUsuarios = Math.max(usuariosEmpresa.length, 1);
 
     if (!adminMaster && limiteUsuarios !== null && totalUsuarios >= limiteUsuarios) {
-      showToast("Limite de usuÃ¡rios atingido para este plano. Entre em contato para liberar usuÃ¡rios adicionais.", "warning");
+      showToast("Limite de usuários atingido para este plano. Entre em contato para liberar usuários adicionais.", "warning");
       return false;
     }
 
@@ -726,7 +726,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     );
 
     if (emailDuplicado) {
-      showToast("JÃ¡ existe um usuÃ¡rio com este e-mail nesta empresa.", "warning");
+      showToast("Já existe um usuário com este e-mail nesta empresa.", "warning");
       return false;
     }
 
@@ -822,7 +822,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
       return true;
     } catch (error) {
       console.error("Erro ao atualizar usuÃ¡rio da empresa:", error);
-      showToast("Erro ao atualizar usuÃ¡rio da empresa.", "error");
+      showToast("Erro ao atualizar usuário da empresa.", "error");
       return false;
     }
   }, [getUsuarioEmpresaDocRef, showToast]);
@@ -953,7 +953,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
       return true;
     } catch (error) {
       console.error("Erro ao excluir usuÃ¡rio da empresa:", error);
-      showToast("Erro ao excluir usuÃ¡rio da empresa.", "error");
+      showToast("Erro ao excluir usuário da empresa.", "error");
       return false;
     }
   }, [getUsuarioEmpresaDocRef, showToast, usuariosEmpresa]);
