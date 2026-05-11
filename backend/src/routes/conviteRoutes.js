@@ -139,6 +139,224 @@ const registrarLogEnvio = async ({
   await batch.commit();
 };
 
+router.post("/aceitar", authFirebase, async (req, res) => {
+  const db = getDb();
+  const uid = req.user.uid;
+  const emailAuth = normalizarEmail(req.user.email);
+  const token = String(req.body?.token || "").trim();
+
+  if (!token) {
+    res.status(400).json({
+      ok: false,
+      error: "Token do convite nao informado.",
+    });
+    return;
+  }
+
+  if (!emailAuth) {
+    res.status(401).json({
+      ok: false,
+      error: "Usuario autenticado sem e-mail valido.",
+    });
+    return;
+  }
+
+  const conviteRef = db.collection("convitesEmpresa").doc(token);
+
+  try {
+    const resultado = await db.runTransaction(async (transaction) => {
+      const conviteSnapshot = await transaction.get(conviteRef);
+
+      if (!conviteSnapshot.exists) {
+        const error = new Error("Convite nao encontrado.");
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const convite = conviteSnapshot.data();
+      const expiraEm = toDate(convite.expiraEm);
+
+      if (normalizarStatus(convite.status) !== "pendente") {
+        const error = new Error("Este convite ja foi usado ou cancelado.");
+        error.statusCode = 409;
+        throw error;
+      }
+
+      if (!expiraEm || expiraEm.getTime() < Date.now()) {
+        const error = new Error("Este convite expirou.");
+        error.statusCode = 409;
+        throw error;
+      }
+
+      if (emailAuth !== normalizarEmail(convite.email)) {
+        const error = new Error("O e-mail autenticado nao corresponde ao convite.");
+        error.statusCode = 403;
+        throw error;
+      }
+
+      if (!convite.ownerUid || !convite.empresaId || !convite.usuarioEmpresaId) {
+        const error = new Error("Convite sem vinculo valido com empresa.");
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const empresaRef = db
+        .collection("users")
+        .doc(convite.ownerUid)
+        .collection("empresas")
+        .doc(convite.empresaId);
+      const usuarioEmpresaRef = empresaRef
+        .collection("usuariosEmpresa")
+        .doc(convite.usuarioEmpresaId);
+      const empresaUsuarioRef = db
+        .collection("users")
+        .doc(uid)
+        .collection("empresas")
+        .doc(convite.empresaId);
+      const vinculoUsuarioRef = db
+        .collection("usuariosPorAuth")
+        .doc(uid)
+        .collection("empresas")
+        .doc(convite.empresaId);
+
+      const [
+        empresaSnapshot,
+        usuarioEmpresaSnapshot,
+        empresaUsuarioSnapshot,
+        vinculoUsuarioSnapshot,
+      ] = await Promise.all([
+        transaction.get(empresaRef),
+        transaction.get(usuarioEmpresaRef),
+        transaction.get(empresaUsuarioRef),
+        transaction.get(vinculoUsuarioRef),
+      ]);
+
+      if (!empresaSnapshot.exists || !usuarioEmpresaSnapshot.exists) {
+        const error = new Error("Empresa ou usuario convidado nao encontrado.");
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const empresa = empresaSnapshot.data();
+      const usuarioEmpresa = usuarioEmpresaSnapshot.data();
+
+      if (normalizarStatus(usuarioEmpresa.status) !== "pendente") {
+        const error = new Error("Este usuario ja foi ativado ou removido.");
+        error.statusCode = 409;
+        throw error;
+      }
+
+      if (normalizarEmail(usuarioEmpresa.email) !== normalizarEmail(convite.email)) {
+        const error = new Error("O email do convite nao confere com o usuario da empresa.");
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const role = normalizarRoleEmpresa(
+        convite.role ||
+          usuarioEmpresa.role ||
+          convite.perfil ||
+          usuarioEmpresa.perfil ||
+          convite.profile ||
+          usuarioEmpresa.profile
+      );
+      const agora = FieldValue.serverTimestamp();
+      const dadosVinculoBase = {
+        nome: convite.nomeEmpresa || empresa?.nome || "Empresa convidada",
+        ownerUid: convite.ownerUid,
+        empresaId: convite.empresaId,
+        usuarioEmpresaId: convite.usuarioEmpresaId,
+        conviteToken: token,
+        email: convite.email,
+        role,
+        status: "ativo",
+        convitePendente: false,
+        vinculadoPorConvite: true,
+        atualizadoEm: agora,
+      };
+      const dadosEmpresaUsuario = empresaUsuarioSnapshot.exists
+        ? dadosVinculoBase
+        : {
+            ...dadosVinculoBase,
+            criadoEm: agora,
+          };
+      const dadosVinculoUsuario = vinculoUsuarioSnapshot.exists
+        ? dadosVinculoBase
+        : {
+            ...dadosVinculoBase,
+            criadoEm: agora,
+          };
+
+      transaction.update(usuarioEmpresaRef, {
+        role,
+        status: "ativo",
+        uidAuth: uid,
+        convitePendente: false,
+        conviteAceitoEm: agora,
+        vinculadoPorConvite: true,
+        atualizadoEm: agora,
+      });
+
+      transaction.update(conviteRef, {
+        status: "aceito",
+        aceitoEm: agora,
+        uidAuth: uid,
+        role,
+        atualizadoEm: agora,
+      });
+
+      transaction.set(
+        empresaUsuarioRef,
+        {
+          ...dadosEmpresaUsuario,
+          vinculadaPorConvite: true,
+        },
+        { merge: true }
+      );
+
+      transaction.set(
+        vinculoUsuarioRef,
+        dadosVinculoUsuario,
+        { merge: true }
+      );
+
+      return {
+        empresaId: convite.empresaId,
+        ownerUid: convite.ownerUid,
+        usuarioEmpresaId: convite.usuarioEmpresaId,
+        role,
+      };
+    });
+
+    console.info("Convite aceito via backend", {
+      uid,
+      token,
+      empresaId: resultado.empresaId,
+      usuarioEmpresaId: resultado.usuarioEmpresaId,
+      role: resultado.role,
+    });
+
+    res.json({
+      ok: true,
+      ...resultado,
+    });
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+
+    console.error("Erro ao aceitar convite", {
+      uid,
+      token,
+      statusCode,
+      message: error.message,
+    });
+
+    res.status(statusCode).json({
+      ok: false,
+      error: error.message || "Nao foi possivel aceitar o convite.",
+    });
+  }
+});
+
 router.post("/enviar", authFirebase, async (req, res) => {
   const db = getDb();
   const uid = req.user.uid;

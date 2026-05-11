@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc, runTransaction } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { CheckCircle2, Clock3, LogOut, ShieldAlert } from "lucide-react";
 import { auth, db } from "../firebase";
 import Login from "./Login";
@@ -29,6 +29,10 @@ const formatarDataHora = (valor) => {
 };
 
 const emailNormalizado = (email) => String(email || "").trim().toLowerCase();
+const API_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_URL ||
+  "http://localhost:10000";
 
 export default function AceitarConvite() {
   const { token } = useParams();
@@ -128,118 +132,33 @@ export default function AceitarConvite() {
     setAceitando(true);
 
     try {
-      const agora = new Date();
-      const conviteRef = doc(db, "convitesEmpresa", token);
-
-      await runTransaction(db, async (transaction) => {
-        const conviteSnapshot = await transaction.get(conviteRef);
-
-        if (!conviteSnapshot.exists()) {
-          throw new Error("Convite nao encontrado.");
-        }
-
-        const dadosConvite = conviteSnapshot.data();
-        const expiraEm = dataSistema(dadosConvite.expiraEm);
-
-        if (dadosConvite.status !== "pendente") {
-          throw new Error("Este convite ja foi usado ou cancelado.");
-        }
-
-        if (!expiraEm || expiraEm.getTime() < Date.now()) {
-          throw new Error("Este convite expirou.");
-        }
-
-        if (emailNormalizado(usuarioAuth.email) !== emailNormalizado(dadosConvite.email)) {
-          throw new Error("O e-mail autenticado nao corresponde ao convite.");
-        }
-
-        const roleConvite = normalizarRoleEmpresa(dadosConvite);
-
-        console.info("Aceite de convite validado", {
-          conviteId: token,
-          empresaId: dadosConvite.empresaId,
-          usuarioEmpresaId: dadosConvite.usuarioEmpresaId,
-          uidAuth: usuarioAuth.uid,
-          role: roleConvite,
-          roleOriginal: dadosConvite.role || dadosConvite.perfil || dadosConvite.profile || null,
-        });
-
-        const usuarioEmpresaRef = doc(
-          db,
-          "users",
-          dadosConvite.ownerUid,
-          "empresas",
-          dadosConvite.empresaId,
-          "usuariosEmpresa",
-          dadosConvite.usuarioEmpresaId
-        );
-        const empresaUsuarioRef = doc(
-          db,
-          "users",
-          usuarioAuth.uid,
-          "empresas",
-          dadosConvite.empresaId
-        );
-        const vinculoUsuarioRef = doc(
-          db,
-          "usuariosPorAuth",
-          usuarioAuth.uid,
-          "empresas",
-          dadosConvite.empresaId
-        );
-        const dadosVinculo = {
-          nome: dadosConvite.nomeEmpresa || "Empresa convidada",
-          ownerUid: dadosConvite.ownerUid,
-          empresaId: dadosConvite.empresaId,
-          usuarioEmpresaId: dadosConvite.usuarioEmpresaId,
-          conviteToken: token,
-          email: dadosConvite.email,
-          role: roleConvite,
-          status: "ativo",
-          convitePendente: false,
-          vinculadoPorConvite: true,
-          atualizadoEm: agora,
-          criadoEm: agora,
-        };
-
-        transaction.update(usuarioEmpresaRef, {
-          role: roleConvite,
-          status: "ativo",
-          uidAuth: usuarioAuth.uid,
-          convitePendente: false,
-          conviteAceitoEm: agora,
-          atualizadoEm: agora,
-        });
-
-        transaction.update(conviteRef, {
-          status: "aceito",
-          aceitoEm: agora,
-          uidAuth: usuarioAuth.uid,
-          role: roleConvite,
-          atualizadoEm: agora,
-        });
-
-        transaction.set(
-          empresaUsuarioRef,
-          {
-            ...dadosVinculo,
-            vinculadaPorConvite: true,
-          },
-          { merge: true }
-        );
-
-        transaction.set(vinculoUsuarioRef, dadosVinculo, { merge: true });
+      const idToken = await usuarioAuth.getIdToken(true);
+      const response = await fetch(`${API_URL}/api/convites/aceitar`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ token }),
       });
+      const data = await response.json().catch(() => ({}));
 
-      localStorage.setItem(`renovarEmpresaAtiva_${usuarioAuth.uid}`, convite.empresaId);
+      if (!response.ok || data.ok === false) {
+        throw new Error(data.error || "Nao foi possivel aceitar o convite.");
+      }
+
+      localStorage.setItem(
+        `renovarEmpresaAtiva_${usuarioAuth.uid}`,
+        data.empresaId || convite.empresaId
+      );
       console.info("Aceite de convite concluido", {
         conviteId: token,
-        empresaId: convite.empresaId,
+        empresaId: data.empresaId || convite.empresaId,
         uidAuth: usuarioAuth.uid,
-        role: normalizarRoleEmpresa(convite),
+        role: data.role || normalizarRoleEmpresa(convite),
       });
       showToast("Convite aceito com sucesso.", "success");
-      navigate("/");
+      navigate("/", { replace: true });
     } catch (error) {
       console.error("Erro ao aceitar convite:", error);
       showToast(error.message || "Nao foi possivel aceitar o convite.", "error");
