@@ -52,7 +52,7 @@ service cloud.firestore {
         resource.data.ownerUid != userId &&
         request.resource.data.ownerUid == resource.data.ownerUid &&
         request.resource.data.conviteToken == resource.data.conviteToken &&
-        request.resource.data.perfil == resource.data.perfil &&
+        request.resource.data.role == resource.data.role &&
         request.resource.data.status == resource.data.status;
     }
 
@@ -91,11 +91,18 @@ service cloud.firestore {
 
     function hasCompanyAdminLink(linkPath, ownerUid, empresaId) {
       return hasValidCompanyLink(linkPath, ownerUid, empresaId) &&
-        get(companyUserPath(
-          ownerUid,
-          empresaId,
-          get(linkPath).data.usuarioEmpresaId
-        )).data.perfil == "administrador_empresa";
+        (
+          get(companyUserPath(
+            ownerUid,
+            empresaId,
+            get(linkPath).data.usuarioEmpresaId
+          )).data.role == "administrador_empresa" ||
+          get(companyUserPath(
+            ownerUid,
+            empresaId,
+            get(linkPath).data.usuarioEmpresaId
+          )).data.perfil == "administrador_empresa"
+        );
     }
 
     function hasCompanyAdminMembership(ownerUid, empresaId) {
@@ -158,8 +165,18 @@ service cloud.firestore {
         request.resource.data.status == "ativo" &&
         request.resource.data.convitePendente == false &&
         request.resource.data.email == resource.data.email &&
-        request.resource.data.perfil == resource.data.perfil &&
+        request.resource.data.role == resource.data.role &&
         request.resource.data.dono == resource.data.dono;
+    }
+
+    function isCreatingInitialOwnerCompanyUser(ownerUid, usuarioId) {
+      return isOwner(ownerUid) &&
+        usuarioId == request.auth.uid &&
+        request.resource.data.uidAuth == request.auth.uid &&
+        request.resource.data.role == "administrador_empresa" &&
+        request.resource.data.status == "ativo" &&
+        request.resource.data.convitePendente == false &&
+        request.resource.data.dono == true;
     }
 
     function isAcceptingConvite() {
@@ -205,10 +222,12 @@ service cloud.firestore {
 
         match /usuariosEmpresa/{usuarioId} {
           allow read: if hasCompanyAccess(userId, empresaId);
-          allow create: if isCompanyAdmin(userId, empresaId) &&
+          allow create: if (
+            isCompanyAdmin(userId, empresaId) &&
             request.resource.data.status == "pendente" &&
             request.resource.data.convitePendente == true &&
-            request.resource.data.uidAuth == null;
+            request.resource.data.uidAuth == null
+          ) || isCreatingInitialOwnerCompanyUser(userId, usuarioId);
           allow update: if isCompanyAdmin(userId, empresaId) ||
             isAcceptingUsuarioEmpresa(userId, empresaId);
           allow delete: if isCompanyAdmin(userId, empresaId) && resource.data.dono != true;

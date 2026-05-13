@@ -20,7 +20,9 @@ import {
   getPlanoConfig,
 } from "../config/planos";
 import {
+  PERFIL_EMPRESA_PADRAO,
   PERFIL_DONO_EMPRESA,
+  PERMISSOES_EMPRESA,
   getPermissoesPerfilEmpresa,
   normalizarRoleEmpresa,
   perfilEmpresaSomenteLeitura,
@@ -33,6 +35,15 @@ const API_URL =
   import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_URL ||
   "http://localhost:10000";
+
+const COLECOES_POR_PERMISSAO = [
+  ["insumos", PERMISSOES_EMPRESA.insumos],
+  ["produtos", PERMISSOES_EMPRESA.produtos],
+  ["producoes", PERMISSOES_EMPRESA.producao],
+  ["vendas", PERMISSOES_EMPRESA.vendas],
+  ["despesas", PERMISSOES_EMPRESA.financeiro],
+  ["clientesComerciais", PERMISSOES_EMPRESA.crm],
+];
 
 const gerarTokenConvite = () => {
   if (globalThis.crypto?.randomUUID) {
@@ -160,6 +171,7 @@ export function ERPProvider({ children }) {
       if (!usuario) {
         setPerfilCarregando(false);
         setUsuariosEmpresaCarregando(false);
+        localStorage.removeItem("renovarEmpresaAtiva");
         return;
       }
 
@@ -183,9 +195,25 @@ export function ERPProvider({ children }) {
             }, { merge: true });
           }
 
-          const assinaturaSnapshot = await getDoc(assinaturaRef);
+          const empresasRef = collection(db, "users", usuario.uid, "empresas");
+          const vinculosRef = collection(db, "usuariosPorAuth", usuario.uid, "empresas");
+          const [assinaturaSnapshot, empresasSnapshot, vinculosSnapshot] = await Promise.all([
+            getDoc(assinaturaRef),
+            getDocs(empresasRef),
+            getDocs(vinculosRef),
+          ]);
+          const possuiEmpresaPropria = empresasSnapshot.docs.some((docSnap) => {
+            const dados = docSnap.data();
+            return !dados?.ownerUid || dados.ownerUid === usuario.uid;
+          });
+          const possuiSomenteVinculoConvite =
+            !possuiEmpresaPropria &&
+            (
+              !vinculosSnapshot.empty ||
+              empresasSnapshot.docs.some((docSnap) => docSnap.data()?.ownerUid !== usuario.uid)
+            );
 
-          if (!assinaturaSnapshot.exists()) {
+          if (!assinaturaSnapshot.exists() && !possuiSomenteVinculoConvite) {
             await setDoc(assinaturaRef, {
               ...assinaturaPadrao,
               atualizadoEm: new Date(),
@@ -260,6 +288,7 @@ export function ERPProvider({ children }) {
 
       const empresaSelecionada = empresas.find((empresa) => empresa.id === id);
 
+      setUsuariosEmpresaCarregando(true);
       setEmpresaId(id);
       setEmpresaOwnerUid(empresaSelecionada?.ownerUid || user?.uid || null);
       setUsuariosEmpresa([]);
@@ -324,8 +353,10 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     };
 
     setEmpresas([...empresas, empresaCriada]);
+    setUsuariosEmpresaCarregando(true);
     setEmpresaId(novaEmpresa.id);
     setEmpresaOwnerUid(user.uid);
+    localStorage.setItem(`renovarEmpresaAtiva_${user.uid}`, novaEmpresa.id);
     showToast("Empresa criada com sucesso!", "success");
   } catch (error) {
     console.error("Erro ao criar empresa:", error);
@@ -339,6 +370,8 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
   // ================================
     useEffect(() => {
       if (!user) return;
+
+      let cancelado = false;
 
       const carregarEmpresas = async () => {
         try {
@@ -365,9 +398,13 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
               usuario: user,
             });
 
+            if (cancelado) return;
+
             setEmpresas([empresaCriada]);
+            setUsuariosEmpresaCarregando(true);
             setEmpresaId(novaEmpresa.id);
             setEmpresaOwnerUid(user.uid);
+            localStorage.setItem(`renovarEmpresaAtiva_${user.uid}`, novaEmpresa.id);
           } else {
             const mapaEmpresas = new Map();
 
@@ -402,19 +439,20 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
               )
             );
 
+            if (cancelado) return;
+
             setEmpresas(lista);
 
             const empresaSalva = localStorage.getItem(`renovarEmpresaAtiva_${user.uid}`);
-            const empresaAtualValida = empresaId
-              ? lista.find((empresa) => empresa.id === empresaId)
-              : null;
             const empresaSalvaValida = empresaSalva
               ? lista.find((empresa) => empresa.id === empresaSalva)
               : null;
-            const empresaSelecionada = empresaAtualValida || empresaSalvaValida || lista[0];
+            const empresaSelecionada = empresaSalvaValida || lista[0];
 
+            setUsuariosEmpresaCarregando(true);
             setEmpresaId(empresaSelecionada.id);
             setEmpresaOwnerUid(empresaSelecionada.ownerUid || user.uid);
+            localStorage.setItem(`renovarEmpresaAtiva_${user.uid}`, empresaSelecionada.id);
           }
         } catch (error) {
           console.error("Erro ao carregar empresas:", error);
@@ -423,7 +461,11 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
       };
 
       carregarEmpresas();
-    }, [empresaId, showToast, user]);
+
+      return () => {
+        cancelado = true;
+      };
+    }, [showToast, user]);
 
     
     // ================================
@@ -523,8 +565,52 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
   useEffect(() => {
     if (!user || !empresaId) return;
 
-    const ouvirColecao = (colecao, setState) =>
-      onSnapshot(
+    const usuarioVinculado = usuariosEmpresa.find(
+      (usuarioEmpresa) => usuarioEmpresa.uidAuth === user.uid
+    );
+    const usuarioDono =
+      (empresaOwnerUid || user.uid) === user.uid
+        ? {
+            role: PERFIL_DONO_EMPRESA,
+            status: "ativo",
+          }
+        : null;
+    const usuarioAtual = usuarioVinculado || usuarioDono;
+
+    if (usuariosEmpresaCarregando || !usuarioAtual) return;
+
+    const perfilAtual = normalizarRoleEmpresa(usuarioAtual);
+    const permissoesPorColecao = new Map(COLECOES_POR_PERMISSAO);
+    const settersPorColecao = {
+      insumos: setInsumos,
+      produtos: setProdutos,
+      producoes: setProducoes,
+      vendas: setVendas,
+      despesas: setDespesas,
+      clientesComerciais: setClientesComerciais,
+    };
+
+    Object.entries(settersPorColecao).forEach(([colecao, setState]) => {
+      const permissao = permissoesPorColecao.get(colecao);
+
+      if (
+        usuarioAtual.status === "inativo" ||
+        (permissao && !temPermissaoEmpresa(perfilAtual, permissao))
+      ) {
+        setState([]);
+      }
+    });
+
+    if (usuarioAtual.status === "inativo") return;
+
+    const ouvirColecao = (colecao, setState) => {
+      const permissao = permissoesPorColecao.get(colecao);
+
+      if (permissao && !temPermissaoEmpresa(perfilAtual, permissao)) {
+        return () => {};
+      }
+
+      return onSnapshot(
         getRef(colecao),
         (snapshot) => {
           const lista = snapshot.docs.map((docSnap) => ({
@@ -538,6 +624,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
           console.error(`Erro ao ouvir ${colecao}:`, error);
         }
       );
+    };
 
     const unsubscribers = [
       ouvirColecao("insumos", setInsumos),
@@ -569,7 +656,14 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     return () => {
       unsubscribers.forEach((unsubscribe) => unsubscribe());
     };
-  }, [user, empresaId, getRef]);
+  }, [
+    user,
+    empresaId,
+    empresaOwnerUid,
+    getRef,
+    usuariosEmpresa,
+    usuariosEmpresaCarregando,
+  ]);
 
   useEffect(() => {
     const usuariosEmpresaRef = getUsuariosEmpresaRef();
@@ -625,7 +719,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
   }, [empresaOwnerUid, user, usuariosEmpresa]);
 
   const perfilEmpresaAtual = normalizarRoleEmpresa(
-    usuarioEmpresaAtual || PERFIL_DONO_EMPRESA
+    usuarioEmpresaAtual || PERFIL_EMPRESA_PADRAO
   );
   const permissoesEmpresaAtual = useMemo(
     () => getPermissoesPerfilEmpresa(perfilEmpresaAtual),

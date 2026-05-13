@@ -13,10 +13,19 @@ export function usePlano() {
     assinaturaUsuario,
     perfilCarregando,
     isAdminMaster,
+    user,
+    empresaOwnerUid,
+    usuarioEmpresaAtual,
     empresas = [],
   } = useERP() || {};
 
   return useMemo(() => {
+    const usuarioConvidadoEmpresa = Boolean(
+      user?.uid &&
+      empresaOwnerUid &&
+      empresaOwnerUid !== user.uid &&
+      usuarioEmpresaAtual?.uidAuth === user.uid
+    );
     const assinatura = {
       ...assinaturaGratisPadrao,
       ...(assinaturaUsuario || {}),
@@ -58,24 +67,39 @@ export function usePlano() {
       podeCriarEmpresa,
       podeCriarUsuarioEmpresa: isAdminMaster || assinaturaAtiva,
       podeUsarVendas:
-        isAdminMaster || assinaturaAtiva && Boolean(limites.vendas),
-      podeUsarDRE: isAdminMaster || assinaturaAtiva && Boolean(limites.dre),
+        isAdminMaster || usuarioConvidadoEmpresa || assinaturaAtiva && Boolean(limites.vendas),
+      podeUsarDRE:
+        isAdminMaster || usuarioConvidadoEmpresa || assinaturaAtiva && Boolean(limites.dre),
       podeGerarPDF:
-        isAdminMaster || assinaturaAtiva && Boolean(limites.pdfProfissional),
+        isAdminMaster ||
+        usuarioConvidadoEmpresa ||
+        assinaturaAtiva && Boolean(limites.pdfProfissional),
       podePersonalizarSistema:
-        isAdminMaster || assinaturaAtiva && Boolean(limites.personalizacao),
+        isAdminMaster ||
+        usuarioConvidadoEmpresa ||
+        assinaturaAtiva && Boolean(limites.personalizacao),
       podeUsarRelatoriosAvancados:
-        isAdminMaster || assinaturaAtiva && Boolean(limites.relatoriosAvancados),
+        isAdminMaster ||
+        usuarioConvidadoEmpresa ||
+        assinaturaAtiva && Boolean(limites.relatoriosAvancados),
       podeUsarCRMComercial:
-        isAdminMaster || assinaturaAtiva && Boolean(limites.crmComercial),
+        isAdminMaster ||
+        usuarioConvidadoEmpresa ||
+        assinaturaAtiva && Boolean(limites.crmComercial),
       podeUsarCRMBasico:
-        isAdminMaster || assinaturaAtiva && Boolean(limites.crmBasico),
+        isAdminMaster || usuarioConvidadoEmpresa || assinaturaAtiva && Boolean(limites.crmBasico),
       podeUsarCRMInteligente:
-        isAdminMaster || assinaturaAtiva && Boolean(limites.crmInteligente),
+        isAdminMaster ||
+        usuarioConvidadoEmpresa ||
+        assinaturaAtiva && Boolean(limites.crmInteligente),
       podeUsarCRMWhatsapp:
-        isAdminMaster || assinaturaAtiva && Boolean(limites.crmWhatsapp),
+        isAdminMaster ||
+        usuarioConvidadoEmpresa ||
+        assinaturaAtiva && Boolean(limites.crmWhatsapp),
       podeUsarCRMFollowUp:
-        isAdminMaster || assinaturaAtiva && Boolean(limites.crmFollowUp),
+        isAdminMaster ||
+        usuarioConvidadoEmpresa ||
+        assinaturaAtiva && Boolean(limites.crmFollowUp),
       limiteEmpresas: isAdminMaster ? null : limiteEmpresas,
       limiteUsuarios: isAdminMaster ? null : limiteUsuariosEfetivo,
       limiteUsuariosPlano,
@@ -83,5 +107,13 @@ export function usePlano() {
       limiteUsuariosEfetivo,
       limiteVendasMes: isAdminMaster ? null : limiteVendasMes,
     };
-  }, [assinaturaUsuario, empresas, isAdminMaster, perfilCarregando]);
+  }, [
+    assinaturaUsuario,
+    empresaOwnerUid,
+    empresas,
+    isAdminMaster,
+    perfilCarregando,
+    user,
+    usuarioEmpresaAtual,
+  ]);
 }
