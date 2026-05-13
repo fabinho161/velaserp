@@ -31,6 +31,13 @@ const formatarDataSistema = (valor) => {
 const normalizarStatus = (status = "pendente") =>
   String(status || "pendente").trim().toLowerCase();
 
+const prioridadeStatus = {
+  ativo: 0,
+  pendente: 1,
+  inativo: 2,
+  removido: 3,
+};
+
 const getStatusBadgeClass = (status) => {
   const normalizado = normalizarStatus(status);
 
@@ -104,6 +111,17 @@ export default function UsuariosEmpresa() {
       [...usuariosEmpresa].sort((a, b) => {
         if (a.dono && !b.dono) return -1;
         if (!a.dono && b.dono) return 1;
+
+        const emailA = String(a.email || "").trim().toLowerCase();
+        const emailB = String(b.email || "").trim().toLowerCase();
+
+        if (emailA && emailA === emailB) {
+          return (
+            (prioridadeStatus[normalizarStatus(a.status)] ?? 4) -
+            (prioridadeStatus[normalizarStatus(b.status)] ?? 4)
+          );
+        }
+
         return String(a.nome || a.email || "").localeCompare(
           String(b.nome || b.email || ""),
           "pt-BR",

@@ -46,6 +46,46 @@ const COLECOES_POR_PERMISSAO = [
 ];
 
 const STATUS_USUARIO_EMPRESA_BLOQUEADO = new Set(["inativo", "removido"]);
+const PRIORIDADE_STATUS_USUARIO_EMPRESA = {
+  ativo: 0,
+  pendente: 1,
+  inativo: 2,
+  removido: 3,
+};
+
+const normalizarStatusUsuarioEmpresa = (status) =>
+  String(status || "").trim().toLowerCase();
+
+const ordenarUsuariosEmpresaPorAcesso = (a = {}, b = {}) => {
+  const prioridadeA =
+    PRIORIDADE_STATUS_USUARIO_EMPRESA[normalizarStatusUsuarioEmpresa(a.status)] ?? 4;
+  const prioridadeB =
+    PRIORIDADE_STATUS_USUARIO_EMPRESA[normalizarStatusUsuarioEmpresa(b.status)] ?? 4;
+
+  if (prioridadeA !== prioridadeB) return prioridadeA - prioridadeB;
+
+  const dataA = a.atualizadoEm?.toMillis?.() || a.criadoEm?.toMillis?.() || 0;
+  const dataB = b.atualizadoEm?.toMillis?.() || b.criadoEm?.toMillis?.() || 0;
+
+  return dataB - dataA;
+};
+
+const escolherUsuarioEmpresaAtual = (usuariosEmpresa = [], usuario) => {
+  if (!usuario) return null;
+
+  const emailUsuario = String(usuario.email || "").trim().toLowerCase();
+
+  return usuariosEmpresa
+    .filter((usuarioEmpresa) => {
+      const mesmoUid = usuarioEmpresa.uidAuth && usuarioEmpresa.uidAuth === usuario.uid;
+      const mesmoEmail =
+        emailUsuario &&
+        String(usuarioEmpresa.email || "").trim().toLowerCase() === emailUsuario;
+
+      return mesmoUid || mesmoEmail;
+    })
+    .sort(ordenarUsuariosEmpresaPorAcesso)[0] || null;
+};
 
 const gerarTokenConvite = () => {
   if (globalThis.crypto?.randomUUID) {
@@ -567,9 +607,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
   useEffect(() => {
     if (!user || !empresaId) return;
 
-    const usuarioVinculado = usuariosEmpresa.find(
-      (usuarioEmpresa) => usuarioEmpresa.uidAuth === user.uid
-    );
+    const usuarioVinculado = escolherUsuarioEmpresaAtual(usuariosEmpresa, user);
     const usuarioDono =
       (empresaOwnerUid || user.uid) === user.uid
         ? {
@@ -597,7 +635,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
 
       if (
         STATUS_USUARIO_EMPRESA_BLOQUEADO.has(
-          String(usuarioAtual.status || "").trim().toLowerCase()
+          normalizarStatusUsuarioEmpresa(usuarioAtual.status)
         ) ||
         (permissao && !temPermissaoEmpresa(perfilAtual, permissao))
       ) {
@@ -607,7 +645,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
 
     if (
       STATUS_USUARIO_EMPRESA_BLOQUEADO.has(
-        String(usuarioAtual.status || "").trim().toLowerCase()
+        normalizarStatusUsuarioEmpresa(usuarioAtual.status)
       )
     ) {
       return;
@@ -706,9 +744,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
   const usuarioEmpresaAtual = useMemo(() => {
     if (!user) return null;
 
-    const usuarioVinculado = usuariosEmpresa.find(
-      (usuarioEmpresa) => usuarioEmpresa.uidAuth === user.uid
-    );
+    const usuarioVinculado = escolherUsuarioEmpresaAtual(usuariosEmpresa, user);
 
     if (usuarioVinculado) return usuarioVinculado;
 
@@ -736,7 +772,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     [perfilEmpresaAtual]
   );
   const usuarioEmpresaInativo = STATUS_USUARIO_EMPRESA_BLOQUEADO.has(
-    String(usuarioEmpresaAtual?.status || "").trim().toLowerCase()
+    normalizarStatusUsuarioEmpresa(usuarioEmpresaAtual?.status)
   );
   const usuarioEmpresaSomenteLeitura = perfilEmpresaSomenteLeitura(perfilEmpresaAtual);
 
@@ -822,7 +858,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     const totalUsuarios = Math.max(
       usuariosEmpresa.filter(
         (usuarioEmpresa) =>
-          String(usuarioEmpresa.status || "").trim().toLowerCase() !== "removido"
+          normalizarStatusUsuarioEmpresa(usuarioEmpresa.status) !== "removido"
       ).length,
       1
     );
@@ -834,7 +870,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
 
     const emailDuplicado = usuariosEmpresa.some(
       (usuarioEmpresa) =>
-        String(usuarioEmpresa.status || "").trim().toLowerCase() !== "removido" &&
+        normalizarStatusUsuarioEmpresa(usuarioEmpresa.status) !== "removido" &&
         String(usuarioEmpresa.email || "").trim().toLowerCase() === emailTratado
     );
 
@@ -845,7 +881,17 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
 
     const ownerUid = empresaOwnerUid || user.uid;
     const empresaAtual = empresas.find((empresa) => empresa.id === empresaId);
-    const usuarioEmpresaRef = doc(usuariosEmpresaRef);
+    const usuarioRemovidoMesmoEmail = usuariosEmpresa
+      .filter(
+        (usuarioEmpresa) =>
+          !usuarioEmpresa.dono &&
+          normalizarStatusUsuarioEmpresa(usuarioEmpresa.status) === "removido" &&
+          String(usuarioEmpresa.email || "").trim().toLowerCase() === emailTratado
+      )
+      .sort(ordenarUsuariosEmpresaPorAcesso)[0];
+    const usuarioEmpresaRef = usuarioRemovidoMesmoEmail
+      ? doc(usuariosEmpresaRef, usuarioRemovidoMesmoEmail.id)
+      : doc(usuariosEmpresaRef);
     const conviteToken = gerarTokenConvite();
     const { criadoEm, expiraEm } = criarDatasConvite();
     const conviteRef = doc(db, "convitesEmpresa", conviteToken);
@@ -864,11 +910,15 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
       conviteExpiraEm: expiraEm,
       conviteAceitoEm: null,
       dono: false,
+      reconviteEm: usuarioRemovidoMesmoEmail ? criadoEm : null,
+      reconvitePor: usuarioRemovidoMesmoEmail ? user.uid : null,
     };
 
     const batch = writeBatch(db);
 
-    batch.set(usuarioEmpresaRef, dadosUsuarioEmpresa);
+    batch.set(usuarioEmpresaRef, dadosUsuarioEmpresa, {
+      merge: Boolean(usuarioRemovidoMesmoEmail),
+    });
     batch.set(
       conviteRef,
       montarIndiceConvite({

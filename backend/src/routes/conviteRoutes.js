@@ -18,6 +18,29 @@ const router = express.Router();
 const normalizarEmail = (email) => String(email || "").trim().toLowerCase();
 
 const normalizarStatus = (status) => String(status || "").trim().toLowerCase();
+const PRIORIDADE_STATUS_USUARIO = {
+  ativo: 0,
+  pendente: 1,
+  inativo: 2,
+  removido: 3,
+};
+
+const prioridadeUsuarioEmpresa = (usuarioEmpresa = {}) => {
+  const status = normalizarStatus(usuarioEmpresa.status);
+  return PRIORIDADE_STATUS_USUARIO[status] ?? 4;
+};
+
+const ordenarUsuariosEmpresaPorAcesso = (a, b) => {
+  const prioridadeA = prioridadeUsuarioEmpresa(a);
+  const prioridadeB = prioridadeUsuarioEmpresa(b);
+
+  if (prioridadeA !== prioridadeB) return prioridadeA - prioridadeB;
+
+  const dataA = a.atualizadoEm?.toMillis?.() || a.criadoEm?.toMillis?.() || 0;
+  const dataB = b.atualizadoEm?.toMillis?.() || b.criadoEm?.toMillis?.() || 0;
+
+  return dataB - dataA;
+};
 
 const toDate = (valor) => {
   if (!valor) return null;
@@ -42,16 +65,16 @@ const carregarUsuarioEmpresaAtual = async (empresaRef, uid) => {
   const snapshot = await empresaRef
     .collection("usuariosEmpresa")
     .where("uidAuth", "==", uid)
-    .limit(1)
     .get();
 
   if (snapshot.empty) return null;
 
-  const docSnap = snapshot.docs[0];
-  return {
-    id: docSnap.id,
-    ...docSnap.data(),
-  };
+  return snapshot.docs
+    .map((docSnap) => ({
+      id: docSnap.id,
+      ...docSnap.data(),
+    }))
+    .sort(ordenarUsuariosEmpresaPorAcesso)[0];
 };
 
 const podeEnviarConvite = async ({ db, empresaRef, uid }) => {
@@ -223,6 +246,12 @@ router.post("/aceitar", authFirebase, async (req, res) => {
       const usuarioEmpresaRef = empresaRef
         .collection("usuariosEmpresa")
         .doc(convite.usuarioEmpresaId);
+      const usuariosMesmoEmailQuery = empresaRef
+        .collection("usuariosEmpresa")
+        .where("email", "==", normalizarEmail(convite.email));
+      const usuariosMesmoUidQuery = empresaRef
+        .collection("usuariosEmpresa")
+        .where("uidAuth", "==", uid);
       const empresaUsuarioRef = db
         .collection("users")
         .doc(uid)
@@ -237,11 +266,15 @@ router.post("/aceitar", authFirebase, async (req, res) => {
       const [
         empresaSnapshot,
         usuarioEmpresaSnapshot,
+        usuariosMesmoEmailSnapshot,
+        usuariosMesmoUidSnapshot,
         empresaUsuarioSnapshot,
         vinculoUsuarioSnapshot,
       ] = await Promise.all([
         transaction.get(empresaRef),
         transaction.get(usuarioEmpresaRef),
+        transaction.get(usuariosMesmoEmailQuery),
+        transaction.get(usuariosMesmoUidQuery),
         transaction.get(empresaUsuarioRef),
         transaction.get(vinculoUsuarioRef),
       ]);
@@ -301,6 +334,20 @@ router.post("/aceitar", authFirebase, async (req, res) => {
             ...dadosVinculoBase,
             criadoEm: agora,
           };
+      const usuariosConflitantes = new Map();
+
+      [...usuariosMesmoEmailSnapshot.docs, ...usuariosMesmoUidSnapshot.docs].forEach((docSnap) => {
+        if (docSnap.id === usuarioEmpresaRef.id) return;
+
+        const dados = docSnap.data();
+
+        if (dados?.dono === true) return;
+
+        usuariosConflitantes.set(docSnap.id, {
+          ref: docSnap.ref,
+          dados,
+        });
+      });
 
       transaction.update(usuarioEmpresaRef, {
         role,
@@ -310,6 +357,34 @@ router.post("/aceitar", authFirebase, async (req, res) => {
         conviteAceitoEm: agora,
         vinculadoPorConvite: true,
         atualizadoEm: agora,
+      });
+
+      usuariosConflitantes.forEach(({ ref, dados }) => {
+        transaction.set(
+          ref,
+          {
+            status: "removido",
+            convitePendente: false,
+            removidoEm: dados.removidoEm || agora,
+            removidoPor: dados.removidoPor || "sistema_reconvite",
+            substituidoPorUsuarioEmpresaId: convite.usuarioEmpresaId,
+            atualizadoEm: agora,
+          },
+          { merge: true }
+        );
+
+        if (dados.conviteToken && normalizarStatus(dados.status) === "pendente") {
+          transaction.set(
+            db.collection("convitesEmpresa").doc(dados.conviteToken),
+            {
+              status: "cancelado",
+              canceladoEm: agora,
+              canceladoPor: "sistema_reconvite",
+              atualizadoEm: agora,
+            },
+            { merge: true }
+          );
+        }
       });
 
       transaction.update(conviteRef, {
