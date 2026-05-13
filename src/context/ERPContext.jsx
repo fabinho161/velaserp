@@ -45,6 +45,8 @@ const COLECOES_POR_PERMISSAO = [
   ["clientesComerciais", PERMISSOES_EMPRESA.crm],
 ];
 
+const STATUS_USUARIO_EMPRESA_BLOQUEADO = new Set(["inativo", "removido"]);
+
 const gerarTokenConvite = () => {
   if (globalThis.crypto?.randomUUID) {
     return globalThis.crypto.randomUUID().replaceAll("-", "");
@@ -594,14 +596,22 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
       const permissao = permissoesPorColecao.get(colecao);
 
       if (
-        usuarioAtual.status === "inativo" ||
+        STATUS_USUARIO_EMPRESA_BLOQUEADO.has(
+          String(usuarioAtual.status || "").trim().toLowerCase()
+        ) ||
         (permissao && !temPermissaoEmpresa(perfilAtual, permissao))
       ) {
         setState([]);
       }
     });
 
-    if (usuarioAtual.status === "inativo") return;
+    if (
+      STATUS_USUARIO_EMPRESA_BLOQUEADO.has(
+        String(usuarioAtual.status || "").trim().toLowerCase()
+      )
+    ) {
+      return;
+    }
 
     const ouvirColecao = (colecao, setState) => {
       const permissao = permissoesPorColecao.get(colecao);
@@ -725,7 +735,9 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     () => getPermissoesPerfilEmpresa(perfilEmpresaAtual),
     [perfilEmpresaAtual]
   );
-  const usuarioEmpresaInativo = usuarioEmpresaAtual?.status === "inativo";
+  const usuarioEmpresaInativo = STATUS_USUARIO_EMPRESA_BLOQUEADO.has(
+    String(usuarioEmpresaAtual?.status || "").trim().toLowerCase()
+  );
   const usuarioEmpresaSomenteLeitura = perfilEmpresaSomenteLeitura(perfilEmpresaAtual);
 
   const podeGerenciarUsuariosEmpresa = useMemo(
@@ -807,7 +819,13 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
       assinaturaAtual.limiteUsuariosManual
     );
     const adminMaster = perfilUsuario?.role === "admin_master";
-    const totalUsuarios = Math.max(usuariosEmpresa.length, 1);
+    const totalUsuarios = Math.max(
+      usuariosEmpresa.filter(
+        (usuarioEmpresa) =>
+          String(usuarioEmpresa.status || "").trim().toLowerCase() !== "removido"
+      ).length,
+      1
+    );
 
     if (!adminMaster && limiteUsuarios !== null && totalUsuarios >= limiteUsuarios) {
       showToast("Limite de usuários atingido para este plano. Entre em contato para liberar usuários adicionais.", "warning");
@@ -816,6 +834,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
 
     const emailDuplicado = usuariosEmpresa.some(
       (usuarioEmpresa) =>
+        String(usuarioEmpresa.status || "").trim().toLowerCase() !== "removido" &&
         String(usuarioEmpresa.email || "").trim().toLowerCase() === emailTratado
     );
 
@@ -927,6 +946,43 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
       convitePendente: false,
     });
   }, [atualizarUsuarioEmpresa]);
+
+  const removerUsuarioEmpresa = useCallback(async (id) => {
+    if (!user || !empresaId || !id) return false;
+
+    try {
+      const usuarioAuth = auth.currentUser;
+
+      if (!usuarioAuth) {
+        throw new Error("Usuario autenticado nao encontrado.");
+      }
+
+      const idToken = await usuarioAuth.getIdToken(true);
+      const response = await fetch(`${API_URL}/api/convites/usuarios/remover`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ownerUid: empresaOwnerUid || user.uid,
+          empresaId,
+          usuarioEmpresaId: id,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || data.ok === false) {
+        throw new Error(data.error || "Nao foi possivel remover este usuario.");
+      }
+
+      return true;
+    } catch (error) {
+      console.error("Erro ao remover usuario da empresa:", error);
+      showToast("Nao foi possivel remover este usuario.", "error");
+      return false;
+    }
+  }, [empresaId, empresaOwnerUid, showToast, user]);
 
   const renovarConviteUsuarioEmpresa = useCallback(async (id) => {
     const usuarioEmpresaRef = getUsuarioEmpresaDocRef(id);
@@ -1167,6 +1223,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
         criarUsuarioEmpresa,
         atualizarUsuarioEmpresa,
         desativarUsuarioEmpresa,
+        removerUsuarioEmpresa,
         renovarConviteUsuarioEmpresa,
         enviarConviteEmailUsuarioEmpresa,
         excluirUsuarioEmpresa,

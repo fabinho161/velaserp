@@ -35,7 +35,7 @@ const getStatusBadgeClass = (status) => {
   const normalizado = normalizarStatus(status);
 
   if (normalizado === "ativo") return "badge-success";
-  if (normalizado === "inativo") return "badge-danger";
+  if (normalizado === "inativo" || normalizado === "removido") return "badge-danger";
   return "badge-warning";
 };
 
@@ -43,6 +43,7 @@ const getStatusLabel = (status) => {
   const labels = {
     ativo: "Ativo",
     inativo: "Inativo",
+    removido: "Removido",
     pendente: "Pendente",
   };
 
@@ -81,9 +82,9 @@ export default function UsuariosEmpresa() {
     criarUsuarioEmpresa,
     atualizarUsuarioEmpresa,
     desativarUsuarioEmpresa,
+    removerUsuarioEmpresa,
     renovarConviteUsuarioEmpresa,
     enviarConviteEmailUsuarioEmpresa,
-    excluirUsuarioEmpresa,
   } = useERP();
   const {
     limiteUsuariosEfetivo,
@@ -112,7 +113,12 @@ export default function UsuariosEmpresa() {
     [usuariosEmpresa]
   );
 
-  const totalUsuarios = Math.max(usuariosEmpresa.length, 1);
+  const totalUsuarios = Math.max(
+    usuariosEmpresa.filter(
+      (usuarioEmpresa) => normalizarStatus(usuarioEmpresa.status) !== "removido"
+    ).length,
+    1
+  );
   const usuariosAtivos = usuariosEmpresa.filter(
     (usuarioEmpresa) => normalizarStatus(usuarioEmpresa.status) === "ativo"
   ).length;
@@ -275,6 +281,11 @@ export default function UsuariosEmpresa() {
       return;
     }
 
+    if (statusAtual === "removido") {
+      showToast("Usuarios removidos devem receber um novo convite.", "warning");
+      return;
+    }
+
     const proximoStatus = statusAtual === "ativo" ? "inativo" : "ativo";
     const confirmado = await confirmar(
       `Deseja marcar ${usuarioEmpresa.nome || usuarioEmpresa.email} como ${getStatusLabel(proximoStatus)}?`
@@ -293,27 +304,27 @@ export default function UsuariosEmpresa() {
     });
   };
 
-  const excluirConvite = async (usuarioEmpresa) => {
+  const removerUsuarioDaEmpresa = async (usuarioEmpresa) => {
     if (usuarioEmpresa.dono) {
       showToast("O dono da empresa nao pode ser removido.", "warning");
       return;
     }
 
-    if (normalizarStatus(usuarioEmpresa.status) !== "pendente") {
-      showToast("Apenas convites pendentes podem ser cancelados.", "warning");
+    if (usuarioEmpresa.uidAuth && usuarioEmpresa.uidAuth === user?.uid) {
+      showToast("Voce nao pode remover seu proprio usuario.", "warning");
       return;
     }
 
     const confirmado = await confirmar(
-      `Deseja cancelar o convite de ${usuarioEmpresa.nome || usuarioEmpresa.email}?`
+      `Deseja remover ${usuarioEmpresa.nome || usuarioEmpresa.email} desta empresa?`
     );
 
     if (!confirmado) return;
 
-    const excluido = await excluirUsuarioEmpresa(usuarioEmpresa.id);
+    const removido = await removerUsuarioEmpresa(usuarioEmpresa.id);
 
-    if (excluido) {
-      showToast("Convite cancelado com sucesso.", "success");
+    if (removido) {
+      showToast("Usuário removido da empresa com sucesso.", "success");
     }
   };
 
@@ -508,6 +519,7 @@ export default function UsuariosEmpresa() {
                               disabled:
                                 usuarioEmpresa.dono ||
                                 statusAtual === "pendente" ||
+                                statusAtual === "removido" ||
                                 usuarioAtual,
                               onClick: () => alternarStatusUsuario(usuarioEmpresa),
                             },
@@ -515,7 +527,17 @@ export default function UsuariosEmpresa() {
                               label: "Cancelar convite",
                               danger: true,
                               disabled: statusAtual !== "pendente" || usuarioEmpresa.dono,
-                              onClick: () => excluirConvite(usuarioEmpresa),
+                              onClick: () => removerUsuarioDaEmpresa(usuarioEmpresa),
+                            },
+                            {
+                              label: "Remover da empresa",
+                              danger: true,
+                              disabled:
+                                statusAtual === "pendente" ||
+                                statusAtual === "removido" ||
+                                usuarioEmpresa.dono ||
+                                usuarioAtual,
+                              onClick: () => removerUsuarioDaEmpresa(usuarioEmpresa),
                             },
                           ]}
                         />

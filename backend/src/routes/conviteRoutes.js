@@ -69,6 +69,28 @@ const podeEnviarConvite = async ({ db, empresaRef, uid }) => {
   );
 };
 
+const carregarPermissaoGerenciarUsuarios = async ({ empresaRef, ownerUid, uid }) => {
+  if (ownerUid === uid) {
+    return {
+      permitido: true,
+      motivo: "dono",
+    };
+  }
+
+  const usuarioEmpresa = await carregarUsuarioEmpresaAtual(empresaRef, uid);
+  const role = normalizarRoleEmpresa(usuarioEmpresa);
+
+  return {
+    permitido: Boolean(
+      usuarioEmpresa &&
+        normalizarStatus(usuarioEmpresa.status) === "ativo" &&
+        isRoleAdminEmpresa(role)
+    ),
+    motivo: role,
+    usuarioEmpresa,
+  };
+};
+
 const registrarLogEnvio = async ({
   db,
   conviteRef,
@@ -525,6 +547,195 @@ router.post("/enviar", authFirebase, async (req, res) => {
     res.status(500).json({
       ok: false,
       error: error.message || "Erro ao enviar convite por email.",
+    });
+  }
+});
+
+router.post("/usuarios/remover", authFirebase, async (req, res) => {
+  const db = getDb();
+  const uid = req.user.uid;
+  const ownerUid = String(req.body?.ownerUid || "").trim();
+  const empresaId = String(req.body?.empresaId || "").trim();
+  const usuarioEmpresaId = String(req.body?.usuarioEmpresaId || "").trim();
+
+  if (!ownerUid || !empresaId || !usuarioEmpresaId) {
+    res.status(400).json({
+      ok: false,
+      error: "Dados da empresa ou usuario incompletos.",
+    });
+    return;
+  }
+
+  try {
+    const empresaRef = db
+      .collection("users")
+      .doc(ownerUid)
+      .collection("empresas")
+      .doc(empresaId);
+    const usuarioEmpresaRef = empresaRef
+      .collection("usuariosEmpresa")
+      .doc(usuarioEmpresaId);
+
+    const [empresaSnapshot, usuarioEmpresaSnapshot] = await Promise.all([
+      empresaRef.get(),
+      usuarioEmpresaRef.get(),
+    ]);
+
+    if (!empresaSnapshot.exists || !usuarioEmpresaSnapshot.exists) {
+      res.status(404).json({
+        ok: false,
+        error: "Empresa ou usuario da empresa nao encontrado.",
+      });
+      return;
+    }
+
+    const permissao = await carregarPermissaoGerenciarUsuarios({
+      empresaRef,
+      ownerUid,
+      uid,
+    });
+
+    if (!permissao.permitido) {
+      res.status(403).json({
+        ok: false,
+        error: "Voce nao tem permissao para remover usuarios desta empresa.",
+      });
+      return;
+    }
+
+    const usuarioEmpresa = usuarioEmpresaSnapshot.data();
+    const uidAlvo = String(usuarioEmpresa.uidAuth || "").trim();
+
+    if (usuarioEmpresa.dono === true || uidAlvo === ownerUid || usuarioEmpresaId === ownerUid) {
+      res.status(403).json({
+        ok: false,
+        error: "O dono principal da empresa nao pode ser removido.",
+      });
+      return;
+    }
+
+    if (uidAlvo && uidAlvo === uid) {
+      res.status(403).json({
+        ok: false,
+        error: "Voce nao pode remover seu proprio usuario da empresa.",
+      });
+      return;
+    }
+
+    if (uidAlvo) {
+      const usuarioAuthSnapshot = await db.collection("users").doc(uidAlvo).get();
+      const roleGlobalAlvo = usuarioAuthSnapshot.exists
+        ? usuarioAuthSnapshot.data()?.role
+        : null;
+
+      if (roleGlobalAlvo === "admin_master") {
+        res.status(403).json({
+          ok: false,
+          error: "Admin Master SaaS nao pode ser removido por administrador da empresa.",
+        });
+        return;
+      }
+    }
+
+    const agora = FieldValue.serverTimestamp();
+    const batch = db.batch();
+    const dadosRemocao = {
+      status: "removido",
+      convitePendente: false,
+      removidoEm: agora,
+      removidoPor: uid,
+      atualizadoEm: agora,
+      role: normalizarRoleEmpresa(usuarioEmpresa),
+    };
+
+    batch.set(usuarioEmpresaRef, dadosRemocao, { merge: true });
+
+    if (uidAlvo) {
+      const empresaUsuarioRef = db
+        .collection("users")
+        .doc(uidAlvo)
+        .collection("empresas")
+        .doc(empresaId);
+      const vinculoUsuarioRef = db
+        .collection("usuariosPorAuth")
+        .doc(uidAlvo)
+        .collection("empresas")
+        .doc(empresaId);
+
+      batch.set(
+        empresaUsuarioRef,
+        {
+          status: "removido",
+          removidoEm: agora,
+          removidoPor: uid,
+          atualizadoEm: agora,
+          ownerUid,
+          empresaId,
+          usuarioEmpresaId,
+        },
+        { merge: true }
+      );
+
+      batch.set(
+        vinculoUsuarioRef,
+        {
+          status: "removido",
+          removidoEm: agora,
+          removidoPor: uid,
+          atualizadoEm: agora,
+          ownerUid,
+          empresaId,
+          usuarioEmpresaId,
+        },
+        { merge: true }
+      );
+    }
+
+    if (usuarioEmpresa.conviteToken && normalizarStatus(usuarioEmpresa.status) === "pendente") {
+      batch.set(
+        db.collection("convitesEmpresa").doc(usuarioEmpresa.conviteToken),
+        {
+          status: "cancelado",
+          canceladoEm: agora,
+          canceladoPor: uid,
+          atualizadoEm: agora,
+        },
+        { merge: true }
+      );
+    }
+
+    await batch.commit();
+
+    logAuditoriaInfo("usuariosEmpresa.remover: sucesso", {
+      uid,
+      ownerUid,
+      empresaId,
+      usuarioEmpresaId,
+      uidAlvo: uidAlvo || null,
+    });
+
+    res.json({
+      ok: true,
+      status: "removido",
+      uidAlvo: uidAlvo || null,
+    });
+  } catch (error) {
+    logAuditoriaError("usuariosEmpresa.remover: falha", error, {
+      uid,
+      ownerUid,
+      empresaId,
+      usuarioEmpresaId,
+    });
+    await registrarErroAuditoria(db, "usuariosEmpresa.remover", error, {
+      uid,
+      ownerUid,
+      empresaId,
+      usuarioEmpresaId,
+    });
+
+    res.status(500).json({
+      ok: false,
+      error: "Nao foi possivel remover este usuario.",
     });
   }
 });
