@@ -7,6 +7,52 @@ import ActionMenu from "../components/ActionMenu";
 import { moedaBR, numeroBR } from "../utils/formatters";
 import { useParametros } from "../hooks/useParametros";
 
+const FISCAL_PRODUTO_PADRAO = {
+  ncm: "",
+  cest: "",
+  cfopPadrao: "",
+  origem: "",
+  unidadeTributavel: "",
+  aliquotaIcms: "",
+  aliquotaPis: "",
+  aliquotaCofins: "",
+  aliquotaIpi: "",
+  observacoesFiscais: "",
+};
+
+const ORIGENS_PRODUTO = [
+  { valor: "", label: "Nao informado" },
+  { valor: "0", label: "0 - Nacional" },
+  { valor: "1", label: "1 - Estrangeira - Importacao direta" },
+  { valor: "2", label: "2 - Estrangeira - Adquirida no mercado interno" },
+  { valor: "3", label: "3 - Nacional com conteudo de importacao superior a 40%" },
+  { valor: "4", label: "4 - Nacional conforme processos produtivos basicos" },
+  { valor: "5", label: "5 - Nacional com conteudo de importacao inferior ou igual a 40%" },
+  { valor: "6", label: "6 - Estrangeira - Importacao direta sem similar nacional" },
+  { valor: "7", label: "7 - Estrangeira - Mercado interno sem similar nacional" },
+  { valor: "8", label: "8 - Nacional com conteudo de importacao superior a 70%" },
+];
+
+const normalizarAliquotaFiscal = (valor) => {
+  if (valor === "" || valor === null || valor === undefined) return "";
+
+  const numero = Number(valor);
+  return Number.isFinite(numero) ? numero : "";
+};
+
+const normalizarFiscalProduto = (fiscal = {}) => ({
+  ncm: fiscal.ncm || "",
+  cest: fiscal.cest || "",
+  cfopPadrao: fiscal.cfopPadrao || "",
+  origem: fiscal.origem || "",
+  unidadeTributavel: fiscal.unidadeTributavel || "",
+  aliquotaIcms: normalizarAliquotaFiscal(fiscal.aliquotaIcms),
+  aliquotaPis: normalizarAliquotaFiscal(fiscal.aliquotaPis),
+  aliquotaCofins: normalizarAliquotaFiscal(fiscal.aliquotaCofins),
+  aliquotaIpi: normalizarAliquotaFiscal(fiscal.aliquotaIpi),
+  observacoesFiscais: fiscal.observacoesFiscais || "",
+});
+
 export default function Produtos() {
   // ================================
   // 🔹 CONTEXTO GLOBAL DO ERP
@@ -35,6 +81,7 @@ export default function Produtos() {
     precoVenda: "",
     dataCadastro: "",
     consumos: {},
+    fiscal: FISCAL_PRODUTO_PADRAO,
   });
 
   // ================================
@@ -188,6 +235,17 @@ export default function Produtos() {
     );
   };
 
+  const atualizarFiscalProduto = (campo, valor) => {
+    setForm((atual) => ({
+      ...atual,
+      fiscal: {
+        ...FISCAL_PRODUTO_PADRAO,
+        ...(atual.fiscal || {}),
+        [campo]: valor,
+      },
+    }));
+  };
+
   // ================================
   // 🔹 LIMPAR FORMULÁRIO
   // ================================
@@ -204,6 +262,7 @@ export default function Produtos() {
       precoVenda: "",
       dataCadastro: "",
       consumos: {},
+      fiscal: FISCAL_PRODUTO_PADRAO,
     });
 
     setEditIndex(null);
@@ -247,6 +306,7 @@ export default function Produtos() {
     margem,
     valorUnitario,
     qtdMaco,
+    fiscal: normalizarFiscalProduto(form.fiscal),
   };
 
   if (editIndex !== null) {
@@ -279,6 +339,7 @@ export default function Produtos() {
       precoVenda: produto.precoVenda || "",
       dataCadastro: produto.dataCadastro || "",
       consumos: produto.consumos || {},
+      fiscal: normalizarFiscalProduto(produto.fiscal),
     });
 
     setEditIndex(index);
@@ -472,6 +533,129 @@ export default function Produtos() {
         {editIndex !== null && (
           <div className="edit-alert">Você está editando um produto existente.</div>
         )}
+      </div>
+
+      <br />
+
+      <div className="card section-card">
+        <h3>Dados Fiscais do Produto</h3>
+        <p className="section-description">
+          Campos opcionais para preparar o produto para relatorios tributarios futuros.
+        </p>
+
+        <div className="form-grid">
+          <label>
+            NCM
+            <input
+              placeholder="Ex: 3406.00.00"
+              value={form.fiscal?.ncm || ""}
+              onChange={(e) => atualizarFiscalProduto("ncm", e.target.value)}
+            />
+          </label>
+
+          <label>
+            CEST
+            <input
+              placeholder="Ex: 28.064.00"
+              value={form.fiscal?.cest || ""}
+              onChange={(e) => atualizarFiscalProduto("cest", e.target.value)}
+            />
+          </label>
+
+          <label>
+            CFOP padrao
+            <input
+              placeholder="Ex: 5102"
+              value={form.fiscal?.cfopPadrao || ""}
+              onChange={(e) => atualizarFiscalProduto("cfopPadrao", e.target.value)}
+            />
+          </label>
+
+          <label>
+            Origem
+            <select
+              value={form.fiscal?.origem || ""}
+              onChange={(e) => atualizarFiscalProduto("origem", e.target.value)}
+            >
+              {ORIGENS_PRODUTO.map((origem) => (
+                <option key={origem.valor} value={origem.valor}>
+                  {origem.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Unidade tributavel
+            <input
+              placeholder="Ex: UN, KG, CX"
+              value={form.fiscal?.unidadeTributavel || ""}
+              onChange={(e) =>
+                atualizarFiscalProduto("unidadeTributavel", e.target.value)
+              }
+            />
+          </label>
+
+          <label>
+            Aliquota ICMS (%)
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Ex: 18"
+              value={form.fiscal?.aliquotaIcms || ""}
+              onChange={(e) => atualizarFiscalProduto("aliquotaIcms", e.target.value)}
+            />
+          </label>
+
+          <label>
+            Aliquota PIS (%)
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Ex: 0.65"
+              value={form.fiscal?.aliquotaPis || ""}
+              onChange={(e) => atualizarFiscalProduto("aliquotaPis", e.target.value)}
+            />
+          </label>
+
+          <label>
+            Aliquota COFINS (%)
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Ex: 3"
+              value={form.fiscal?.aliquotaCofins || ""}
+              onChange={(e) => atualizarFiscalProduto("aliquotaCofins", e.target.value)}
+            />
+          </label>
+
+          <label>
+            Aliquota IPI (%)
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Ex: 5"
+              value={form.fiscal?.aliquotaIpi || ""}
+              onChange={(e) => atualizarFiscalProduto("aliquotaIpi", e.target.value)}
+            />
+          </label>
+
+          <label className="form-field-full">
+            Observacoes fiscais
+            <textarea
+              rows="4"
+              placeholder="Informacoes fiscais opcionais para uso futuro em relatorios tributarios."
+              value={form.fiscal?.observacoesFiscais || ""}
+              onChange={(e) =>
+                atualizarFiscalProduto("observacoesFiscais", e.target.value)
+              }
+            />
+          </label>
+        </div>
       </div>
 
       <br />
