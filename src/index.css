@@ -876,6 +876,135 @@ body {
   font-weight: 700;
 }
 
+.fornecedores-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.fornecedores-header {
+  align-items: flex-start;
+}
+
+.fornecedores-eyebrow {
+  display: inline-flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.fornecedores-summary {
+  margin-bottom: 0;
+}
+
+.fornecedores-card {
+  display: grid;
+  gap: 18px;
+}
+
+.fornecedores-card-header,
+.fornecedores-modal-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.fornecedores-title-block {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.fornecedores-title-block h3,
+.fornecedores-modal-header h3 {
+  margin: 8px 0 4px;
+}
+
+.fornecedores-title-block p,
+.fornecedores-modal-header p {
+  margin: 0;
+  color: #64748b;
+}
+
+.fornecedores-main-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.fornecedores-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, 240px);
+  gap: 12px;
+}
+
+.fornecedores-search,
+.fornecedores-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #64748b;
+}
+
+.fornecedores-search input,
+.fornecedores-filter select {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+}
+
+.fornecedores-cell-main {
+  display: grid;
+  gap: 4px;
+}
+
+.fornecedores-cell-main small {
+  color: #64748b;
+}
+
+.fornecedores-modal {
+  max-width: 920px;
+}
+
+.fornecedores-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.fornecedores-form-grid label {
+  display: grid;
+  gap: 6px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.fornecedores-form-wide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 720px) {
+  .fornecedores-toolbar,
+  .fornecedores-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .fornecedores-card-header,
+  .fornecedores-title-block {
+    align-items: flex-start;
+  }
+}
+
 .dashboard-status-list {
   margin-top: 12px;
   display: grid;

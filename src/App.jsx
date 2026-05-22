@@ -20,6 +20,7 @@ import Financeiro from "./pages/Financeiro";
 import Relatorios from "./pages/Relatorios";
 import Produtos from "./pages/Produtos";
 import Insumos from "./pages/Insumos";
+import Fornecedores from "./pages/Fornecedores";
 import ClientesCRM from "./pages/ClientesCRM";
 import Configuracoes from "./pages/Configuracoes";
 import AdminClientes from "./pages/AdminClientes";
@@ -103,6 +104,14 @@ function AuthenticatedApp() {
             element={(
               <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.financeiro}>
                 <Financeiro />
+              </EmpresaPermissionRoute>
+            )}
+          />
+          <Route
+            path="/fornecedores"
+            element={(
+              <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.fornecedores}>
+                <Fornecedores />
               </EmpresaPermissionRoute>
             )}
           />

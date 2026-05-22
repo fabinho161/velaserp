@@ -10,6 +10,7 @@ import {
   ShoppingCart,
   Users,
   Wallet,
+  Truck,
   FileText,
   LogOut,
   Settings,
@@ -78,6 +79,9 @@ export default function Sidebar() {
       items: [
         ...(podeVerMenu(PERMISSOES_EMPRESA.financeiro)
           ? [{ path: "/financeiro", label: "Financeiro", icon: Wallet }]
+          : []),
+        ...(podeVerMenu(PERMISSOES_EMPRESA.fornecedores)
+          ? [{ path: "/fornecedores", label: "Fornecedores", icon: Truck }]
           : []),
         ...(podeVerMenu(PERMISSOES_EMPRESA.relatorios, podeUsarRelatoriosAvancados)
           ? [{ path: "/relatorios", label: "Relatorios", icon: FileText }]

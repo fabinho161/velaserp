@@ -110,6 +110,39 @@ service cloud.firestore {
         hasCompanyAdminLink(userCompanyPath(request.auth.uid, empresaId), ownerUid, empresaId);
     }
 
+    function hasCompanyRoleLink(linkPath, ownerUid, empresaId, roles) {
+      return hasValidCompanyLink(linkPath, ownerUid, empresaId) &&
+        roles.hasAny([
+          get(companyUserPath(
+            ownerUid,
+            empresaId,
+            get(linkPath).data.usuarioEmpresaId
+          )).data.role,
+          get(companyUserPath(
+            ownerUid,
+            empresaId,
+            get(linkPath).data.usuarioEmpresaId
+          )).data.perfil
+        ]);
+    }
+
+    function canManageFornecedores(ownerUid, empresaId) {
+      return isOwner(ownerUid) ||
+        isAdminMaster() ||
+        hasCompanyRoleLink(
+          authCompanyPath(request.auth.uid, empresaId),
+          ownerUid,
+          empresaId,
+          ["administrador_empresa", "producao", "financeiro"]
+        ) ||
+        hasCompanyRoleLink(
+          userCompanyPath(request.auth.uid, empresaId),
+          ownerUid,
+          empresaId,
+          ["administrador_empresa", "producao", "financeiro"]
+        );
+    }
+
     function hasCompanyAccess(ownerUid, empresaId) {
       return isOwner(ownerUid) || isAdminMaster() || hasActiveCompanyMembership(ownerUid, empresaId);
     }
@@ -259,6 +292,10 @@ service cloud.firestore {
 
         match /despesas/{documentId} {
           allow read, write: if hasCompanyAccess(userId, empresaId);
+        }
+
+        match /fornecedores/{documentId} {
+          allow read, write: if canManageFornecedores(userId, empresaId);
         }
 
         match /clientesComerciais/{documentId} {

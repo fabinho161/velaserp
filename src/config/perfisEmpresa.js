@@ -7,6 +7,7 @@ export const PERMISSOES_EMPRESA = {
   vendas: "vendas",
   crm: "crm",
   financeiro: "financeiro",
+  fornecedores: "fornecedores",
   relatorios: "relatorios",
   configuracoes: "configuracoes",
   parametros: "parametros",
@@ -24,6 +25,7 @@ export const PERFIS_EMPRESA = {
     permissoes: [
       PERMISSOES_EMPRESA.dashboard,
       PERMISSOES_EMPRESA.financeiro,
+      PERMISSOES_EMPRESA.fornecedores,
       PERMISSOES_EMPRESA.relatorios,
     ],
   },
@@ -35,6 +37,7 @@ export const PERFIS_EMPRESA = {
       PERMISSOES_EMPRESA.produtos,
       PERMISSOES_EMPRESA.producao,
       PERMISSOES_EMPRESA.estoque,
+      PERMISSOES_EMPRESA.fornecedores,
     ],
   },
   comercial: {
