@@ -64,6 +64,7 @@ export default function Vendas() {
   const {
     producoes: producoesContexto = [],
     vendas: vendasContexto = [],
+    perdasDoacoes: perdasDoacoesContexto = [],
     addItem,
     updateItem,
     deleteItem,
@@ -81,6 +82,9 @@ export default function Vendas() {
     : [];
 
   const vendas = Array.isArray(vendasContexto) ? vendasContexto : [];
+  const perdasDoacoes = Array.isArray(perdasDoacoesContexto)
+    ? perdasDoacoesContexto
+    : [];
   const clientesComerciais = Array.isArray(clientesComerciaisContexto)
     ? clientesComerciaisContexto
     : [];
@@ -254,6 +258,7 @@ export default function Vendas() {
   const estoqueProdutos = calcularEstoqueProdutosCompartilhado({
     producoes,
     vendas,
+    perdasDoacoes,
     ignorarVendaIndex: editIndex,
   });
 

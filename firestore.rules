@@ -150,6 +150,47 @@ service cloud.firestore {
         );
     }
 
+    function isPerdasDoacoesRoleAllowed(role) {
+      return role == "administrador_empresa" ||
+        role == "Administrador da Empresa" ||
+        role == "producao" ||
+        role == "Producao" ||
+        role == "ProduÃ§Ã£o" ||
+        role == "estoque" ||
+        role == "Estoque";
+    }
+
+    function hasPerdasDoacoesRoleLink(linkPath, ownerUid, empresaId) {
+      return hasValidCompanyLink(linkPath, ownerUid, empresaId) &&
+        (
+          isPerdasDoacoesRoleAllowed(get(companyUserPath(
+            ownerUid,
+            empresaId,
+            get(linkPath).data.usuarioEmpresaId
+          )).data.role) ||
+          isPerdasDoacoesRoleAllowed(get(companyUserPath(
+            ownerUid,
+            empresaId,
+            get(linkPath).data.usuarioEmpresaId
+          )).data.perfil)
+        );
+    }
+
+    function canManagePerdasDoacoes(ownerUid, empresaId) {
+      return isOwner(ownerUid) ||
+        isAdminMaster() ||
+        hasPerdasDoacoesRoleLink(
+          authCompanyPath(request.auth.uid, empresaId),
+          ownerUid,
+          empresaId
+        ) ||
+        hasPerdasDoacoesRoleLink(
+          userCompanyPath(request.auth.uid, empresaId),
+          ownerUid,
+          empresaId
+        );
+    }
+
     function hasCompanyAccess(ownerUid, empresaId) {
       return isOwner(ownerUid) || isAdminMaster() || hasActiveCompanyMembership(ownerUid, empresaId);
     }
@@ -304,6 +345,11 @@ service cloud.firestore {
 
         match /despesas/{documentId} {
           allow read, write: if hasCompanyAccess(userId, empresaId);
+        }
+
+        match /perdasDoacoes/{documentId} {
+          allow read, create, update: if canManagePerdasDoacoes(userId, empresaId);
+          allow delete: if false;
         }
 
         match /fornecedores/{documentId} {

@@ -61,6 +61,8 @@ export default function Sidebar() {
           { path: "/producao", label: "Producao", icon: Factory },
         podeVerMenu(PERMISSOES_EMPRESA.estoque) &&
           { path: "/estoque", label: "Estoque", icon: Warehouse },
+        podeVerMenu(PERMISSOES_EMPRESA.estoque) &&
+          { path: "/perdas-doacoes", label: "Perdas e Doacoes", icon: Warehouse },
       ].filter(Boolean),
     },
     {

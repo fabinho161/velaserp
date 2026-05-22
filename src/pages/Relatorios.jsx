@@ -17,6 +17,7 @@ export default function Relatorios() {
     produtos,
     producoes,
     vendas,
+    perdasDoacoes,
     despesas,
     empresas,
     empresaId,
@@ -107,6 +108,7 @@ export default function Relatorios() {
     produtos,
     producoes,
     vendas,
+    perdasDoacoes,
   });
 
   // ================================

@@ -42,6 +42,7 @@ const COLECOES_POR_PERMISSAO = [
   ["producoes", PERMISSOES_EMPRESA.producao],
   ["vendas", PERMISSOES_EMPRESA.vendas],
   ["despesas", PERMISSOES_EMPRESA.financeiro],
+  ["perdasDoacoes", PERMISSOES_EMPRESA.estoque],
   ["clientesComerciais", PERMISSOES_EMPRESA.crm],
 ];
 
@@ -187,6 +188,7 @@ export function ERPProvider({ children }) {
   const [producoes, setProducoes] = useState([]);
   const [vendas, setVendas] = useState([]);
   const [despesas, setDespesas] = useState([]);
+  const [perdasDoacoes, setPerdasDoacoes] = useState([]);
   const [clientesComerciais, setClientesComerciais] = useState([]);
   const [configuracoes, setConfiguracoes] = useState({});
 
@@ -207,6 +209,7 @@ export function ERPProvider({ children }) {
       setProducoes([]);
       setVendas([]);
       setDespesas([]);
+      setPerdasDoacoes([]);
       setClientesComerciais([]);
       setConfiguracoes({});
 
@@ -627,6 +630,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
       producoes: setProducoes,
       vendas: setVendas,
       despesas: setDespesas,
+      perdasDoacoes: setPerdasDoacoes,
       clientesComerciais: setClientesComerciais,
     };
 
@@ -680,6 +684,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
       ouvirColecao("producoes", setProducoes),
       ouvirColecao("vendas", setVendas),
       ouvirColecao("despesas", setDespesas),
+      ouvirColecao("perdasDoacoes", setPerdasDoacoes),
       ouvirColecao("clientesComerciais", setClientesComerciais),
       onSnapshot(
         getRef("configuracoes"),
@@ -1283,6 +1288,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
         producoes,
         vendas,
         despesas,
+        perdasDoacoes,
         clientesComerciais,
         configuracoes,
 

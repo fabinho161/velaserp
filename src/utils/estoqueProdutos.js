@@ -74,6 +74,17 @@ const obterAliasesItemVenda = (item = {}, venda = {}) => [
   .map((alias) => normalizarTextoProduto(textoProdutoSeguro(alias, "")))
   .filter(Boolean);
 
+const obterAliasesBaixaEstoque = (baixa = {}) => [
+  baixa.produtoNome,
+  baixa.produto,
+  baixa.nomeProduto,
+  baixa.codigoProduto && baixa.produtoNome
+    ? `${baixa.codigoProduto} - ${baixa.produtoNome}${baixa.tipo ? ` ${baixa.tipo}` : ""}`
+    : "",
+]
+  .map((alias) => normalizarTextoProduto(textoProdutoSeguro(alias, "")))
+  .filter(Boolean);
+
 const vendaMovimentaEstoque = (venda = {}) => {
   const expedicao = String(venda.statusExpedicao || "").toLowerCase();
   const pagamento = String(venda.statusPagamento || "").toLowerCase();
@@ -85,6 +96,7 @@ export const calcularEstoqueProdutos = ({
   produtos = [],
   producoes = [],
   vendas = [],
+  perdasDoacoes = [],
   ignorarVendaIndex = null,
   ignorarVendaId = "",
 } = {}) => {
@@ -103,6 +115,7 @@ export const calcularEstoqueProdutos = ({
         produto: descricao,
         produzido: 0,
         vendido: 0,
+        baixado: 0,
         custoTotal: 0,
         estoqueMinimo: Number(registro.estoqueMinimo || 0),
       });
@@ -142,8 +155,20 @@ export const calcularEstoqueProdutos = ({
     });
   });
 
+  (perdasDoacoes || []).forEach((baixa) => {
+    if (String(baixa.status || "ativo").toLowerCase() === "cancelado") return;
+
+    const aliasesBaixa = obterAliasesBaixaEstoque(baixa);
+    const chave = aliasesBaixa.find((alias) => aliases.has(alias));
+    const item = chave
+      ? mapa.get(aliases.get(chave))
+      : garantirItem({ produto: baixa.produtoNome || baixa.produto });
+
+    item.baixado += Number(baixa.quantidade || 0);
+  });
+
   return Array.from(mapa.values()).map((item) => {
-    const saldoReal = item.produzido - item.vendido;
+    const saldoReal = item.produzido - item.vendido - item.baixado;
     const saldo = Math.max(0, saldoReal);
     const custoMedio = item.produzido > 0 ? item.custoTotal / item.produzido : 0;
 

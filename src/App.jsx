@@ -15,6 +15,7 @@ import { PERMISSOES_EMPRESA } from "./config/perfisEmpresa";
 import Dashboard from "./pages/Dashboard";
 import Producao from "./pages/Producao";
 import Estoque from "./pages/Estoque";
+import PerdasDoacoes from "./pages/PerdasDoacoes";
 import Vendas from "./pages/Vendas";
 import Financeiro from "./pages/Financeiro";
 import Relatorios from "./pages/Relatorios";
@@ -66,6 +67,14 @@ function AuthenticatedApp() {
             element={(
               <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.estoque}>
                 <Estoque />
+              </EmpresaPermissionRoute>
+            )}
+          />
+          <Route
+            path="/perdas-doacoes"
+            element={(
+              <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.estoque}>
+                <PerdasDoacoes />
               </EmpresaPermissionRoute>
             )}
           />

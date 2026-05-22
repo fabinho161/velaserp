@@ -26,6 +26,7 @@ export default function Estoque() {
     insumos,
     producoes,
     vendas,
+    perdasDoacoes,
     configuracoes,
     carregarConfiguracao,
     salvarConfiguracao,
@@ -123,9 +124,13 @@ export default function Estoque() {
 
   // ================================
   // 🔹 ESTOQUE DE PRODUTOS ACABADOS
-  // Estoque = Produzido - Vendido
+  // Estoque = Produzido - Vendido - Perdas/Doacoes ativas
   // ================================
-  const produtosEstoque = calcularEstoqueProdutos({ producoes, vendas });
+  const produtosEstoque = calcularEstoqueProdutos({
+    producoes,
+    vendas,
+    perdasDoacoes,
+  });
 
   // ================================
   // 🔹 RESUMOS
@@ -195,6 +200,7 @@ export default function Estoque() {
         produto: item.produto.produto || "",
         produzido: Number(item.produto.produzido || 0),
         vendido: Number(item.produto.vendido || 0),
+        baixado: Number(item.produto.baixado || 0),
         saldo: Number(item.produto.saldo || 0),
         custoMedio: Number(item.produto.custoMedio || 0),
         valorEstoque: Number(item.produto.valorEstoque || 0),
@@ -431,6 +437,7 @@ export default function Estoque() {
               <th>{renderCabecalhoOrdenavel("Produto", "produto", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Produzido", "produzido", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Vendido", "vendido", ordenacaoProdutos)}</th>
+              <th>{renderCabecalhoOrdenavel("Baixado", "baixado", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Saldo", "saldo", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Custo Médio", "custoMedio", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Valor em Estoque", "valorEstoque", ordenacaoProdutos)}</th>
@@ -449,6 +456,7 @@ export default function Estoque() {
                   <td>{produto.produto}</td>
                   <td>{produto.produzido}</td>
                   <td>{produto.vendido}</td>
+                  <td>{produto.baixado}</td>
 
                   <td style={{ color: emAlerta ? "#dc2626" : "#16a34a" }}>
                     {produto.saldo}
@@ -513,7 +521,7 @@ export default function Estoque() {
 
             {produtosEstoque.length === 0 && (
               <tr>
-                <td colSpan="9">Nenhuma produção registrada.</td>
+                <td colSpan="10">Nenhuma produção registrada.</td>
               </tr>
             )}
           </tbody>
