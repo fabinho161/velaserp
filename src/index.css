@@ -5311,9 +5311,26 @@ button,
   font-weight: 700;
 }
 
-.config-grid input {
+.config-grid input,
+.config-grid select,
+.config-grid textarea {
   width: 100%;
   margin: 0;
+}
+
+.config-grid textarea {
+  resize: vertical;
+  min-height: 96px;
+}
+
+.config-field-full {
+  grid-column: 1 / -1;
+}
+
+.config-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
 }
 
 .config-logo-area {

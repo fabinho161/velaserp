@@ -274,7 +274,12 @@ service cloud.firestore {
         }
 
         match /configuracoes/{documentId} {
-          allow read, write: if hasCompanyAccess(userId, empresaId);
+          allow read: if hasCompanyAccess(userId, empresaId);
+          allow write: if (
+            documentId == "fiscal" && isCompanyAdmin(userId, empresaId)
+          ) || (
+            documentId != "fiscal" && hasCompanyAccess(userId, empresaId)
+          );
         }
 
         match /parametros/{documentId} {
