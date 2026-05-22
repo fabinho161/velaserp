@@ -27,6 +27,37 @@ import { extrairNumeroPedido } from "../utils/sortUtils";
 
 const MIN_CHART_WIDTH = 80;
 const MIN_CHART_HEIGHT = 180;
+const LIMITE_LABEL_PRODUTO_GRAFICO = 18;
+
+const abreviarTexto = (texto, limite = LIMITE_LABEL_PRODUTO_GRAFICO) => {
+  const valor = String(texto || "").trim();
+
+  if (valor.length <= limite) return valor;
+
+  return `${valor.slice(0, limite - 1)}…`;
+};
+
+const formatarQuantidade = (valor) =>
+  Number(valor || 0).toLocaleString("pt-BR", {
+    maximumFractionDigits: 2,
+  });
+
+function ProducaoProdutoTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+
+  const dados = payload[0]?.payload || {};
+  const unidade = dados.unidade ? ` ${dados.unidade}` : "";
+
+  return (
+    <div className="chart-tooltip">
+      <strong>{dados.produto}</strong>
+      <span>
+        {formatarQuantidade(dados.quantidade)}
+        {unidade} produzidos
+      </span>
+    </div>
+  );
+}
 
 function ChartFrame({ children }) {
   const frameRef = useRef(null);
@@ -167,32 +198,38 @@ export default function Dashboard() {
     (a, b) => b.lucro - a.lucro
   );
 
-  const producaoPorPeriodo = Object.values(
+  const producaoPorProduto = Object.values(
     producoes.reduce((acc, producao) => {
-      const data = producao.data || "Sem data";
+      const produto =
+        producao.produto ||
+        [producao.codigo, producao.nomeProduto, producao.tipo]
+          .filter(Boolean)
+          .join(" - ") ||
+        "Produto sem nome";
+      const unidade =
+        producao.unidade ||
+        producao.unidadeProduto ||
+        producao.unidadeMedida ||
+        "";
 
-      if (!acc[data]) {
-        acc[data] = {
-          data,
+      if (!acc[produto]) {
+        acc[produto] = {
+          produto,
+          produtoCurto: abreviarTexto(produto),
+          unidade,
           quantidade: 0,
-          custo: 0,
         };
       }
 
-      acc[data].quantidade += Number(producao.quantidade || 0);
-      acc[data].custo += Number(producao.custoTotal || 0);
+      acc[produto].quantidade += Number(producao.quantidade || 0);
+
+      if (!acc[produto].unidade && unidade) {
+        acc[produto].unidade = unidade;
+      }
 
       return acc;
     }, {})
-  ).map((item) => ({
-    ...item,
-    dataBR: formatarDataBR(item.data),
-  })).sort((a, b) => {
-    const dataA = a.data === "Sem data" ? new Date(0) : new Date(a.data);
-    const dataB = b.data === "Sem data" ? new Date(0) : new Date(b.data);
-
-    return dataA - dataB;
-  });
+  ).sort((a, b) => b.quantidade - a.quantidade);
 
   const estoqueInsumosZerados = insumos.filter(
     (i) => Number(i.estoque || 0) <= 0
@@ -323,19 +360,40 @@ export default function Dashboard() {
         </div>
 
         <div className="card dashboard-chart-card">
-          <h3>Produção por Período</h3>
+          <h3>Produção por Produto</h3>
 
-          <ChartFrame>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={producaoPorPeriodo}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="dataBR" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="quantidade" fill="#2563eb" />
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartFrame>
+          {producaoPorProduto.length === 0 ? (
+            <div className="chart-box">
+              <div className="empty-state">Nenhuma produção registrada no período.</div>
+            </div>
+          ) : (
+            <ChartFrame>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={producaoPorProduto}
+                  margin={{ top: 12, right: 12, left: 0, bottom: 34 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="produtoCurto"
+                    interval={0}
+                    angle={-20}
+                    textAnchor="end"
+                    height={68}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <YAxis />
+                  <Tooltip content={<ProducaoProdutoTooltip />} />
+                  <Bar
+                    dataKey="quantidade"
+                    fill="#2563eb"
+                    name="Quantidade produzida"
+                    radius={[6, 6, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartFrame>
+          )}
         </div>
       </div>
 

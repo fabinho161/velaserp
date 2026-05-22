@@ -854,6 +854,28 @@ body {
   font-weight: 700;
 }
 
+.chart-tooltip {
+  display: grid;
+  gap: 4px;
+  max-width: 260px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.chart-tooltip strong {
+  line-height: 1.25;
+}
+
+.chart-tooltip span {
+  color: #475569;
+  font-weight: 700;
+}
+
 .dashboard-status-list {
   margin-top: 12px;
   display: grid;
