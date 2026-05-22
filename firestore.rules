@@ -110,36 +110,43 @@ service cloud.firestore {
         hasCompanyAdminLink(userCompanyPath(request.auth.uid, empresaId), ownerUid, empresaId);
     }
 
-    function hasCompanyRoleLink(linkPath, ownerUid, empresaId, roles) {
+    function isFornecedorRoleAllowed(role) {
+      return role == "administrador_empresa" ||
+        role == "Administrador da Empresa" ||
+        role == "financeiro" ||
+        role == "Financeiro" ||
+        role == "producao" ||
+        role == "Producao" ||
+        role == "Produção";
+    }
+
+    function hasFornecedorRoleLink(linkPath, ownerUid, empresaId) {
       return hasValidCompanyLink(linkPath, ownerUid, empresaId) &&
-        roles.hasAny([
-          get(companyUserPath(
+        (
+          isFornecedorRoleAllowed(get(companyUserPath(
             ownerUid,
             empresaId,
             get(linkPath).data.usuarioEmpresaId
-          )).data.role,
-          get(companyUserPath(
+          )).data.role) ||
+          isFornecedorRoleAllowed(get(companyUserPath(
             ownerUid,
             empresaId,
             get(linkPath).data.usuarioEmpresaId
-          )).data.perfil
-        ]);
+          )).data.perfil)
+        );
     }
 
     function canManageFornecedores(ownerUid, empresaId) {
       return isOwner(ownerUid) ||
-        isAdminMaster() ||
-        hasCompanyRoleLink(
+        hasFornecedorRoleLink(
           authCompanyPath(request.auth.uid, empresaId),
           ownerUid,
-          empresaId,
-          ["administrador_empresa", "producao", "financeiro"]
+          empresaId
         ) ||
-        hasCompanyRoleLink(
+        hasFornecedorRoleLink(
           userCompanyPath(request.auth.uid, empresaId),
           ownerUid,
-          empresaId,
-          ["administrador_empresa", "producao", "financeiro"]
+          empresaId
         );
     }
 
