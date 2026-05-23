@@ -208,6 +208,7 @@ export default function Producao() {
   if (!validarEstoque()) return;
 
     const novaProducao = {
+      produtoId: produtoSelecionado.id || "",
       produto: `${produtoSelecionado.codigo} - ${produtoSelecionado.nome} ${produtoSelecionado.tipo}`,
       codigo: produtoSelecionado.codigo,
       nomeProduto: produtoSelecionado.nome,

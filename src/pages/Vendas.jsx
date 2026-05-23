@@ -267,6 +267,10 @@ export default function Vendas() {
   );
 
   const quantidadeJaNoPedido = itens.reduce((total, item) => {
+    if (produtoSelecionado?.produtoId && item.produtoId === produtoSelecionado.produtoId) {
+      return total + Number(item.quantidade || 0);
+    }
+
     if (
       normalizarChaveProduto(textoSeguro(item.produto)) !==
       normalizarChaveProduto(itemAtual.produto)
@@ -374,6 +378,9 @@ export default function Vendas() {
     }
 
     const novoItem = {
+      produtoId: produtoSelecionado.produtoId || "",
+      codigoProduto: produtoSelecionado.codigo || "",
+      produtoNome: produtoSelecionado.nome || "",
       produto: itemAtual.produto,
       quantidade: quantidadeItem,
       valorUnitario: valorUnitarioItem,

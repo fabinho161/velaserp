@@ -12,6 +12,7 @@ import { dataBR, moedaBR, numeroBR } from "../utils/formatters";
 
 const FORM_INICIAL = {
   tipo: "perda",
+  produtoId: "",
   produto: "",
   quantidade: "",
   data: new Date().toISOString().split("T")[0],
@@ -90,12 +91,14 @@ export default function PerdasDoacoes() {
     return mapa;
   }, [produtos]);
 
-  const produtoSelecionadoEstoque = estoqueProdutos.find(
-    (produto) => produto.produto === form.produto
+  const produtoSelecionadoEstoque = estoqueProdutos.find((produto) =>
+    form.produtoId
+      ? produto.produtoId === form.produtoId
+      : produto.produto === form.produto
   );
-  const produtoSelecionadoCadastro = produtosPorDescricao.get(
-    normalizarChaveProduto(form.produto)
-  );
+  const produtoSelecionadoCadastro =
+    produtos.find((produto) => produto.id === form.produtoId) ||
+    produtosPorDescricao.get(normalizarChaveProduto(form.produto));
   const quantidade = Number(form.quantidade || 0);
   const saldoDisponivel = Number(produtoSelecionadoEstoque?.saldo || 0);
   const custoUnitarioSnapshot = Number(produtoSelecionadoEstoque?.custoMedio || 0);
@@ -121,10 +124,7 @@ export default function PerdasDoacoes() {
     }
 
     if (quantidade > saldoDisponivel) {
-      showToast(
-        `Estoque insuficiente. Saldo disponivel: ${numeroBR(saldoDisponivel, 3)}.`,
-        "warning"
-      );
+      showToast("Nao e possivel registrar perda/doacao maior que o saldo disponivel em estoque.", "warning");
       return;
     }
 
@@ -132,8 +132,9 @@ export default function PerdasDoacoes() {
 
     const registro = {
       tipo: form.tipo,
-      produtoId: produtoSelecionadoCadastro?.id || "",
-      produtoNome: form.produto,
+      produtoId: produtoSelecionadoEstoque?.produtoId || produtoSelecionadoCadastro?.id || "",
+      produtoNome: produtoSelecionadoEstoque?.produto || form.produto,
+      codigoProduto: produtoSelecionadoEstoque?.codigo || produtoSelecionadoCadastro?.codigo || "",
       quantidade,
       unidade: unidadeProduto,
       data: form.data,
@@ -306,12 +307,25 @@ export default function PerdasDoacoes() {
           <label>
             Produto
             <select
-              value={form.produto}
-              onChange={(e) => setForm({ ...form, produto: e.target.value })}
+              value={form.produtoId || form.produto}
+              onChange={(e) => {
+                const selecionado = estoqueProdutos.find(
+                  (produto) => (produto.produtoId || produto.produto) === e.target.value
+                );
+
+                setForm({
+                  ...form,
+                  produtoId: selecionado?.produtoId || "",
+                  produto: selecionado?.produto || "",
+                });
+              }}
             >
               <option value="">Selecione o produto</option>
               {estoqueProdutos.map((produto) => (
-                <option key={produto.produto} value={produto.produto}>
+                <option
+                  key={produto.produtoId || produto.produto}
+                  value={produto.produtoId || produto.produto}
+                >
                   {produto.produto} - saldo: {numeroBR(produto.saldo, 3)}
                 </option>
               ))}

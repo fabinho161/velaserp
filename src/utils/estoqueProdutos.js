@@ -24,12 +24,22 @@ export const textoProdutoSeguro = (valor, fallback = "-") => {
   return String(valor);
 };
 
+const extrairCodigoTexto = (valor = "") => {
+  const texto = textoProdutoSeguro(valor, "").trim();
+  const match = texto.match(/^([A-Za-z]{1,10}\d{1,10})\b/);
+
+  return match?.[1] || "";
+};
+
 const montarDescricaoProduto = (registro = {}) => {
   if (typeof registro.produto === "string" && registro.produto.trim()) {
     return registro.produto.trim();
   }
 
-  const codigo = registro.codigo || registro.codigoProduto || "";
+  const codigo =
+    registro.codigo ||
+    registro.codigoProduto ||
+    extrairCodigoTexto(registro.produto || registro.produtoNome || "");
   const nome = registro.nome || registro.nomeProduto || registro.produtoNome || "";
   const tipo = registro.tipo || "";
   const descricao = [
@@ -46,7 +56,10 @@ const montarDescricaoProduto = (registro = {}) => {
 };
 
 const obterAliasesProduto = (registro = {}) => {
-  const codigo = registro.codigo || registro.codigoProduto || "";
+  const codigo =
+    registro.codigo ||
+    registro.codigoProduto ||
+    extrairCodigoTexto(registro.produto || registro.produtoNome || "");
   const nome = registro.nome || registro.nomeProduto || registro.produtoNome || "";
   const tipo = registro.tipo || "";
 
@@ -66,10 +79,16 @@ const obterAliasesItemVenda = (item = {}, venda = {}) => [
   item.produto,
   item.nomeProduto,
   item.produtoNome,
+  item.codigo,
+  item.codigoProduto,
+  extrairCodigoTexto(item.produto),
   item.codigo && item.nomeProduto
     ? `${item.codigo} - ${item.nomeProduto}${item.tipo ? ` ${item.tipo}` : ""}`
     : "",
   venda.produto,
+  venda.codigo,
+  venda.codigoProduto,
+  extrairCodigoTexto(venda.produto),
 ]
   .map((alias) => normalizarTextoProduto(textoProdutoSeguro(alias, "")))
   .filter(Boolean);
@@ -78,6 +97,9 @@ const obterAliasesBaixaEstoque = (baixa = {}) => [
   baixa.produtoNome,
   baixa.produto,
   baixa.nomeProduto,
+  baixa.codigo,
+  baixa.codigoProduto,
+  extrairCodigoTexto(baixa.produtoNome || baixa.produto),
   baixa.codigoProduto && baixa.produtoNome
     ? `${baixa.codigoProduto} - ${baixa.produtoNome}${baixa.tipo ? ` ${baixa.tipo}` : ""}`
     : "",
@@ -103,34 +125,71 @@ export const calcularEstoqueProdutos = ({
   const mapa = new Map();
   const aliases = new Map();
 
+  const registrarAliases = (chave, registro = {}) => {
+    obterAliasesProduto(registro).forEach((alias) => aliases.set(alias, chave));
+  };
+
+  const resolverChavePorAliases = (aliasesRegistro = []) => {
+    const alias = aliasesRegistro.find((item) => aliases.has(item));
+    return alias ? aliases.get(alias) : null;
+  };
+
   const garantirItem = (registro = {}) => {
     const descricao = montarDescricaoProduto(registro);
-    const chaveInicial = normalizarTextoProduto(descricao);
+    const produtoId = registro.produtoId || "";
     const aliasesRegistro = obterAliasesProduto(registro);
-    const chaveExistente = aliasesRegistro.find((alias) => aliases.has(alias));
-    const chave = chaveExistente ? aliases.get(chaveExistente) : chaveInicial;
+    const chave =
+      (produtoId ? `produto:${produtoId}` : "") ||
+      resolverChavePorAliases(aliasesRegistro) ||
+      `legado:${normalizarTextoProduto(descricao)}`;
 
     if (!mapa.has(chave)) {
       mapa.set(chave, {
+        produtoId,
+        legado: !produtoId,
         produto: descricao,
+        codigo: registro.codigo || registro.codigoProduto || extrairCodigoTexto(descricao),
+        nome: registro.nome || registro.nomeProduto || registro.produtoNome || "",
+        tipo: registro.tipo || "",
+        tipoProduto: registro.tipoProduto || "",
         produzido: 0,
         vendido: 0,
         baixado: 0,
         custoTotal: 0,
         estoqueMinimo: Number(registro.estoqueMinimo || 0),
       });
+    } else if (produtoId) {
+      const itemExistente = mapa.get(chave);
+
+      mapa.set(chave, {
+        ...itemExistente,
+        produtoId,
+        legado: false,
+        produto: descricao || itemExistente.produto,
+        codigo: registro.codigo || itemExistente.codigo,
+        nome: registro.nome || registro.nomeProduto || registro.produtoNome || itemExistente.nome,
+        tipo: registro.tipo || itemExistente.tipo,
+        tipoProduto: registro.tipoProduto || itemExistente.tipoProduto,
+        estoqueMinimo: Number(registro.estoqueMinimo || itemExistente.estoqueMinimo || 0),
+      });
     }
 
-    aliasesRegistro.forEach((alias) => aliases.set(alias, chave));
+    registrarAliases(chave, registro);
     return mapa.get(chave);
   };
 
   (produtos || []).forEach((produto) => {
-    garantirItem(produto);
+    garantirItem({
+      ...produto,
+      produtoId: produto.id || produto.produtoId || "",
+    });
   });
 
   (producoes || []).forEach((producao) => {
-    const item = garantirItem(producao);
+    const chavePorId = producao.produtoId ? `produto:${producao.produtoId}` : "";
+    const item = chavePorId && mapa.has(chavePorId)
+      ? mapa.get(chavePorId)
+      : garantirItem(producao);
     item.produzido += Number(producao.quantidade || 0);
     item.custoTotal += Number(producao.custoTotal || 0);
   });
@@ -145,10 +204,13 @@ export const calcularEstoqueProdutos = ({
       : [{ produto: venda.produto, quantidade: venda.quantidade }];
 
     itensVenda.forEach((itemVenda) => {
+      const produtoId = itemVenda?.produtoId || venda.produtoId || "";
       const aliasesVenda = obterAliasesItemVenda(itemVenda, venda);
-      const chave = aliasesVenda.find((alias) => aliases.has(alias));
+      const chave = produtoId && mapa.has(`produto:${produtoId}`)
+        ? `produto:${produtoId}`
+        : resolverChavePorAliases(aliasesVenda);
       const item = chave
-        ? mapa.get(aliases.get(chave))
+        ? mapa.get(chave)
         : garantirItem({ produto: itemVenda?.produto || venda.produto });
 
       item.vendido += Number(itemVenda?.quantidade || 0);
@@ -158,10 +220,13 @@ export const calcularEstoqueProdutos = ({
   (perdasDoacoes || []).forEach((baixa) => {
     if (String(baixa.status || "ativo").toLowerCase() === "cancelado") return;
 
+    const produtoId = baixa.produtoId || "";
     const aliasesBaixa = obterAliasesBaixaEstoque(baixa);
-    const chave = aliasesBaixa.find((alias) => aliases.has(alias));
+    const chave = produtoId && mapa.has(`produto:${produtoId}`)
+      ? `produto:${produtoId}`
+      : resolverChavePorAliases(aliasesBaixa);
     const item = chave
-      ? mapa.get(aliases.get(chave))
+      ? mapa.get(chave)
       : garantirItem({ produto: baixa.produtoNome || baixa.produto });
 
     item.baixado += Number(baixa.quantidade || 0);
