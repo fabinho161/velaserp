@@ -39,11 +39,17 @@ const textoDoArtigo = (item) =>
     item.acesso,
     item.conteudo,
     item.descricao,
+    item.pergunta,
+    item.resposta,
     ...(item.passos || []),
     ...(item.camposPrincipais || []),
     ...(item.aposSalvar || []),
+    ...(item.impactoOutrosModulos || []),
     ...(item.cuidados || []),
     ...(item.exemplos || []),
+    ...(item.errosComuns || []),
+    ...(item.boasPraticas || []),
+    ...(item.palavrasChave || []),
   ].join(" "));
 
 function LearningInfoBlock({ title, items }) {
@@ -121,8 +127,19 @@ function ArticleCard({ item, variant = "article" }) {
 
         <LearningInfoBlock title="Campos principais" items={item.camposPrincipais} />
         <LearningInfoBlock title="O que acontece apos salvar" items={item.aposSalvar} />
+        <LearningInfoBlock title="Impacto em outros modulos" items={item.impactoOutrosModulos} />
         <LearningInfoBlock title="Cuidados importantes" items={item.cuidados} />
         <LearningInfoBlock title="Exemplos praticos" items={item.exemplos} />
+        <LearningInfoBlock title="Erros comuns" items={item.errosComuns} />
+        <LearningInfoBlock title="Boas praticas" items={item.boasPraticas} />
+
+        {item.palavrasChave?.length > 0 && (
+          <div className="learning-keyword-row">
+            {item.palavrasChave.map((palavra) => (
+              <span key={palavra}>{palavra}</span>
+            ))}
+          </div>
+        )}
       </div>
     </details>
   );
@@ -145,6 +162,7 @@ export default function CentralAprendizagem() {
         titulo: item.pergunta,
         categoria: "FAQ",
         conteudo: item.resposta,
+        palavrasChave: item.palavrasChave || [],
       })),
       ...checklistImplantacao.map((item) => ({
         titulo: item.titulo,
@@ -178,6 +196,13 @@ export default function CentralAprendizagem() {
   };
 
   const primeirosPassosFiltrados = primeirosPassos.filter(filtroCombina);
+  const fluxoRecomendado = primeirosPassos.find((item) =>
+    normalizar(item.titulo).includes("fluxo recomendado")
+  );
+  const fluxoRecomendadoVisivel = fluxoRecomendado && filtroCombina(fluxoRecomendado);
+  const primeirosPassosLista = fluxoRecomendadoVisivel
+    ? primeirosPassosFiltrados.filter((item) => item !== fluxoRecomendado)
+    : primeirosPassosFiltrados;
   const tutoriaisFiltrados = tutoriaisPorModulo
     .map((item) => ({ titulo: item.modulo, ...item }))
     .filter(filtroCombina);
@@ -187,6 +212,7 @@ export default function CentralAprendizagem() {
       titulo: item.pergunta,
       categoria: "FAQ",
       conteudo: item.resposta,
+      palavrasChave: item.palavrasChave || [],
     })
   );
   const checklistFiltrado = checklistImplantacao.filter((item) =>
@@ -246,7 +272,7 @@ export default function CentralAprendizagem() {
           <Search size={18} />
           <input
             type="text"
-            placeholder="Buscar por titulo, categoria ou conteudo..."
+            placeholder="Buscar por titulo, categoria, palavra-chave ou conteudo..."
             value={termoBusca}
             onChange={(event) => setTermoBusca(event.target.value)}
           />
@@ -257,6 +283,19 @@ export default function CentralAprendizagem() {
           <span>resultado(s) encontrados</span>
         </div>
       </section>
+
+      {!mostrandoChecklist && fluxoRecomendadoVisivel && (
+        <section className="card learning-section-card learning-featured-flow">
+          <SectionTitle
+            icon={ClipboardCheck}
+            label="Comece por aqui"
+            title="Fluxo recomendado para comecar a usar o ERP"
+            description="Sequencia guiada para configurar a empresa, formar estoque, vender, acompanhar resultado e liberar a equipe."
+          />
+
+          <ArticleCard item={fluxoRecomendado} variant="featured" />
+        </section>
+      )}
 
       {!mostrandoChecklist && (
         <section className="learning-category-grid">
@@ -343,7 +382,7 @@ export default function CentralAprendizagem() {
         </section>
       ) : (
         <>
-          {primeirosPassosFiltrados.length > 0 && (
+          {primeirosPassosLista.length > 0 && (
             <section className="card learning-section-card">
               <SectionTitle
                 icon={GraduationCap}
@@ -353,7 +392,7 @@ export default function CentralAprendizagem() {
               />
 
               <div className="learning-article-grid">
-                {primeirosPassosFiltrados.map((item) => (
+                {primeirosPassosLista.map((item) => (
                   <ArticleCard key={item.titulo} item={item} />
                 ))}
               </div>
