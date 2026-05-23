@@ -6,6 +6,7 @@ import { useTableSort } from "../hooks/useTableSort";
 import ActionMenu from "../components/ActionMenu";
 import { moedaBR, numeroBR, inteiroBR, dataBR } from "../utils/formatters";
 import { extrairNumeroCodigo } from "../utils/sortUtils";
+import { calcularEstoqueInsumos } from "../utils/estoqueProdutos";
 
 export default function Producao() {
   // ================================
@@ -15,6 +16,7 @@ export default function Producao() {
   produtos,
   insumos,
   producoes,
+  perdasDoacoes = [],
   addItem,
   deleteItem,
 } = useERP();
@@ -107,6 +109,11 @@ export default function Producao() {
   };
 
   const consumosCalculados = calcularConsumos();
+  const estoqueInsumos = calcularEstoqueInsumos({
+    insumos,
+    producoes,
+    perdasDoacoes,
+  });
 
   // ================================
   // 🔹 CUSTOS DA PRODUÇÃO
@@ -176,12 +183,16 @@ export default function Producao() {
   const validarEstoque = () => {
     for (let consumo of consumosCalculados) {
       const insumo = insumos.find((i) => i.nome === consumo.nome);
+      const estoqueInsumo = estoqueInsumos.find(
+        (item) => item.insumoId === insumo?.id || item.nome === consumo.nome
+      );
 
       // Energia entra como custo, mas não bloqueia produção
       if (
         insumo &&
         insumo.nome !== "Energia" &&
-        Number(insumo.estoque || 0) < Number(consumo.quantidadeTotal || 0)
+        Number(estoqueInsumo?.saldo ?? insumo.estoque ?? 0) <
+          Number(consumo.quantidadeTotal || 0)
       ) {
         showToast(`Estoque insuficiente para ${insumo.nome}`, "warning");
         return false;

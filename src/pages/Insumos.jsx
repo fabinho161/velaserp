@@ -11,7 +11,14 @@ export default function Insumos() {
   // ================================
   // 🔹 CONTEXTO GLOBAL
   // ================================
-  const { insumos, producoes, addItem, updateItem, deleteItem } = useERP();
+  const {
+    insumos,
+    producoes,
+    perdasDoacoes = [],
+    addItem,
+    updateItem,
+    deleteItem,
+  } = useERP();
   const { showToast } = useToast();
   const { confirmar } = useConfirmacao();
   const { unidadesMedida = [] } = useParametros();
@@ -95,6 +102,24 @@ export default function Insumos() {
     return totalConsumido;
   }, [producoes]);
 
+  const calcularTotalBaixado = useCallback((insumo) => {
+    return (perdasDoacoes || []).reduce((total, registro) => {
+      const tipoItem = String(registro.tipoItem || "produto").toLowerCase();
+      const status = String(registro.status || "ativo").toLowerCase();
+
+      if (tipoItem !== "insumo" || status === "cancelado") return total;
+
+      const mesmoId = insumo.id && registro.insumoId === insumo.id;
+      const mesmoNome =
+        String(registro.insumoNome || "").trim().toLowerCase() ===
+        String(insumo.nome || "").trim().toLowerCase();
+
+      return mesmoId || mesmoNome
+        ? total + Number(registro.quantidade || 0)
+        : total;
+    }, 0);
+  }, [perdasDoacoes]);
+
   // ================================
   // 🔹 ESTOQUE REAL AUTOMÁTICO
   // Compras - Consumo das Produções
@@ -102,9 +127,10 @@ export default function Insumos() {
   const calcularEstoqueReal = useCallback((insumo) => {
     const totalComprado = calcularTotalComprado(insumo.compras || []);
     const totalConsumido = calcularTotalConsumido(insumo.nome);
+    const totalBaixado = calcularTotalBaixado(insumo);
 
-    return totalComprado - totalConsumido;
-  }, [calcularTotalComprado, calcularTotalConsumido]);
+    return totalComprado - totalConsumido - totalBaixado;
+  }, [calcularTotalBaixado, calcularTotalComprado, calcularTotalConsumido]);
 
   // ================================
   // 🔹 RECALCULAR ESTOQUE AUTOMATICAMENTE

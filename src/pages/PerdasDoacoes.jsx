@@ -5,15 +5,19 @@ import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
 import { useTableSort } from "../hooks/useTableSort";
 import {
+  calcularEstoqueInsumos,
   calcularEstoqueProdutos,
   normalizarChaveProduto,
 } from "../utils/estoqueProdutos";
 import { dataBR, moedaBR, numeroBR } from "../utils/formatters";
 
 const FORM_INICIAL = {
+  tipoItem: "produto",
   tipo: "perda",
   produtoId: "",
   produto: "",
+  insumoId: "",
+  insumo: "",
   quantidade: "",
   data: new Date().toISOString().split("T")[0],
   motivo: "",
@@ -22,6 +26,7 @@ const FORM_INICIAL = {
 };
 
 const FILTRO_INICIAL = {
+  tipoItem: "todos",
   tipo: "todos",
   produto: "",
   inicio: "",
@@ -29,6 +34,18 @@ const FILTRO_INICIAL = {
   status: "ativo",
   busca: "",
 };
+
+const TIPOS_MOVIMENTACAO = [
+  { valor: "perda", label: "Perda" },
+  { valor: "doacao", label: "Doacao" },
+  { valor: "avaria", label: "Avaria" },
+  { valor: "quebra", label: "Quebra" },
+  { valor: "vencimento", label: "Vencimento" },
+  { valor: "ajuste_operacional", label: "Ajuste operacional" },
+];
+
+const obterLabelTipo = (tipo) =>
+  TIPOS_MOVIMENTACAO.find((item) => item.valor === tipo)?.label || "Perda";
 
 const descreverProduto = (produto = {}) => {
   const codigo = produto.codigo ? `${produto.codigo} -` : "";
@@ -50,6 +67,7 @@ const obterTimestamp = (valor) => {
 export default function PerdasDoacoes() {
   const {
     user,
+    insumos = [],
     produtos = [],
     producoes = [],
     vendas = [],
@@ -77,6 +95,15 @@ export default function PerdasDoacoes() {
       }),
     [perdasDoacoes, producoes, produtos, vendas]
   );
+  const estoqueInsumos = useMemo(
+    () =>
+      calcularEstoqueInsumos({
+        insumos,
+        producoes,
+        perdasDoacoes,
+      }),
+    [insumos, perdasDoacoes, producoes]
+  );
 
   const produtosPorDescricao = useMemo(() => {
     const mapa = new Map();
@@ -99,44 +126,76 @@ export default function PerdasDoacoes() {
   const produtoSelecionadoCadastro =
     produtos.find((produto) => produto.id === form.produtoId) ||
     produtosPorDescricao.get(normalizarChaveProduto(form.produto));
+  const insumoSelecionadoEstoque = estoqueInsumos.find((insumo) =>
+    form.insumoId
+      ? insumo.insumoId === form.insumoId
+      : insumo.nome === form.insumo
+  );
+  const insumoSelecionadoCadastro =
+    insumos.find((insumo) => insumo.id === form.insumoId) ||
+    insumos.find(
+      (insumo) =>
+        normalizarChaveProduto(insumo.nome) === normalizarChaveProduto(form.insumo)
+    );
+  const itemSelecionadoEstoque =
+    form.tipoItem === "insumo" ? insumoSelecionadoEstoque : produtoSelecionadoEstoque;
   const quantidade = Number(form.quantidade || 0);
-  const saldoDisponivel = Number(produtoSelecionadoEstoque?.saldo || 0);
-  const custoUnitarioSnapshot = Number(produtoSelecionadoEstoque?.custoMedio || 0);
+  const saldoDisponivel = Number(itemSelecionadoEstoque?.saldo || 0);
+  const custoUnitarioSnapshot = Number(itemSelecionadoEstoque?.custoMedio || 0);
   const custoTotalSnapshot = quantidade * custoUnitarioSnapshot;
   const unidadeProduto =
     produtoSelecionadoCadastro?.fiscal?.unidadeTributavel ||
     produtoSelecionadoCadastro?.unidade ||
     "unidades";
+  const unidadeInsumo = insumoSelecionadoCadastro?.unidade || insumoSelecionadoEstoque?.unidade || "";
+  const unidadeItem = form.tipoItem === "insumo" ? unidadeInsumo : unidadeProduto;
 
   const limparFormulario = () => {
     setForm(FORM_INICIAL);
   };
 
   const registrarPerdaDoacao = async () => {
-    if (!form.produto || !form.data || quantidade <= 0) {
-      showToast("Selecione produto, data e quantidade valida.", "warning");
+    const itemSelecionado =
+      form.tipoItem === "insumo" ? form.insumo || form.insumoId : form.produto || form.produtoId;
+
+    if (!itemSelecionado || !form.data || quantidade <= 0) {
+      showToast("Selecione item, data e quantidade valida.", "warning");
       return;
     }
 
-    if (!produtoSelecionadoEstoque) {
-      showToast("Produto nao encontrado no estoque.", "warning");
+    if (!itemSelecionadoEstoque) {
+      showToast("Item nao encontrado no estoque.", "warning");
       return;
     }
 
     if (quantidade > saldoDisponivel) {
-      showToast("Nao e possivel registrar perda/doacao maior que o saldo disponivel em estoque.", "warning");
+      showToast("Nao e possivel registrar perda/doacao maior que o saldo disponivel.", "warning");
       return;
     }
 
     const agora = new Date();
 
     const registro = {
+      tipoItem: form.tipoItem,
       tipo: form.tipo,
-      produtoId: produtoSelecionadoEstoque?.produtoId || produtoSelecionadoCadastro?.id || "",
-      produtoNome: produtoSelecionadoEstoque?.produto || form.produto,
-      codigoProduto: produtoSelecionadoEstoque?.codigo || produtoSelecionadoCadastro?.codigo || "",
+      produtoId:
+        form.tipoItem === "produto"
+          ? produtoSelecionadoEstoque?.produtoId || produtoSelecionadoCadastro?.id || ""
+          : "",
+      produtoNome:
+        form.tipoItem === "produto" ? produtoSelecionadoEstoque?.produto || form.produto : "",
+      codigoProduto:
+        form.tipoItem === "produto"
+          ? produtoSelecionadoEstoque?.codigo || produtoSelecionadoCadastro?.codigo || ""
+          : "",
+      insumoId:
+        form.tipoItem === "insumo"
+          ? insumoSelecionadoEstoque?.insumoId || insumoSelecionadoCadastro?.id || ""
+          : "",
+      insumoNome:
+        form.tipoItem === "insumo" ? insumoSelecionadoEstoque?.nome || form.insumo : "",
       quantidade,
-      unidade: unidadeProduto,
+      unidade: unidadeItem,
       data: form.data,
       motivo: form.motivo || "",
       destinatario: form.tipo === "doacao" ? form.destinatario || "" : "",
@@ -152,9 +211,7 @@ export default function PerdasDoacoes() {
 
     await addItem("perdasDoacoes", registro);
     showToast(
-      form.tipo === "doacao"
-        ? "Doacao registrada com sucesso."
-        : "Perda registrada com sucesso.",
+      "Baixa registrada com sucesso.",
       "success"
     );
     limparFormulario();
@@ -164,9 +221,7 @@ export default function PerdasDoacoes() {
     if (registro.status === "cancelado") return;
 
     const confirmado = await confirmar(
-      `Deseja cancelar este registro de ${
-        registro.tipo === "doacao" ? "doacao" : "perda"
-      }?`
+      `Deseja cancelar este registro de ${obterLabelTipo(registro.tipo).toLowerCase()}?`
     );
 
     if (!confirmado) return;
@@ -184,13 +239,16 @@ export default function PerdasDoacoes() {
     const produtoFiltro = normalizarChaveProduto(filtros.produto);
 
     return (perdasDoacoes || []).filter((registro) => {
+      const tipoItemRegistro = registro.tipoItem || "produto";
+
+      if (filtros.tipoItem !== "todos" && tipoItemRegistro !== filtros.tipoItem) return false;
       if (filtros.tipo !== "todos" && registro.tipo !== filtros.tipo) return false;
       if (filtros.status !== "todos" && registro.status !== filtros.status) return false;
       if (filtros.inicio && registro.data < filtros.inicio) return false;
       if (filtros.fim && registro.data > filtros.fim) return false;
       if (
         produtoFiltro &&
-        normalizarChaveProduto(registro.produtoNome) !== produtoFiltro
+        normalizarChaveProduto(registro.produtoNome || registro.insumoNome) !== produtoFiltro
       ) {
         return false;
       }
@@ -199,6 +257,7 @@ export default function PerdasDoacoes() {
 
       return [
         registro.produtoNome,
+        registro.insumoNome,
         registro.motivo,
         registro.destinatario,
         registro.observacoes,
@@ -212,7 +271,7 @@ export default function PerdasDoacoes() {
       const valores = {
         data: registro.data || "",
         tipo: registro.tipo || "",
-        produto: registro.produtoNome || "",
+        produto: registro.produtoNome || registro.insumoNome || "",
         quantidade: Number(registro.quantidade || 0),
         custoTotal: Number(registro.custoTotalSnapshot || 0),
         status: registro.status || "",
@@ -294,43 +353,96 @@ export default function PerdasDoacoes() {
 
         <div className="form-grid">
           <label>
-            Tipo
+            Tipo do item
             <select
-              value={form.tipo}
-              onChange={(e) => setForm({ ...form, tipo: e.target.value })}
+              value={form.tipoItem}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  tipoItem: e.target.value,
+                  produtoId: "",
+                  produto: "",
+                  insumoId: "",
+                  insumo: "",
+                })
+              }
             >
-              <option value="perda">Perda</option>
-              <option value="doacao">Doacao</option>
+              <option value="produto">Produto acabado</option>
+              <option value="insumo">Insumo / Materia-prima</option>
             </select>
           </label>
 
           <label>
-            Produto
+            Tipo da movimentacao
             <select
-              value={form.produtoId || form.produto}
-              onChange={(e) => {
-                const selecionado = estoqueProdutos.find(
-                  (produto) => (produto.produtoId || produto.produto) === e.target.value
-                );
-
-                setForm({
-                  ...form,
-                  produtoId: selecionado?.produtoId || "",
-                  produto: selecionado?.produto || "",
-                });
-              }}
+              value={form.tipo}
+              onChange={(e) => setForm({ ...form, tipo: e.target.value })}
             >
-              <option value="">Selecione o produto</option>
-              {estoqueProdutos.map((produto) => (
-                <option
-                  key={produto.produtoId || produto.produto}
-                  value={produto.produtoId || produto.produto}
-                >
-                  {produto.produto} - saldo: {numeroBR(produto.saldo, 3)}
+              {TIPOS_MOVIMENTACAO.map((tipo) => (
+                <option key={tipo.valor} value={tipo.valor}>
+                  {tipo.label}
                 </option>
               ))}
             </select>
           </label>
+
+          {form.tipoItem === "produto" ? (
+            <label>
+              Produto
+              <select
+                value={form.produtoId || form.produto}
+                onChange={(e) => {
+                  const selecionado = estoqueProdutos.find(
+                    (produto) => (produto.produtoId || produto.produto) === e.target.value
+                  );
+
+                  setForm({
+                    ...form,
+                    produtoId: selecionado?.produtoId || "",
+                    produto: selecionado?.produto || "",
+                  });
+                }}
+              >
+                <option value="">Selecione o produto</option>
+                {estoqueProdutos.map((produto) => (
+                  <option
+                    key={produto.produtoId || produto.produto}
+                    value={produto.produtoId || produto.produto}
+                  >
+                    {produto.produto} - saldo: {numeroBR(produto.saldo, 3)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <label>
+              Insumo / Materia-prima
+              <select
+                value={form.insumoId || form.insumo}
+                onChange={(e) => {
+                  const selecionado = estoqueInsumos.find(
+                    (insumo) => (insumo.insumoId || insumo.nome) === e.target.value
+                  );
+
+                  setForm({
+                    ...form,
+                    insumoId: selecionado?.insumoId || "",
+                    insumo: selecionado?.nome || "",
+                  });
+                }}
+              >
+                <option value="">Selecione o insumo</option>
+                {estoqueInsumos.map((insumo) => (
+                  <option
+                    key={insumo.insumoId || insumo.nome}
+                    value={insumo.insumoId || insumo.nome}
+                  >
+                    {insumo.nome} - saldo: {numeroBR(insumo.saldo, 3)} {insumo.unidade}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <label>
             Quantidade
@@ -383,16 +495,16 @@ export default function PerdasDoacoes() {
           </label>
         </div>
 
-        {produtoSelecionadoEstoque && (
+        {itemSelecionadoEstoque && (
           <div className="product-type-help">
-            Saldo disponivel: {numeroBR(saldoDisponivel, 3)} {unidadeProduto}. Custo
+            Saldo disponivel: {numeroBR(saldoDisponivel, 3)} {unidadeItem}. Custo
             estimado da baixa: {moedaBR(custoTotalSnapshot)}.
           </div>
         )}
 
         <div className="action-row">
           <button type="button" onClick={registrarPerdaDoacao}>
-            Registrar {form.tipo === "doacao" ? "Doacao" : "Perda"}
+            Registrar {obterLabelTipo(form.tipo)}
           </button>
           <button type="button" onClick={limparFormulario}>
             Limpar
@@ -405,29 +517,61 @@ export default function PerdasDoacoes() {
 
         <div className="form-grid">
           <label>
-            Tipo
+            Tipo do item
+            <select
+              value={filtros.tipoItem}
+              onChange={(e) => setFiltros({ ...filtros, tipoItem: e.target.value })}
+            >
+              <option value="todos">Todos</option>
+              <option value="produto">Produto acabado</option>
+              <option value="insumo">Insumo / Materia-prima</option>
+            </select>
+          </label>
+
+          <label>
+            Tipo da movimentacao
             <select
               value={filtros.tipo}
               onChange={(e) => setFiltros({ ...filtros, tipo: e.target.value })}
             >
               <option value="todos">Todos</option>
-              <option value="perda">Perda</option>
-              <option value="doacao">Doacao</option>
+              {TIPOS_MOVIMENTACAO.map((tipo) => (
+                <option key={tipo.valor} value={tipo.valor}>
+                  {tipo.label}
+                </option>
+              ))}
             </select>
           </label>
 
           <label>
-            Produto
+            Item
             <select
               value={filtros.produto}
               onChange={(e) => setFiltros({ ...filtros, produto: e.target.value })}
             >
               <option value="">Todos</option>
-              {estoqueProdutos.map((produto) => (
-                <option key={produto.produto} value={produto.produto}>
-                  {produto.produto}
-                </option>
-              ))}
+              {[
+                ...(filtros.tipoItem !== "insumo"
+                  ? estoqueProdutos.map((produto) => ({
+                      chave: produto.produtoId || produto.produto,
+                      nome: produto.produto,
+                    }))
+                  : []),
+                ...(filtros.tipoItem !== "produto"
+                  ? estoqueInsumos.map((insumo) => ({
+                      chave: insumo.insumoId || insumo.nome,
+                      nome: insumo.nome,
+                    }))
+                  : []),
+              ].map((item) => {
+                const nome = item.nome;
+
+                return (
+                  <option key={item.chave || nome} value={nome}>
+                    {nome}
+                  </option>
+                );
+              })}
             </select>
           </label>
 
@@ -466,7 +610,7 @@ export default function PerdasDoacoes() {
             <input
               value={filtros.busca}
               onChange={(e) => setFiltros({ ...filtros, busca: e.target.value })}
-              placeholder="Produto, motivo, destinatario ou observacao"
+              placeholder="Item, motivo, destinatario ou observacao"
             />
           </label>
         </div>
@@ -480,8 +624,9 @@ export default function PerdasDoacoes() {
             <thead>
               <tr>
                 <th>{renderCabecalhoOrdenavel("Data", "data")}</th>
+                <th>Item</th>
                 <th>{renderCabecalhoOrdenavel("Tipo", "tipo")}</th>
-                <th>{renderCabecalhoOrdenavel("Produto", "produto")}</th>
+                <th>{renderCabecalhoOrdenavel("Nome", "produto")}</th>
                 <th>{renderCabecalhoOrdenavel("Quantidade", "quantidade")}</th>
                 <th>{renderCabecalhoOrdenavel("Custo", "custoTotal")}</th>
                 <th>Motivo</th>
@@ -496,15 +641,22 @@ export default function PerdasDoacoes() {
                 <tr key={registro.id}>
                   <td>{dataBR(registro.data)}</td>
                   <td>
+                    <span className="badge badge-purple">
+                      {(registro.tipoItem || "produto") === "insumo"
+                        ? "Insumo"
+                        : "Produto"}
+                    </span>
+                  </td>
+                  <td>
                     <span
                       className={`badge ${
                         registro.tipo === "doacao" ? "badge-info" : "badge-danger"
                       }`}
                     >
-                      {registro.tipo === "doacao" ? "Doacao" : "Perda"}
+                      {obterLabelTipo(registro.tipo)}
                     </span>
                   </td>
-                  <td>{registro.produtoNome}</td>
+                  <td>{registro.produtoNome || registro.insumoNome}</td>
                   <td>
                     {numeroBR(registro.quantidade, 3)} {registro.unidade || ""}
                   </td>
@@ -540,7 +692,7 @@ export default function PerdasDoacoes() {
 
               {registrosOrdenados.length === 0 && (
                 <tr>
-                  <td colSpan="9">Nenhuma perda ou doacao registrada.</td>
+                  <td colSpan="10">Nenhuma perda ou doacao registrada.</td>
                 </tr>
               )}
             </tbody>

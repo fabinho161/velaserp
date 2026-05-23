@@ -219,6 +219,7 @@ export const calcularEstoqueProdutos = ({
 
   (perdasDoacoes || []).forEach((baixa) => {
     if (String(baixa.status || "ativo").toLowerCase() === "cancelado") return;
+    if (String(baixa.tipoItem || "produto").toLowerCase() !== "produto") return;
 
     const produtoId = baixa.produtoId || "";
     const aliasesBaixa = obterAliasesBaixaEstoque(baixa);
@@ -243,6 +244,122 @@ export const calcularEstoqueProdutos = ({
       saldoReal,
       custoMedio,
       valorEstoque: saldo * custoMedio,
+    };
+  });
+};
+
+const normalizarStatusBaixa = (status) =>
+  String(status || "ativo").trim().toLowerCase();
+
+const registroBaixaAtivo = (registro = {}) =>
+  normalizarStatusBaixa(registro.status) !== "cancelado";
+
+const registroBaixaInsumo = (registro = {}) =>
+  String(registro.tipoItem || "produto").trim().toLowerCase() === "insumo";
+
+const normalizarChaveInsumo = (valor = "") => normalizarTextoProduto(valor);
+
+const calcularTotalCompradoInsumo = (compras = []) =>
+  (compras || []).reduce(
+    (total, compra) => total + Number(compra.quantidade || 0),
+    0
+  );
+
+const calcularCustoMedioInsumo = (compras = []) => {
+  const quantidade = calcularTotalCompradoInsumo(compras);
+  const valor = (compras || []).reduce(
+    (total, compra) => total + Number(compra.valorTotal || 0),
+    0
+  );
+
+  return quantidade > 0 ? valor / quantidade : 0;
+};
+
+export const calcularEstoqueInsumos = ({
+  insumos = [],
+  producoes = [],
+  perdasDoacoes = [],
+} = {}) => {
+  const mapa = new Map();
+  const aliases = new Map();
+
+  const registrarAlias = (chave, valor) => {
+    const alias = normalizarChaveInsumo(valor);
+    if (alias) aliases.set(alias, chave);
+  };
+
+  const garantirItem = (insumo = {}) => {
+    const insumoId = insumo.insumoId || insumo.id || "";
+    const nome = insumo.nome || insumo.insumoNome || "";
+    const chave =
+      (insumoId ? `insumo:${insumoId}` : "") ||
+      aliases.get(normalizarChaveInsumo(nome)) ||
+      `legado:${normalizarChaveInsumo(nome)}`;
+
+    if (!mapa.has(chave)) {
+      mapa.set(chave, {
+        insumoId,
+        legado: !insumoId,
+        nome,
+        unidade: insumo.unidade || "",
+        comprado: calcularTotalCompradoInsumo(insumo.compras || []),
+        consumido: 0,
+        baixado: 0,
+        custoMedio: calcularCustoMedioInsumo(insumo.compras || []),
+      });
+    }
+
+    registrarAlias(chave, nome);
+    return mapa.get(chave);
+  };
+
+  (insumos || []).forEach((insumo) => garantirItem(insumo));
+
+  (producoes || []).forEach((producao) => {
+    (producao.consumos || []).forEach((consumo) => {
+      const chavePorId = consumo.insumoId ? `insumo:${consumo.insumoId}` : "";
+      const chavePorNome = aliases.get(normalizarChaveInsumo(consumo.nome));
+      const item = chavePorId && mapa.has(chavePorId)
+        ? mapa.get(chavePorId)
+        : chavePorNome
+        ? mapa.get(chavePorNome)
+        : garantirItem({
+            insumoId: consumo.insumoId || "",
+            nome: consumo.nome,
+            unidade: consumo.unidade,
+          });
+
+      item.consumido += Number(consumo.quantidadeTotal || 0);
+    });
+  });
+
+  (perdasDoacoes || [])
+    .filter((registro) => registroBaixaAtivo(registro) && registroBaixaInsumo(registro))
+    .forEach((registro) => {
+      const chavePorId = registro.insumoId ? `insumo:${registro.insumoId}` : "";
+      const chavePorNome = aliases.get(normalizarChaveInsumo(registro.insumoNome));
+      const item = chavePorId && mapa.has(chavePorId)
+        ? mapa.get(chavePorId)
+        : chavePorNome
+        ? mapa.get(chavePorNome)
+        : garantirItem({
+            insumoId: registro.insumoId || "",
+            nome: registro.insumoNome,
+            unidade: registro.unidade,
+          });
+
+      item.baixado += Number(registro.quantidade || 0);
+    });
+
+  return Array.from(mapa.values()).map((item) => {
+    const saldoReal = item.comprado - item.consumido - item.baixado;
+    const saldo = Math.max(0, saldoReal);
+
+    return {
+      ...item,
+      saldo,
+      saldoReal,
+      valorEstoque: saldo * item.custoMedio,
     };
   });
 };

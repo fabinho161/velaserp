@@ -3,7 +3,10 @@ import { useERP } from "../context/useERP";
 import { useTableSort } from "../hooks/useTableSort";
 import ActionMenu from "../components/ActionMenu";
 import { numeroBR } from "../utils/formatters";
-import { calcularEstoqueProdutos } from "../utils/estoqueProdutos";
+import {
+  calcularEstoqueInsumos,
+  calcularEstoqueProdutos,
+} from "../utils/estoqueProdutos";
 
 const ESTOQUE_MINIMO_CONFIG = "estoqueMinimoProdutos";
 
@@ -108,20 +111,6 @@ export default function Estoque() {
   // ================================
   // 🔹 CUSTO MÉDIO DOS INSUMOS
   // ================================
-  const calcularCustoMedio = (compras = []) => {
-    const qtd = compras.reduce(
-      (total, compra) => total + Number(compra.quantidade || 0),
-      0
-    );
-
-    const valor = compras.reduce(
-      (total, compra) => total + Number(compra.valorTotal || 0),
-      0
-    );
-
-    return qtd > 0 ? valor / qtd : 0;
-  };
-
   // ================================
   // 🔹 ESTOQUE DE PRODUTOS ACABADOS
   // Estoque = Produzido - Vendido - Perdas/Doacoes ativas
@@ -131,14 +120,19 @@ export default function Estoque() {
     vendas,
     perdasDoacoes,
   });
+  const insumosEstoque = calcularEstoqueInsumos({
+    insumos,
+    producoes,
+    perdasDoacoes,
+  });
 
   // ================================
   // 🔹 RESUMOS
   // ================================
-  const valorTotalInsumos = insumos.reduce((total, insumo) => {
-    const custoMedio = calcularCustoMedio(insumo.compras || []);
-    return total + Number(insumo.estoque || 0) * custoMedio;
-  }, 0);
+  const valorTotalInsumos = insumosEstoque.reduce(
+    (total, insumo) => total + Number(insumo.valorEstoque || 0),
+    0
+  );
 
   const valorTotalProdutos = produtosEstoque.reduce(
     (total, produto) => total + Number(produto.valorEstoque || 0),
@@ -150,21 +144,24 @@ export default function Estoque() {
     return minimo > 0 && produto.saldo <= minimo;
   });
 
-  const insumosZerados = insumos.filter(
-    (insumo) => Number(insumo.estoque || 0) <= 0
+  const insumosZerados = insumosEstoque.filter(
+    (insumo) => Number(insumo.saldo || 0) <= 0
   );
 
   const insumosEstoqueOrdenados = ordenacaoInsumos.ordenar(
-    insumos.map((insumo, index) => {
-      const estoqueAtual = Number(insumo.estoque || 0);
-      const custoMedio = calcularCustoMedio(insumo.compras || []);
-      const valorEstoque = estoqueAtual * custoMedio;
+    insumosEstoque.map((insumo, index) => {
+      const estoqueAtual = Number(insumo.saldo || 0);
+      const custoMedio = Number(insumo.custoMedio || 0);
+      const valorEstoque = Number(insumo.valorEstoque || 0);
       const baixo = estoqueAtual <= 0;
 
       return {
         insumo,
         index,
         estoqueAtual,
+        totalComprado: Number(insumo.comprado || 0),
+        totalConsumido: Number(insumo.consumido || 0),
+        totalBaixado: Number(insumo.baixado || 0),
         custoMedio,
         valorEstoque,
         status: baixo ? "Baixo" : "OK",
@@ -173,6 +170,9 @@ export default function Estoque() {
     (item, chave) => {
       const valores = {
         insumo: item.insumo.nome || "",
+        totalComprado: item.totalComprado,
+        totalConsumido: item.totalConsumido,
+        totalBaixado: item.totalBaixado,
         estoqueAtual: item.estoqueAtual,
         custoMedio: item.custoMedio,
         valorEstoque: item.valorEstoque,
@@ -345,7 +345,7 @@ export default function Estoque() {
                 }}
               >
                 ⚠ {insumo.nome} — estoque:{" "}
-                {numeroBR(insumo.estoque || 0, 3)} {insumo.unidade}
+                {numeroBR(insumo.saldo || 0, 3)} {insumo.unidade}
               </div>
             ))
           ) : (
@@ -366,6 +366,9 @@ export default function Estoque() {
           <thead>
             <tr>
               <th>{renderCabecalhoOrdenavel("Insumo", "insumo", ordenacaoInsumos)}</th>
+              <th>{renderCabecalhoOrdenavel("Comprado", "totalComprado", ordenacaoInsumos)}</th>
+              <th>{renderCabecalhoOrdenavel("Consumido", "totalConsumido", ordenacaoInsumos)}</th>
+              <th>{renderCabecalhoOrdenavel("Baixado", "totalBaixado", ordenacaoInsumos)}</th>
               <th>{renderCabecalhoOrdenavel("Estoque", "estoqueAtual", ordenacaoInsumos)}</th>
               <th>{renderCabecalhoOrdenavel("Custo Médio", "custoMedio", ordenacaoInsumos)}</th>
               <th>{renderCabecalhoOrdenavel("Valor em Estoque", "valorEstoque", ordenacaoInsumos)}</th>
@@ -378,6 +381,9 @@ export default function Estoque() {
               insumo,
               index,
               estoqueAtual,
+              totalComprado,
+              totalConsumido,
+              totalBaixado,
               custoMedio,
               valorEstoque,
               status,
@@ -387,6 +393,18 @@ export default function Estoque() {
               return (
                 <tr key={index}>
                   <td>{insumo.nome}</td>
+
+                  <td>
+                    {numeroBR(totalComprado, 3)} {insumo.unidade}
+                  </td>
+
+                  <td>
+                    {numeroBR(totalConsumido, 3)} {insumo.unidade}
+                  </td>
+
+                  <td>
+                    {numeroBR(totalBaixado, 3)} {insumo.unidade}
+                  </td>
 
                   <td style={{ color: baixo ? "#dc2626" : "#16a34a" }}>
                     {numeroBR(estoqueAtual, 3)} {insumo.unidade}
@@ -416,7 +434,7 @@ export default function Estoque() {
 
             {insumos.length === 0 && (
               <tr>
-                <td colSpan="5">Nenhum insumo cadastrado.</td>
+                <td colSpan="8">Nenhum insumo cadastrado.</td>
               </tr>
             )}
           </tbody>
