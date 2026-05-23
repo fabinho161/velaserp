@@ -1,5 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Barcode, Copy, CreditCard, ExternalLink, QrCode, X } from "lucide-react";
+import {
+  Barcode,
+  BarChart3,
+  Building2,
+  CheckCircle2,
+  Copy,
+  CreditCard,
+  Crown,
+  ExternalLink,
+  Factory,
+  Layers3,
+  Package,
+  QrCode,
+  Rocket,
+  ShieldCheck,
+  Sparkles,
+  Users,
+  X,
+} from "lucide-react";
 import { PLANOS, getPlanoNivel } from "../config/planos";
 import { usePlano } from "../hooks/usePlano";
 import { useToast } from "../context/useToast";
@@ -28,6 +46,84 @@ const DESCRICOES_PLANOS_COMERCIAL = {
   premium: "Operacao completa com multiempresas, identidade visual e recursos premium.",
 };
 
+const PLANOS_VISUAIS = {
+  gratis: {
+    Icone: Package,
+    selo: "Entrada operacional",
+    titulo: "Comece com a base da operacao organizada.",
+    descricao:
+      "Para validar processos, cadastrar dados essenciais e entender o fluxo do ERP sem compromisso.",
+    idealPara: ["Micro operacoes", "Testes iniciais", "Rotina de cadastro"],
+    cta: "Comecar gratis",
+    tom: "starter",
+  },
+  basico: {
+    Icone: Rocket,
+    selo: "Comercial ativo",
+    titulo: "Venda com mais controle e acompanhe clientes.",
+    descricao:
+      "Para empresas pequenas que precisam tirar vendas do improviso e ganhar previsibilidade comercial.",
+    idealPara: ["Pequenas empresas", "Operacao comercial", "Primeira equipe"],
+    cta: "Evoluir operacao",
+    tom: "growth",
+  },
+  profissional: {
+    Icone: Factory,
+    selo: "Mais popular",
+    titulo: "Gestao industrial e comercial em uma rotina completa.",
+    descricao:
+      "Para fabricas e operacoes que precisam conectar producao, vendas, DRE, CRM e indicadores.",
+    idealPara: ["Fabricas", "Producao recorrente", "Gestao completa"],
+    cta: "Escalar empresa",
+    tom: "popular",
+  },
+  premium: {
+    Icone: Crown,
+    selo: "Operacao completa",
+    titulo: "Controle avancado para crescimento multiempresa.",
+    descricao:
+      "Para equipes em expansao que precisam de multiempresa, personalizacao e recursos premium.",
+    idealPara: ["Multiempresa", "Equipes maiores", "Expansao"],
+    cta: "Operacao completa",
+    tom: "enterprise",
+  },
+};
+
+const SECOES_RECURSOS_PLANOS = {
+  gratis: {
+    Operacao: ["Dashboard basico", "Producao basica", "Estoque integrado", "Financeiro simples"],
+    Comercial: ["Preparado para vendas nos planos superiores"],
+    Gestao: ["Cadastros essenciais", "Controle operacional inicial"],
+    "Recursos Premium": ["CRM, DRE e PDF profissional nos planos superiores"],
+  },
+  basico: {
+    Operacao: ["Estoque integrado", "Controle operacional", "Vendas ilimitadas"],
+    Comercial: ["Cadastro de clientes", "CRM basico", "Historico por cliente"],
+    Gestao: ["Ate 2 empresas", "Ate 3 usuarios"],
+    "Recursos Premium": ["DRE e automacoes comerciais nos planos superiores"],
+  },
+  profissional: {
+    Operacao: ["Producao", "Estoque integrado", "Perdas e doacoes", "Controle fiscal"],
+    Comercial: ["CRM inteligente", "Recompra prevista", "Follow-up comercial"],
+    Gestao: ["Dashboard executivo", "DRE completo", "PDF profissional", "Convites e equipe"],
+    "Recursos Premium": ["Relatorios premium e WhatsApp nos planos superiores"],
+  },
+  premium: {
+    Operacao: ["Multiempresa", "Producao", "Estoque integrado", "Rastreabilidade operacional"],
+    Comercial: ["CRM completo", "WhatsApp para clientes", "Contatos de hoje"],
+    Gestao: ["Dashboard executivo", "Relatorios avancados", "Controle fiscal", "Convites e equipe"],
+    "Recursos Premium": ["Identidade visual completa", "Prioridade no suporte"],
+  },
+};
+
+const ICONES_SECAO_PLANO = {
+  Operacao: Layers3,
+  Comercial: Users,
+  Gestao: BarChart3,
+  "Recursos Premium": Sparkles,
+  Limites: ShieldCheck,
+};
+
 const boletoFormInicial = {
   first_name: "",
   last_name: "",
@@ -45,6 +141,38 @@ const formatarVencimento = (valor) => {
 
   const data = new Date(valor);
   return Number.isNaN(data.getTime()) ? valor : data.toLocaleDateString("pt-BR");
+};
+
+const formatarLimitePlano = (plano) => {
+  const limites = [
+    plano.empresas === 1 ? "1 empresa" : `Ate ${plano.empresas} empresas`,
+    plano.usuarios === 1 ? "1 usuario" : `Ate ${plano.usuarios} usuarios`,
+    plano.vendasMes === 0
+      ? "Vendas disponiveis nos planos superiores"
+      : plano.vendasMes
+        ? `Ate ${plano.vendasMes} vendas por mes`
+        : "Vendas ilimitadas",
+  ];
+
+  const recursosSuperiores = (plano.limitacoes || []).map((limitacao) => {
+    const recurso = String(limitacao)
+      .replace(/^Sem\s+/i, "")
+      .replace(/\s+$/, "");
+
+    return `${recurso} disponivel nos planos superiores`;
+  });
+
+  return [...limites, ...recursosSuperiores].slice(0, 6);
+};
+
+const getStatusAssinaturaLabel = (status) => {
+  const labels = {
+    active: "Ativa",
+    inactive: "Inativa",
+    blocked: "Bloqueada",
+  };
+
+  return labels[status] || status || "Nao informado";
 };
 
 export default function Planos() {
@@ -500,24 +628,64 @@ export default function Planos() {
   return (
     <div className="plans-page">
       <div className="plans-header">
-        <div>
-          <h1 className="page-title">Planos</h1>
-          <p>
+        <div className="plans-header-copy">
+          <span className="plans-kicker">
+            <Sparkles size={16} />
+            Planos Renovar ERP
+          </span>
+          <h1 className="page-title">Escolha o plano ideal para o crescimento da sua operacao</h1>
+          <p className="plans-hero-subtitle">
             Escolha o pacote ideal para operar vendas, estoque, produção e
             financeiro com recursos que acompanham o crescimento da empresa.
           </p>
+
+          <p className="plans-hero-subtitle plans-hero-subtitle-modern">
+            Comece gratis e evolua conforme sua empresa cresce, mantendo vendas,
+            estoque, producao e gestao no mesmo ambiente.
+          </p>
+
+          <div className="plans-header-highlights" aria-label="Destaques dos planos">
+            <span>
+              <CheckCircle2 size={16} />
+              Upgrade sem perder dados
+            </span>
+            <span>
+              <Building2 size={16} />
+              Preparado para multiempresa
+            </span>
+            <span>
+              <ShieldCheck size={16} />
+              Permissoes preservadas
+            </span>
+          </div>
         </div>
 
-        <span className={`plans-status plans-status-${status}`}>
-          Assinatura: {status}
-        </span>
+        <aside className="plans-current-summary" aria-label="Assinatura atual">
+          <span className={`plans-status plans-status-${status}`}>
+            {getStatusAssinaturaLabel(status)}
+          </span>
+          <strong>{PLANOS[planoAtual]?.nome || "Plano atual"}</strong>
+          <small>Assinatura atual da empresa</small>
+        </aside>
       </div>
 
       <div className="plans-evolution">
-        <span>Gratis</span>
-        <span>Basico</span>
-        <span>Profissional</span>
-        <span>Premium</span>
+        <div>
+          <strong>Mensal</strong>
+          <span>Cobranca atual</span>
+        </div>
+        <div>
+          <strong>Anual</strong>
+          <span>Preparado para economia futura</span>
+        </div>
+        <div>
+          <strong>Upgrade</strong>
+          <span>Cresca sem trocar de sistema</span>
+        </div>
+        <div>
+          <strong>Equipe</strong>
+          <span>Convites e limites por plano</span>
+        </div>
       </div>
 
       <div className="plans-grid">
@@ -527,59 +695,115 @@ export default function Planos() {
           const planoInferior = planoOfertaNivel < planoNivel;
           const planoAcima = planoOfertaNivel > planoNivel;
           const recomendado = chave === "profissional";
+          const visual = PLANOS_VISUAIS[chave] || PLANOS_VISUAIS.gratis;
+          const IconePlano = visual.Icone;
+          const secoes = SECOES_RECURSOS_PLANOS[chave] || {};
+          const limitesPlano = formatarLimitePlano(plano);
 
           return (
             <div
               key={chave}
               className={[
-                "card",
                 "plan-card",
+                `plan-card-${visual.tom}`,
                 ativo ? "plan-card-active" : "",
                 planoInferior ? "plan-card-disabled" : "",
                 recomendado && !planoInferior ? "plan-card-recommended" : "",
               ].filter(Boolean).join(" ")}
             >
+              {recomendado && (
+                <div className="plan-popular-ribbon">
+                  <Sparkles size={15} />
+                  Mais popular
+                </div>
+              )}
+
               <div className="plan-card-header">
-                <span>{plano.nome}</span>
+                <div className="plan-title-block">
+                  <span className="plan-icon">
+                    <IconePlano size={22} />
+                  </span>
+                  <div>
+                    <small>{visual.selo}</small>
+                    <h2>{plano.nome}</h2>
+                  </div>
+                </div>
                 <div className="plan-badges">
                   {ativo && <strong>Plano atual</strong>}
                   {planoInferior && <strong className="plan-badge-muted">Plano inferior</strong>}
-                  {recomendado && !ativo && !planoInferior && <strong>Recomendado</strong>}
                 </div>
               </div>
 
               <div className="plan-price">
-                <h2>{moedaBR(plano.preco)}</h2>
-                <small>/ mês sugerido</small>
+                <strong>{moedaBR(plano.preco)}</strong>
+                <span>/ mes sugerido</span>
+              </div>
+
+              <div className="plan-positioning">
+                <h3>{visual.titulo}</h3>
+                <p>{visual.descricao}</p>
+              </div>
+
+              <div className="plan-ideal">
+                <span>Ideal para</span>
+                <div>
+                  {visual.idealPara.map((item) => (
+                    <small key={item}>{item}</small>
+                  ))}
+                </div>
               </div>
 
               <p className="plan-conversion-text">
                 {DESCRICOES_PLANOS_COMERCIAL[chave] || DESCRICOES_PLANOS[chave]}
               </p>
 
-              <div className="plan-section">
-                <h3>Recursos</h3>
-                <ul>
-                  {plano.recursos.map((recurso) => (
-                    <li key={recurso}>{recurso}</li>
-                  ))}
-                </ul>
-              </div>
+              <div className="plan-sections">
+                {Object.entries(secoes).map(([titulo, recursos]) => {
+                  const IconeSecao = ICONES_SECAO_PLANO[titulo] || CheckCircle2;
 
-              {plano.limitacoes.length > 0 && (
+                  return (
+                    <section className="plan-section" key={titulo}>
+                      <h3>
+                        <IconeSecao size={15} />
+                        {titulo}
+                      </h3>
+                      <ul>
+                        {recursos.map((recurso) => (
+                          <li key={recurso}>
+                            <CheckCircle2 size={14} />
+                            <span>{recurso}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  );
+                })}
+
+              {limitesPlano.length > 0 && (
                 <div className="plan-section plan-limitations">
-                  <h3>Limitações</h3>
+                  <h3>
+                    <ShieldCheck size={15} />
+                    Limites
+                  </h3>
                   <ul>
-                    {plano.limitacoes.map((limitacao) => (
-                      <li key={limitacao}>{limitacao}</li>
+                    {limitesPlano.map((limite) => (
+                      <li key={limite}>
+                        <CheckCircle2 size={14} />
+                        <span>{limite}</span>
+                      </li>
                     ))}
                   </ul>
                 </div>
               )}
+              </div>
 
               {chave === "gratis" || ativo || planoInferior ? (
                 <button type="button" className="plan-current-button" disabled>
-                  {ativo ? "Plano atual" : planoInferior ? "Plano inferior" : "Plano gratuito"}
+                  {ativo
+                    ? "Plano atual"
+                    : planoInferior
+                      ? "Seu plano atual e superior"
+                      : visual.cta}
                 </button>
               ) : (
                 <div className="plan-payment-actions">
@@ -592,7 +816,7 @@ export default function Planos() {
                     {planoProcessando === chave
                       ? "Preparando..."
                       : planoAcima
-                        ? "Fazer upgrade"
+                        ? visual.cta
                         : "Assinar com cartao"}
                   </button>
                   <button
