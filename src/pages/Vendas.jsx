@@ -63,6 +63,7 @@ export default function Vendas() {
   // ================================
   const {
     producoes: producoesContexto = [],
+    produtos: produtosContexto = [],
     vendas: vendasContexto = [],
     perdasDoacoes: perdasDoacoesContexto = [],
     addItem,
@@ -80,6 +81,7 @@ export default function Vendas() {
   const producoes = Array.isArray(producoesContexto)
     ? producoesContexto
     : [];
+  const produtos = Array.isArray(produtosContexto) ? produtosContexto : [];
 
   const vendas = Array.isArray(vendasContexto) ? vendasContexto : [];
   const perdasDoacoes = Array.isArray(perdasDoacoesContexto)
@@ -256,6 +258,7 @@ export default function Vendas() {
   // Estoque = Produzido - Vendido
   // ================================
   const estoqueProdutos = calcularEstoqueProdutosCompartilhado({
+    produtos,
     producoes,
     vendas,
     perdasDoacoes,
@@ -285,10 +288,20 @@ export default function Vendas() {
     : 0;
 
   const margemDesejadaItem = Number(itemAtual.margemDesejada || 0);
+  const custoUnitarioItem = produtoSelecionado
+    ? Number(
+        produtoSelecionado.custoAtual ||
+          produtoSelecionado.custoUnitarioAtual ||
+          produtoSelecionado.custoMedio ||
+          produtoSelecionado.custoUnitario ||
+          produtoSelecionado.custoProducao ||
+          0
+      )
+    : 0;
 
   const precoSugeridoItem =
     produtoSelecionado && margemDesejadaItem > 0 && margemDesejadaItem < 100
-      ? produtoSelecionado.custoMedio / (1 - margemDesejadaItem / 100)
+      ? custoUnitarioItem / (1 - margemDesejadaItem / 100)
       : 0;
 
   // ================================
@@ -302,7 +315,7 @@ export default function Vendas() {
   const totalItem = valorBrutoItem - descontoItem;
 
   const custoItem = produtoSelecionado
-    ? quantidadeItem * produtoSelecionado.custoMedio
+    ? quantidadeItem * custoUnitarioItem
     : 0;
 
   const lucroItem = totalItem - custoItem;
@@ -319,8 +332,8 @@ export default function Vendas() {
       return;
     }
 
-    if (produtoSelecionado.custoMedio <= 0) {
-      showToast("Este produto ainda não tem custo médio calculado.", "warning");
+    if (custoUnitarioItem <= 0) {
+      showToast("Este produto ainda não tem custo calculado.", "warning");
       return;
     }
 
@@ -389,6 +402,8 @@ export default function Vendas() {
       valorBruto: valorBrutoItem,
       total: totalItem,
       custo: custoItem,
+      custoUnitario: custoUnitarioItem,
+      custoTotal: custoItem,
       lucro: lucroItem,
       margem: margemItem,
     };
@@ -1297,7 +1312,7 @@ export default function Vendas() {
             <p>
               <strong>Custo unitário:</strong>
               <br />
-              R$ {numeroBR(produtoSelecionado.custoMedio, 2)}
+              R$ {numeroBR(custoUnitarioItem, 2)}
             </p>
 
             <p>

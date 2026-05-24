@@ -155,6 +155,9 @@ export const calcularEstoqueProdutos = ({
         classeIndustrial: registro.classeIndustrial || "produto_acabado",
         vendavel: registro.vendavel !== false,
         consumivelEmProducao: Boolean(registro.consumivelEmProducao),
+        custoUnitarioAtual: Number(
+          registro.custoUnitario || registro.custoProducao || registro.custo || 0
+        ),
         produzido: 0,
         vendido: 0,
         baixado: 0,
@@ -182,6 +185,14 @@ export const calcularEstoqueProdutos = ({
         consumivelEmProducao:
           Boolean(registro.consumivelEmProducao) ||
           Boolean(itemExistente.consumivelEmProducao),
+        custoUnitarioAtual:
+          Number(itemExistente.custoUnitarioAtual || 0) ||
+          Number(
+            registro.custoUnitario ||
+              registro.custoProducao ||
+              registro.custo ||
+              0
+          ),
         estoqueMinimo: Number(registro.estoqueMinimo || itemExistente.estoqueMinimo || 0),
       });
     }
@@ -282,12 +293,17 @@ export const calcularEstoqueProdutos = ({
       Number(item.consumidoEmProducao || 0);
     const saldo = Math.max(0, saldoReal);
     const custoMedio = item.produzido > 0 ? item.custoTotal / item.produzido : 0;
+    const custoAtual =
+      Number(item.custoUnitarioAtual || 0) > 0
+        ? Number(item.custoUnitarioAtual || 0)
+        : custoMedio;
 
     return {
       ...item,
       saldo,
       saldoReal,
       custoMedio,
+      custoAtual,
       valorEstoque: saldo * custoMedio,
     };
   });
