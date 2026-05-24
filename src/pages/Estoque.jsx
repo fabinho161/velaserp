@@ -9,6 +9,16 @@ import {
 } from "../utils/estoqueProdutos";
 
 const ESTOQUE_MINIMO_CONFIG = "estoqueMinimoProdutos";
+const CLASSE_INDUSTRIAL_PADRAO = "produto_acabado";
+
+const normalizarClasseIndustrial = (valor) =>
+  String(valor || CLASSE_INDUSTRIAL_PADRAO).trim();
+
+const classeProdutoAcabado = (produto = {}) =>
+  normalizarClasseIndustrial(produto.classeIndustrial) === "produto_acabado";
+
+const classeSemiacabado = (produto = {}) =>
+  normalizarClasseIndustrial(produto.classeIndustrial) === "semiacabado";
 
 const lerEstoqueMinimoLocal = () => {
   try {
@@ -27,6 +37,7 @@ export default function Estoque() {
   const {
     empresaId,
     insumos,
+    produtos,
     producoes,
     vendas,
     perdasDoacoes,
@@ -116,6 +127,7 @@ export default function Estoque() {
   // Estoque = Produzido - Vendido - Perdas/Doacoes ativas
   // ================================
   const produtosEstoque = calcularEstoqueProdutos({
+    produtos,
     producoes,
     vendas,
     perdasDoacoes,
@@ -211,6 +223,15 @@ export default function Estoque() {
       return valores[chave] ?? "";
     }
   );
+  const produtosAcabadosEstoqueOrdenados = produtosEstoqueOrdenados.filter(
+    ({ produto }) => classeProdutoAcabado(produto)
+  );
+  const semiacabadosEstoqueOrdenados = produtosEstoqueOrdenados.filter(
+    ({ produto }) => classeSemiacabado(produto)
+  );
+  const outrosProdutosEstoqueOrdenados = produtosEstoqueOrdenados.filter(
+    ({ produto }) => !classeProdutoAcabado(produto) && !classeSemiacabado(produto)
+  );
 
   const renderCabecalhoOrdenavel = (label, chave, sort) => {
     const ativo = sort.ativo(chave);
@@ -244,6 +265,108 @@ export default function Estoque() {
 
     setEditandoMinimo(null);
   };
+
+  const renderTabelaProdutosEstoque = (titulo, lista, mensagemVazia) => (
+    <div className="card">
+      <h3>{titulo}</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>{renderCabecalhoOrdenavel("Produto", "produto", ordenacaoProdutos)}</th>
+            <th>{renderCabecalhoOrdenavel("Produzido", "produzido", ordenacaoProdutos)}</th>
+            <th>{renderCabecalhoOrdenavel("Vendido", "vendido", ordenacaoProdutos)}</th>
+            <th>{renderCabecalhoOrdenavel("Baixado", "baixado", ordenacaoProdutos)}</th>
+            <th>{renderCabecalhoOrdenavel("Saldo", "saldo", ordenacaoProdutos)}</th>
+            <th>{renderCabecalhoOrdenavel("Custo Médio", "custoMedio", ordenacaoProdutos)}</th>
+            <th>{renderCabecalhoOrdenavel("Valor em Estoque", "valorEstoque", ordenacaoProdutos)}</th>
+            <th>{renderCabecalhoOrdenavel("Estoque Mínimo", "minimo", ordenacaoProdutos)}</th>
+            <th>{renderCabecalhoOrdenavel("Status", "status", ordenacaoProdutos)}</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {lista.map(({ produto, index, minimo, status }) => {
+            const emAlerta = status === "Baixo";
+
+            return (
+              <tr key={produto.produtoId || produto.produto || index}>
+                <td>{produto.produto}</td>
+                <td>{produto.produzido}</td>
+                <td>{produto.vendido}</td>
+                <td>{produto.baixado}</td>
+
+                <td style={{ color: emAlerta ? "#dc2626" : "#16a34a" }}>
+                  {produto.saldo}
+                </td>
+
+                <td>{moeda(produto.custoMedio)}</td>
+                <td>{moeda(produto.valorEstoque)}</td>
+
+                <td>
+                  {carregandoMinimo ? (
+                    "Carregando..."
+                  ) : editandoMinimo === produto.produto ? (
+                    <input
+                      type="number"
+                      defaultValue={minimo}
+                      autoFocus
+                      onBlur={(e) =>
+                        salvarEstoqueMinimo(produto.produto, e.target.value)
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          salvarEstoqueMinimo(
+                            produto.produto,
+                            e.target.value
+                          );
+                        }
+                      }}
+                    />
+                  ) : (
+                    minimo
+                  )}
+                </td>
+
+                <td>
+                  <span
+                    style={{
+                      padding: "5px 10px",
+                      borderRadius: "20px",
+                      background: emAlerta ? "#fee2e2" : "#dcfce7",
+                      color: emAlerta ? "#991b1b" : "#166534",
+                    }}
+                  >
+                    {emAlerta ? "Baixo" : "OK"}
+                  </span>
+                </td>
+
+                <td>
+                  <ActionMenu
+                    label="Abrir ações do estoque"
+                    items={[
+                      {
+                        label: "Editar mínimo",
+                        disabled: carregandoMinimo,
+                        onClick: () => setEditandoMinimo(produto.produto),
+                      },
+                    ]}
+                  />
+                </td>
+              </tr>
+            );
+          })}
+
+          {lista.length === 0 && (
+            <tr>
+              <td colSpan="10">{mensagemVazia}</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
 
   // ================================
   // 🔹 RENDERIZAÇÃO
@@ -466,7 +589,7 @@ export default function Estoque() {
           </thead>
 
           <tbody>
-            {produtosEstoqueOrdenados.map(({ produto, index, minimo, status }) => {
+            {produtosAcabadosEstoqueOrdenados.map(({ produto, index, minimo, status }) => {
               const emAlerta = status === "Baixo";
 
               return (
@@ -537,14 +660,33 @@ export default function Estoque() {
               );
             })}
 
-            {produtosEstoque.length === 0 && (
+            {produtosAcabadosEstoqueOrdenados.length === 0 && (
               <tr>
-                <td colSpan="10">Nenhuma produção registrada.</td>
+                <td colSpan="10">Nenhum produto acabado em estoque.</td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      <br />
+
+      {renderTabelaProdutosEstoque(
+        "Estoque de Semiacabados",
+        semiacabadosEstoqueOrdenados,
+        "Nenhum semiacabado em estoque."
+      )}
+
+      {outrosProdutosEstoqueOrdenados.length > 0 && (
+        <>
+          <br />
+          {renderTabelaProdutosEstoque(
+            "Outros Produtos",
+            outrosProdutosEstoqueOrdenados,
+            "Nenhum outro produto em estoque."
+          )}
+        </>
+      )}
     </div>
   );
 }

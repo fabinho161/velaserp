@@ -33,6 +33,27 @@ const ORIGENS_PRODUTO = [
   { valor: "8", label: "8 - Nacional com conteudo de importacao superior a 70%" },
 ];
 
+const CLASSE_INDUSTRIAL_PADRAO = "produto_acabado";
+
+const CLASSES_INDUSTRIAIS = [
+  { valor: "produto_acabado", label: "Produto acabado" },
+  { valor: "semiacabado", label: "Semiacabado" },
+  { valor: "materia_prima", label: "Matéria-prima / Insumo operacional" },
+  { valor: "embalagem", label: "Embalagem" },
+  { valor: "servico", label: "Serviço" },
+  { valor: "outro", label: "Outro" },
+];
+
+const normalizarClasseIndustrial = (valor) =>
+  CLASSES_INDUSTRIAIS.some((classe) => classe.valor === valor)
+    ? valor
+    : CLASSE_INDUSTRIAL_PADRAO;
+
+const getClasseIndustrialLabel = (valor) =>
+  CLASSES_INDUSTRIAIS.find(
+    (classe) => classe.valor === normalizarClasseIndustrial(valor)
+  )?.label || "Produto acabado";
+
 const normalizarAliquotaFiscal = (valor) => {
   if (valor === "" || valor === null || valor === undefined) return "";
 
@@ -82,6 +103,9 @@ export default function Produtos() {
     dataCadastro: "",
     consumos: {},
     fiscal: FISCAL_PRODUTO_PADRAO,
+    classeIndustrial: CLASSE_INDUSTRIAL_PADRAO,
+    vendavel: true,
+    consumivelEmProducao: false,
   });
 
   // ================================
@@ -214,6 +238,7 @@ export default function Produtos() {
         precoVenda: Number(produto.precoVenda || 0),
         lucro: Number(produto.lucro || 0),
         margem: Number(produto.margem || 0),
+        classeIndustrial: getClasseIndustrialLabel(produto.classeIndustrial),
       };
 
       return valores[chave] ?? "";
@@ -263,6 +288,9 @@ export default function Produtos() {
       dataCadastro: "",
       consumos: {},
       fiscal: FISCAL_PRODUTO_PADRAO,
+      classeIndustrial: CLASSE_INDUSTRIAL_PADRAO,
+      vendavel: true,
+      consumivelEmProducao: false,
     });
 
     setEditIndex(null);
@@ -307,6 +335,9 @@ export default function Produtos() {
     valorUnitario,
     qtdMaco,
     fiscal: normalizarFiscalProduto(form.fiscal),
+    classeIndustrial: normalizarClasseIndustrial(form.classeIndustrial),
+    vendavel: Boolean(form.vendavel),
+    consumivelEmProducao: Boolean(form.consumivelEmProducao),
   };
 
   if (editIndex !== null) {
@@ -340,6 +371,9 @@ export default function Produtos() {
       dataCadastro: produto.dataCadastro || "",
       consumos: produto.consumos || {},
       fiscal: normalizarFiscalProduto(produto.fiscal),
+      classeIndustrial: normalizarClasseIndustrial(produto.classeIndustrial),
+      vendavel: produto.vendavel !== false,
+      consumivelEmProducao: Boolean(produto.consumivelEmProducao),
     });
 
     setEditIndex(index);
@@ -533,6 +567,71 @@ export default function Produtos() {
         {editIndex !== null && (
           <div className="edit-alert">Você está editando um produto existente.</div>
         )}
+      </div>
+
+      <br />
+
+      <div className="card section-card product-industrial-card">
+        <h3>Classificação Industrial</h3>
+        <p className="section-description">
+          Defina se este item é vendido, usado internamente na produção ou
+          representa uma etapa intermediaria.
+        </p>
+
+        <div className="form-grid product-industrial-grid">
+          <label className="industrial-select-field">
+            Classe industrial
+            <select
+              value={form.classeIndustrial}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  classeIndustrial: e.target.value,
+                })
+              }
+            >
+              {CLASSES_INDUSTRIAIS.map((classe) => (
+                <option key={classe.valor} value={classe.valor}>
+                  {classe.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="industrial-toggle-card">
+            <input
+              type="checkbox"
+              checked={Boolean(form.vendavel)}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  vendavel: e.target.checked,
+                })
+              }
+            />
+            <span className="industrial-toggle-copy">
+              <strong>Pode ser vendido?</strong>
+              <small>Item disponível para uso comercial</small>
+            </span>
+          </label>
+
+          <label className="industrial-toggle-card">
+            <input
+              type="checkbox"
+              checked={Boolean(form.consumivelEmProducao)}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  consumivelEmProducao: e.target.checked,
+                })
+              }
+            />
+            <span className="industrial-toggle-copy">
+              <strong>Pode ser consumido em produção?</strong>
+              <small>Preparado para composição industrial futura</small>
+            </span>
+          </label>
+        </div>
       </div>
 
       <br />
@@ -804,6 +903,7 @@ export default function Produtos() {
               <th>{renderCabecalhoOrdenavel("Data", "dataCadastro", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Código", "codigo", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Produto", "nome", ordenacaoProdutos)}</th>
+              <th>{renderCabecalhoOrdenavel("Classe", "classeIndustrial", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Tipo produto", "tipoProduto", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Categoria", "tipo", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Conteúdo", "conteudoPorProduto", ordenacaoProdutos)}</th>
@@ -822,6 +922,11 @@ export default function Produtos() {
                 <td>{formatarDataBR(produto.dataCadastro)}</td>
                 <td>{produto.codigo}</td>
                 <td>{produto.nome}</td>
+                <td>
+                  <span className="badge badge-info">
+                    {getClasseIndustrialLabel(produto.classeIndustrial)}
+                  </span>
+                </td>
                 <td>
                   {produto.tipoProduto === "simples"
                     ? "Caixa / Kit / Pacote"
@@ -872,7 +977,7 @@ export default function Produtos() {
 
             {produtos.length === 0 && (
               <tr>
-                <td colSpan="12">Nenhum produto cadastrado.</td>
+                <td colSpan="13">Nenhum produto cadastrado.</td>
               </tr>
             )}
           </tbody>

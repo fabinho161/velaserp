@@ -8,6 +8,27 @@ import { moedaBR, numeroBR, inteiroBR, dataBR } from "../utils/formatters";
 import { extrairNumeroCodigo } from "../utils/sortUtils";
 import { calcularEstoqueInsumos } from "../utils/estoqueProdutos";
 
+const normalizarClasseIndustrial = (valor) =>
+  String(valor || "produto_acabado").trim();
+
+const getClasseIndustrialLabel = (valor) => {
+  const classes = {
+    produto_acabado: "Produto acabado",
+    semiacabado: "Semiacabado",
+  };
+
+  return classes[normalizarClasseIndustrial(valor)] || "Outro";
+};
+
+const getClasseIndustrialBadge = (valor) => {
+  const classes = {
+    produto_acabado: "badge-success",
+    semiacabado: "badge-warning",
+  };
+
+  return classes[normalizarClasseIndustrial(valor)] || "badge-info";
+};
+
 export default function Producao() {
   // ================================
   // 🔹 CONTEXTO GLOBAL DO ERP
@@ -58,6 +79,15 @@ export default function Producao() {
   // ================================
   const produtoSelecionado =
     form.produtoIndex !== "" ? produtos[form.produtoIndex] : null;
+  const produtosPorId = new Map(produtos.map((produto) => [produto.id, produto]));
+  const getProdutoDaProducao = (producao = {}) =>
+    produtosPorId.get(producao.produtoId) ||
+    produtos.find(
+      (produto) =>
+        produto.codigo === producao.codigo ||
+        produto.nome === producao.nomeProduto
+    ) ||
+    null;
 
   const produtosOrdenadosPorCodigo = produtos
     .map((produto, index) => ({
@@ -454,6 +484,7 @@ export default function Producao() {
             <tr>
               <th>{renderCabecalhoOrdenavel("Data", "data", ordenacaoProducoes)}</th>
               <th>{renderCabecalhoOrdenavel("Produto", "produto", ordenacaoProducoes)}</th>
+              <th>Classe</th>
               <th>{renderCabecalhoOrdenavel("Qtd", "quantidade", ordenacaoProducoes)}</th>
               <th>{renderCabecalhoOrdenavel("Custo Total", "custoTotal", ordenacaoProducoes)}</th>
               <th>{renderCabecalhoOrdenavel("Custo Unit.", "custoUnitario", ordenacaoProducoes)}</th>
@@ -462,10 +493,21 @@ export default function Producao() {
           </thead>
 
           <tbody>
-            {producoesOrdenadas.map(({ producao: p, index }) => (
+            {producoesOrdenadas.map(({ producao: p, index }) => {
+              const produtoCadastro = getProdutoDaProducao(p);
+              const classeIndustrial = normalizarClasseIndustrial(
+                produtoCadastro?.classeIndustrial
+              );
+
+              return (
               <tr key={p.id || index}>
                 <td>{dataBR(p.data)}</td>
                 <td>{p.produto}</td>
+                <td>
+                  <span className={`badge ${getClasseIndustrialBadge(classeIndustrial)}`}>
+                    {getClasseIndustrialLabel(classeIndustrial)}
+                  </span>
+                </td>
                 <td>{inteiroBR(p.quantidade)}</td>
                 <td>{moedaBR(p.custoTotal)}</td>
                 <td>{moedaBR(p.custoUnitario)}</td>
@@ -483,11 +525,12 @@ export default function Producao() {
                   />
                 </td>
               </tr>
-            ))}
+              );
+            })}
 
             {producoes.length === 0 && (
               <tr>
-                <td colSpan="6">Nenhuma produção registrada.</td>
+                <td colSpan="7">Nenhuma produção registrada.</td>
               </tr>
             )}
           </tbody>

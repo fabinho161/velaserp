@@ -152,6 +152,9 @@ export const calcularEstoqueProdutos = ({
         nome: registro.nome || registro.nomeProduto || registro.produtoNome || "",
         tipo: registro.tipo || "",
         tipoProduto: registro.tipoProduto || "",
+        classeIndustrial: registro.classeIndustrial || "produto_acabado",
+        vendavel: registro.vendavel !== false,
+        consumivelEmProducao: Boolean(registro.consumivelEmProducao),
         produzido: 0,
         vendido: 0,
         baixado: 0,
@@ -170,6 +173,14 @@ export const calcularEstoqueProdutos = ({
         nome: registro.nome || registro.nomeProduto || registro.produtoNome || itemExistente.nome,
         tipo: registro.tipo || itemExistente.tipo,
         tipoProduto: registro.tipoProduto || itemExistente.tipoProduto,
+        classeIndustrial: registro.classeIndustrial || itemExistente.classeIndustrial || "produto_acabado",
+        vendavel:
+          registro.vendavel === undefined
+            ? itemExistente.vendavel !== false
+            : registro.vendavel !== false,
+        consumivelEmProducao:
+          Boolean(registro.consumivelEmProducao) ||
+          Boolean(itemExistente.consumivelEmProducao),
         estoqueMinimo: Number(registro.estoqueMinimo || itemExistente.estoqueMinimo || 0),
       });
     }
