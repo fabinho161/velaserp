@@ -4,12 +4,29 @@ import { useToast } from "../context/useToast";
 import { usePlano } from "../hooks/usePlano";
 import { useTableSort } from "../hooks/useTableSort";
 import { moedaBR, inteiroBR, dataBR, numeroBR } from "../utils/formatters";
-import { calcularEstoqueProdutos } from "../utils/estoqueProdutos";
+import {
+  calcularEstoqueInsumos,
+  calcularEstoqueProdutos,
+} from "../utils/estoqueProdutos";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import saasLogo from "../assets/saas-logo.png";
 
 const NOME_SAAS = "Renovar ERP";
+const PDF_COLORS = {
+  navy: [15, 23, 42],
+  blue: [37, 99, 235],
+  slate: [100, 116, 139],
+  border: [226, 232, 240],
+  light: [248, 250, 252],
+  green: [22, 163, 74],
+  red: [220, 38, 38],
+  amber: [217, 119, 6],
+};
+
+const PDF_MARGIN = 14;
+const PDF_WIDTH = 210;
+const PDF_CONTENT_WIDTH = PDF_WIDTH - PDF_MARGIN * 2;
 
 export default function Relatorios() {
   const {
@@ -110,6 +127,14 @@ export default function Relatorios() {
     vendas,
     perdasDoacoes,
   });
+  const insumosEstoqueCalculado = calcularEstoqueInsumos({
+    insumos,
+    producoes,
+    perdasDoacoes,
+  });
+  const produtosPorId = new Map(
+    (produtos || []).map((produto) => [produto.id, produto])
+  );
 
   // ================================
   // 🔹 ALERTAS DE ESTOQUE
@@ -345,86 +370,214 @@ export default function Relatorios() {
     });
   };
 
- // ================================
-// 🔹 PDF - CABEÇALHO MULTIEMPRESA
-// ================================
-const gerarCabecalhoPDF = async (doc, titulo) => {
-  doc.setFillColor(15, 23, 42);
-  doc.rect(0, 0, 210, 34, "F");
+  const textoPDF = (valor, fallback = "-") => {
+    if (valor === null || valor === undefined || valor === "") return fallback;
+    const texto = String(valor);
+    return texto === "NaN" || texto === "undefined" ? fallback : texto;
+  };
 
-  try {
-    // Usa primeiro a logo salva em Base64 da empresa.
-    // Se não existir, usa a logo padrão do sistema.
-    const logoPDF =
-      dadosEmpresaPDF.logoBase64 || (await carregarImagemBase64(saasLogo));
-    const tipoLogoPDF = String(logoPDF).includes("image/jpeg") ? "JPEG" : "PNG";
+  const numeroSeguro = (valor) => {
+    const numero = Number(valor);
+    return Number.isFinite(numero) ? numero : 0;
+  };
 
-    doc.addImage(logoPDF, tipoLogoPDF, 14, 6, 34, 20);
-  } catch (error) {
-    console.error("Erro ao carregar logo no PDF:", error);
-  }
-
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(14);
-  doc.text(dadosEmpresaPDF.nome, 55, 12);
-
-  doc.setFontSize(9);
-  doc.text(`CNPJ: ${dadosEmpresaPDF.cnpj}`, 55, 19);
-  doc.text(`Cidade: ${dadosEmpresaPDF.cidade}`, 55, 25);
-
-  if (dadosEmpresaPDF.telefone) {
-    doc.text(`Contato: ${dadosEmpresaPDF.telefone}`, 130, 25);
-  }
-
-  if (dadosEmpresaPDF.email) {
-    doc.text(`E-mail: ${dadosEmpresaPDF.email}`, 130, 19);
-  }
-
-  doc.setTextColor(15, 23, 42);
-  doc.setFontSize(14);
-  doc.text(titulo, 14, 44);
-
-  const periodo =
+  const periodoPDF =
     filtro.inicio || filtro.fim
-      ? `Período: ${filtro.inicio ? dataBR(filtro.inicio) : "Início"} até ${
+      ? `${filtro.inicio ? dataBR(filtro.inicio) : "Início"} até ${
           filtro.fim ? dataBR(filtro.fim) : "Hoje"
         }`
-      : "Período: Todos os registros";
+      : "Todos os registros";
 
-  doc.setFontSize(9);
-  doc.setTextColor(100, 116, 139);
-  doc.text(periodo, 14, 51);
-};
-  // ================================
-  // 🔹 PDF - RODAPÉ MULTIEMPRESA
-  // ================================
+  const dataGeracaoPDF = new Date().toLocaleString("pt-BR");
+
+  const getClasseIndustrialLabel = (valor) => {
+    const classes = {
+      produto_acabado: "Produto acabado",
+      semiacabado: "Semiacabado",
+      materia_prima: "Matéria-prima",
+      embalagem: "Embalagem",
+      servico: "Serviço",
+      outro: "Outro",
+    };
+
+    return classes[String(valor || "produto_acabado")] || "Produto acabado";
+  };
+
+  const getTipoEstoqueProduto = (produto = {}) => {
+    const classe = String(produto.classeIndustrial || "produto_acabado");
+    if (classe === "semiacabado") return "Semiacabado";
+    if (classe === "produto_acabado") return "Produto acabado";
+    return "Outro produto";
+  };
+
+  const desenharTextoLimitado = (doc, texto, x, y, largura, options = {}) => {
+    const linhas = doc.splitTextToSize(textoPDF(texto), largura);
+    doc.text(linhas, x, y, options);
+    return y + linhas.length * 4;
+  };
+
+  const gerarCabecalhoPDF = async (doc, titulo, subtitulo = "") => {
+    doc.setFillColor(...PDF_COLORS.navy);
+    doc.rect(0, 0, PDF_WIDTH, 42, "F");
+    doc.setFillColor(...PDF_COLORS.blue);
+    doc.rect(0, 40, PDF_WIDTH, 2, "F");
+
+    try {
+      const logoPDF =
+        dadosEmpresaPDF.logoBase64 || (await carregarImagemBase64(saasLogo));
+      const tipoLogoPDF = String(logoPDF).includes("image/jpeg") ? "JPEG" : "PNG";
+      doc.addImage(logoPDF, tipoLogoPDF, PDF_MARGIN, 8, 28, 18);
+    } catch (error) {
+      console.error("Erro ao carregar logo no PDF:", error);
+    }
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(15);
+    doc.setFont("helvetica", "bold");
+    doc.text(textoPDF(dadosEmpresaPDF.nome), 48, 12);
+
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    doc.text(`CNPJ: ${textoPDF(dadosEmpresaPDF.cnpj)}`, 48, 19);
+    doc.text(`Cidade: ${textoPDF(dadosEmpresaPDF.cidade)}`, 48, 25);
+    doc.text(`Contato: ${textoPDF(dadosEmpresaPDF.telefone)}`, 48, 31);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("Gerado pelo Renovar ERP", 145, 12);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(`E-mail: ${textoPDF(dadosEmpresaPDF.email)}`, 145, 19);
+    doc.text(`Geração: ${dataGeracaoPDF}`, 145, 25);
+    doc.text(`Período: ${periodoPDF}`, 145, 31);
+
+    doc.setTextColor(...PDF_COLORS.navy);
+    doc.setFontSize(17);
+    doc.setFont("helvetica", "bold");
+    doc.text(titulo, PDF_MARGIN, 54);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...PDF_COLORS.slate);
+    desenharTextoLimitado(
+      doc,
+      subtitulo || "Relatório executivo gerado automaticamente pelo Renovar ERP.",
+      PDF_MARGIN,
+      61,
+      PDF_CONTENT_WIDTH
+    );
+
+    return 72;
+  };
+
+  const desenharCardsPDF = (doc, cards = [], startY = 72) => {
+    const cardsPorLinha = 3;
+    const gap = 5;
+    const cardW = (PDF_CONTENT_WIDTH - gap * (cardsPorLinha - 1)) / cardsPorLinha;
+    const cardH = 24;
+
+    cards.forEach((card, index) => {
+      const linha = Math.floor(index / cardsPorLinha);
+      const coluna = index % cardsPorLinha;
+      const x = PDF_MARGIN + coluna * (cardW + gap);
+      const y = startY + linha * (cardH + gap);
+      const cor = card.color || PDF_COLORS.blue;
+
+      doc.setDrawColor(...PDF_COLORS.border);
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(x, y, cardW, cardH, 2, 2, "FD");
+      doc.setFillColor(...cor);
+      doc.roundedRect(x, y, 3, cardH, 2, 2, "F");
+
+      doc.setTextColor(...PDF_COLORS.slate);
+      doc.setFontSize(7.5);
+      doc.setFont("helvetica", "bold");
+      doc.text(textoPDF(card.label).toUpperCase(), x + 6, y + 7);
+
+      doc.setTextColor(...PDF_COLORS.navy);
+      doc.setFontSize(13);
+      doc.text(textoPDF(card.value), x + 6, y + 15);
+
+      if (card.detail) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.setTextColor(...PDF_COLORS.slate);
+        doc.text(textoPDF(card.detail), x + 6, y + 21);
+      }
+    });
+
+    return startY + Math.ceil(cards.length / cardsPorLinha) * (cardH + gap) + 4;
+  };
+
+  const desenharAvisoPDF = (doc, texto, startY, color = PDF_COLORS.amber) => {
+    doc.setFillColor(255, 251, 235);
+    doc.setDrawColor(253, 230, 138);
+    doc.roundedRect(PDF_MARGIN, startY, PDF_CONTENT_WIDTH, 16, 2, 2, "FD");
+    doc.setTextColor(...color);
+    doc.setFontSize(8.5);
+    doc.setFont("helvetica", "bold");
+    doc.text(texto, PDF_MARGIN + 4, startY + 10);
+    return startY + 22;
+  };
+
+  const tabelaPDF = (doc, { startY, head, body, columnStyles = {}, didParseCell }) => {
+    const totalColunas = head?.[0]?.length || 1;
+    const corpo = body.length > 0
+      ? body
+      : [
+          [
+            "Nenhum registro encontrado",
+            ...Array.from({ length: Math.max(totalColunas - 1, 0) }, () => ""),
+          ],
+        ];
+
+    autoTable(doc, {
+      startY,
+      head,
+      body: corpo,
+      theme: "grid",
+      margin: { left: PDF_MARGIN, right: PDF_MARGIN, bottom: 26 },
+      styles: {
+        fontSize: 8,
+        cellPadding: 2.6,
+        overflow: "linebreak",
+        valign: "middle",
+        lineColor: PDF_COLORS.border,
+        lineWidth: 0.1,
+      },
+      headStyles: {
+        fillColor: PDF_COLORS.navy,
+        textColor: 255,
+        fontStyle: "bold",
+      },
+      alternateRowStyles: { fillColor: PDF_COLORS.light },
+      columnStyles,
+      didParseCell,
+    });
+
+    return doc.lastAutoTable.finalY;
+  };
+
   const gerarRodapePDF = (doc) => {
     const totalPaginas = doc.internal.getNumberOfPages();
 
     for (let i = 1; i <= totalPaginas; i++) {
       doc.setPage(i);
-
       const pageHeight = doc.internal.pageSize.height;
 
-      doc.setDrawColor(226, 232, 240);
-      doc.line(14, pageHeight - 16, 196, pageHeight - 16);
+      doc.setDrawColor(...PDF_COLORS.border);
+      doc.line(PDF_MARGIN, pageHeight - 18, 196, pageHeight - 18);
 
-      doc.setFontSize(8);
-      doc.setTextColor(100, 116, 139);
-
+      doc.setFontSize(7.5);
+      doc.setTextColor(...PDF_COLORS.slate);
+      doc.text("Renovar ERP SaaS", PDF_MARGIN, pageHeight - 12);
       doc.text(
-        `${dadosEmpresaPDF.nome} | CNPJ: ${dadosEmpresaPDF.cnpj}`,
-        14,
-        pageHeight - 10
+        "Documento gerado automaticamente pelo Renovar ERP",
+        PDF_MARGIN,
+        pageHeight - 7
       );
-
-      doc.text(
-        `Gerado pelo ${dadosEmpresaPDF.saasNome}`,
-        14,
-        pageHeight - 5
-      );
-
-      doc.text(`Página ${i} de ${totalPaginas}`, 170, pageHeight - 10);
+      doc.text(`Geração: ${dataGeracaoPDF}`, 116, pageHeight - 12);
+      doc.text(`Página ${i} de ${totalPaginas}`, 170, pageHeight - 7);
     }
   };
 
@@ -445,26 +598,59 @@ const gerarCabecalhoPDF = async (doc, titulo) => {
     const doc = new jsPDF();
 
     if (tipo === "vendas") {
-      await gerarCabecalhoPDF(doc, "Relatório de Vendas");
+      let y = await gerarCabecalhoPDF(
+        doc,
+        "Relatório de Vendas",
+        "Resumo executivo de pedidos, clientes, receita, custo, lucro e margem no período selecionado."
+      );
+      const lucroTotalVendas = totalVendas - custoProdutosVendidos;
+      const ticketMedio =
+        vendasFiltradas.length > 0 ? totalVendas / vendasFiltradas.length : 0;
+      const margemMediaVendas =
+        totalVendas > 0 ? (lucroTotalVendas / totalVendas) * 100 : 0;
 
-      autoTable(doc, {
-        startY: 55,
-        head: [["Data", "Pedido", "Cliente", "Total", "Custo", "Margem"]],
+      y = desenharCardsPDF(
+        doc,
+        [
+          { label: "Total vendido", value: moedaBR(totalVendas), color: PDF_COLORS.green },
+          { label: "Pedidos", value: inteiroBR(vendasFiltradas.length), color: PDF_COLORS.blue },
+          { label: "Ticket médio", value: moedaBR(ticketMedio), color: PDF_COLORS.blue },
+          { label: "Custo total", value: moedaBR(custoProdutosVendidos), color: PDF_COLORS.amber },
+          {
+            label: "Lucro / margem",
+            value: moedaBR(lucroTotalVendas),
+            detail: `${numeroBR(margemMediaVendas, 2)}%`,
+            color: lucroTotalVendas >= 0 ? PDF_COLORS.green : PDF_COLORS.red,
+          },
+        ],
+        y
+      );
+
+      tabelaPDF(doc, {
+        startY: y,
+        head: [["Data", "Pedido", "Cliente", "Total", "Custo", "Lucro", "Margem"]],
         body: vendasFiltradas.map((venda) => {
-          const total = Number(venda.total ?? 0);
-          const custo = Number(venda.custoTotal ?? 0);
+          const total = numeroSeguro(venda.total);
+          const custo = numeroSeguro(venda.custoTotal);
+          const lucro = total - custo;
           const margem = total > 0 ? ((total - custo) / total) * 100 : 0;
 
           return [
             dataBR(venda.data),
-            venda.numeroPedido || "-",
-            venda.cliente || "Cliente não informado",
+            textoPDF(venda.numeroPedido),
+            textoPDF(venda.cliente, "Cliente não informado"),
             moedaBR(total),
             moedaBR(custo),
+            moedaBR(lucro),
             `${numeroBR(margem, 2)}%`,
           ];
         }),
-        headStyles: { fillColor: [37, 99, 235] },
+        columnStyles: {
+          3: { halign: "right" },
+          4: { halign: "right" },
+          5: { halign: "right" },
+          6: { halign: "right" },
+        },
       });
 
       gerarRodapePDF(doc);
@@ -473,10 +659,35 @@ const gerarCabecalhoPDF = async (doc, titulo) => {
     }
 
     if (tipo === "financeiro") {
-      await gerarCabecalhoPDF(doc, "Relatório Financeiro");
+      let y = await gerarCabecalhoPDF(
+        doc,
+        "Relatório Financeiro",
+        "Visão operacional de entradas, saídas, custos e margem. O saldo apresentado é gerencial, não necessariamente bancário."
+      );
 
-      autoTable(doc, {
-        startY: 55,
+      y = desenharCardsPDF(
+        doc,
+        [
+          { label: "Total de vendas", value: moedaBR(totalVendas), color: PDF_COLORS.green },
+          { label: "Despesas", value: moedaBR(totalDespesas), color: PDF_COLORS.red },
+          {
+            label: "Saldo operacional",
+            value: moedaBR(saldoFinanceiro),
+            color: saldoFinanceiro >= 0 ? PDF_COLORS.green : PDF_COLORS.red,
+          },
+          { label: "CPV", value: moedaBR(custoProdutosVendidos), color: PDF_COLORS.amber },
+          { label: "Margem bruta", value: `${numeroBR(margemBruta, 2)}%`, color: PDF_COLORS.blue },
+        ],
+        y
+      );
+      y = desenharAvisoPDF(
+        doc,
+        "Saldo financeiro operacional: pode divergir do saldo bancário real sem conciliação.",
+        y
+      );
+
+      tabelaPDF(doc, {
+        startY: y,
         head: [["Indicador", "Valor"]],
         body: [
           ["Total de Vendas", moedaBR(totalVendas)],
@@ -486,7 +697,6 @@ const gerarCabecalhoPDF = async (doc, titulo) => {
           ["Lucro Bruto", moedaBR(lucroBruto)],
           ["Margem Bruta", `${numeroBR(margemBruta, 2)}%`],
         ],
-        headStyles: { fillColor: [37, 99, 235] },
         columnStyles: {
           1: { halign: "right" },
         },
@@ -498,17 +708,30 @@ const gerarCabecalhoPDF = async (doc, titulo) => {
     }
 
     if (tipo === "dre") {
-      await gerarCabecalhoPDF(
+      let y = await gerarCabecalhoPDF(
         doc,
-        "DRE Gerencial - Demonstrativo de Resultado"
+        "DRE Gerencial - Demonstrativo de Resultado",
+        "Leitura gerencial de receita, descontos, custos, despesas, resultado e margens no período selecionado."
       );
 
-      doc.setFontSize(10);
-      doc.setTextColor(100, 116, 139);
-      doc.text("Resumo gerencial do resultado financeiro da empresa.", 14, 55);
+      y = desenharCardsPDF(
+        doc,
+        [
+          { label: "Receita líquida", value: moedaBR(receitaLiquida), color: PDF_COLORS.blue },
+          { label: "Lucro bruto", value: moedaBR(lucroBruto), color: PDF_COLORS.green },
+          {
+            label: "Resultado líquido",
+            value: moedaBR(resultadoLiquido),
+            color: resultadoLiquido >= 0 ? PDF_COLORS.green : PDF_COLORS.red,
+          },
+          { label: "Margem bruta", value: `${numeroBR(margemBruta, 2)}%`, color: PDF_COLORS.blue },
+          { label: "Margem líquida", value: `${numeroBR(margemLiquida, 2)}%`, color: PDF_COLORS.amber },
+        ],
+        y
+      );
 
-      autoTable(doc, {
-        startY: 63,
+      tabelaPDF(doc, {
+        startY: y,
         head: [["Descrição", "Valor"]],
         body: [
           ["Receita Bruta", moedaBR(receitaBruta)],
@@ -518,29 +741,31 @@ const gerarCabecalhoPDF = async (doc, titulo) => {
           ["= Lucro Bruto", moedaBR(lucroBruto)],
           ["(-) Despesas Operacionais", moedaBR(totalDespesas)],
           ["= Resultado Líquido", moedaBR(resultadoLiquido)],
+          ["Margem Bruta", `${numeroBR(margemBruta, 2)}%`],
+          ["Margem Líquida", `${numeroBR(margemLiquida, 2)}%`],
         ],
-        styles: {
-          fontSize: 10,
-          cellPadding: 4,
-        },
-        headStyles: {
-          fillColor: [37, 99, 235],
-          textColor: 255,
-          fontStyle: "bold",
-        },
         columnStyles: {
           0: { fontStyle: "bold" },
           1: { halign: "right" },
         },
+        didParseCell: (data) => {
+          if (data.section !== "body" || data.column.index !== 1) return;
+          const descricao = String(data.row.raw?.[0] || "");
+          if (descricao.includes("Resultado Líquido")) {
+            data.cell.styles.textColor =
+              resultadoLiquido >= 0 ? PDF_COLORS.green : PDF_COLORS.red;
+            data.cell.styles.fontStyle = "bold";
+          }
+        },
       });
 
-      let y = doc.lastAutoTable.finalY + 10;
+      y = doc.lastAutoTable.finalY + 10;
 
       doc.setFontSize(13);
       doc.setTextColor(15, 23, 42);
       doc.text("Despesas por Categoria", 14, y);
 
-      autoTable(doc, {
+      tabelaPDF(doc, {
         startY: y + 6,
         head: [["Categoria", "Valor"]],
         body:
@@ -550,44 +775,6 @@ const gerarCabecalhoPDF = async (doc, titulo) => {
                 moedaBR(valor),
               ])
             : [["Nenhuma despesa no período", moedaBR(0)]],
-        styles: {
-          fontSize: 10,
-          cellPadding: 4,
-        },
-        headStyles: {
-          fillColor: [15, 23, 42],
-          textColor: 255,
-          fontStyle: "bold",
-        },
-        columnStyles: {
-          1: { halign: "right" },
-        },
-      });
-
-      y = doc.lastAutoTable.finalY + 10;
-
-      autoTable(doc, {
-        startY: y,
-        head: [["Indicador", "Resultado"]],
-        body: [
-          ["Margem Bruta", `${numeroBR(margemBruta, 2)}%`],
-          ["Margem Líquida", `${numeroBR(margemLiquida, 2)}%`],
-          [
-            "Situação",
-            resultadoLiquido >= 0
-              ? "Resultado positivo"
-              : "Resultado negativo",
-          ],
-        ],
-        styles: {
-          fontSize: 10,
-          cellPadding: 4,
-        },
-        headStyles: {
-          fillColor: resultadoLiquido >= 0 ? [22, 163, 74] : [220, 38, 38],
-          textColor: 255,
-          fontStyle: "bold",
-        },
         columnStyles: {
           1: { halign: "right" },
         },
@@ -599,44 +786,87 @@ const gerarCabecalhoPDF = async (doc, titulo) => {
     }
 
     if (tipo === "estoque") {
-      await gerarCabecalhoPDF(doc, "Relatório de Estoque");
+      let y = await gerarCabecalhoPDF(
+        doc,
+        "Relatório de Estoque",
+        "Saldos gerenciais de insumos, semiacabados, produtos acabados e alertas de estoque."
+      );
+
+      const valorTotalInsumos = insumosEstoqueCalculado.reduce(
+        (total, insumo) => total + numeroSeguro(insumo.valorEstoque),
+        0
+      );
+      const valorTotalProdutosAcabados = produtosEstoqueCalculado
+        .filter((produto) => getTipoEstoqueProduto(produto) === "Produto acabado")
+        .reduce((total, produto) => total + numeroSeguro(produto.valorEstoque), 0);
+      const itensAbaixoMinimo =
+        insumosAbaixoMinimo.length + produtosAbaixoMinimo.length;
+      const itensZerados =
+        insumosEstoqueCalculado.filter((insumo) => numeroSeguro(insumo.saldo) <= 0)
+          .length +
+        produtosEstoqueCalculado.filter((produto) => numeroSeguro(produto.saldo) <= 0)
+          .length;
+
+      y = desenharCardsPDF(
+        doc,
+        [
+          { label: "Valor em insumos", value: moedaBR(valorTotalInsumos), color: PDF_COLORS.blue },
+          {
+            label: "Produtos acabados",
+            value: moedaBR(valorTotalProdutosAcabados),
+            color: PDF_COLORS.green,
+          },
+          { label: "Abaixo do mínimo", value: inteiroBR(itensAbaixoMinimo), color: PDF_COLORS.amber },
+          { label: "Itens zerados", value: inteiroBR(itensZerados), color: PDF_COLORS.red },
+        ],
+        y
+      );
 
       const itensEstoque = [
-        ...(insumos || []).map((insumo) => {
-          const estoqueAtual = Number(insumo.estoqueAtual ?? insumo.estoque ?? 0);
-          const estoqueMinimo = Number(insumo.estoqueMinimo ?? 0);
+        ...insumosEstoqueCalculado.map((insumo) => {
+          const cadastro = (insumos || []).find(
+            (item) => item.id === insumo.insumoId || item.nome === insumo.nome
+          );
+          const estoqueAtual = numeroSeguro(insumo.saldo);
+          const estoqueMinimo = numeroSeguro(cadastro?.estoqueMinimo);
 
           return [
             "Insumo",
-            insumo.nome || "-",
+            textoPDF(insumo.nome),
             numeroBR(estoqueAtual, 2),
             numeroBR(estoqueMinimo, 2),
             estoqueMinimo > 0 && estoqueAtual <= estoqueMinimo
               ? "Estoque baixo"
               : "OK",
+            moedaBR(numeroSeguro(insumo.valorEstoque)),
           ];
         }),
         ...produtosEstoqueCalculado.map((produto) => {
-          const estoqueAtual = Number(produto.saldo ?? 0);
-          const estoqueMinimo = Number(produto.estoqueMinimo ?? 0);
+          const estoqueAtual = numeroSeguro(produto.saldo);
+          const estoqueMinimo = numeroSeguro(produto.estoqueMinimo);
 
           return [
-            "Produto",
-            produto.produto || "-",
+            getTipoEstoqueProduto(produto),
+            textoPDF(produto.produto),
             numeroBR(estoqueAtual, 2),
             numeroBR(estoqueMinimo, 2),
             estoqueMinimo > 0 && estoqueAtual <= estoqueMinimo
               ? "Estoque baixo"
               : "OK",
+            moedaBR(numeroSeguro(produto.valorEstoque)),
           ];
         }),
       ];
 
-      autoTable(doc, {
-        startY: 55,
-        head: [["Tipo", "Item", "Estoque Atual", "Estoque Mínimo", "Situação"]],
+      tabelaPDF(doc, {
+        startY: y,
+        head: [["Tipo", "Item", "Estoque Atual", "Estoque Mínimo", "Situação", "Valor"]],
         body: itensEstoque,
-        headStyles: { fillColor: [37, 99, 235] },
+        columnStyles: {
+          2: { halign: "right" },
+          3: { halign: "right" },
+          5: { halign: "right" },
+        },
       });
 
       gerarRodapePDF(doc);
@@ -645,18 +875,54 @@ const gerarCabecalhoPDF = async (doc, titulo) => {
     }
 
     if (tipo === "producao") {
-      await gerarCabecalhoPDF(doc, "Relatório de Produção");
+      let y = await gerarCabecalhoPDF(
+        doc,
+        "Relatório de Produção",
+        "Produções realizadas, volumes fabricados, custo total, custo unitário e classificação industrial."
+      );
+      const custoTotalProduzido = producoesFiltradas.reduce(
+        (total, producao) => total + numeroSeguro(producao.custoTotal),
+        0
+      );
+      const custoMedioProducao =
+        totalProduzido > 0 ? custoTotalProduzido / totalProduzido : 0;
 
-      autoTable(doc, {
-        startY: 55,
-        head: [["Data", "Produto", "Quantidade", "Custo Total"]],
-        body: producoesFiltradas.map((producao) => [
-          dataBR(producao.data),
-          producao.produtoNome || producao.produto || "-",
-          inteiroBR(Number(producao.quantidade ?? 0)),
-          moedaBR(Number(producao.custoTotal ?? 0)),
-        ]),
-        headStyles: { fillColor: [37, 99, 235] },
+      y = desenharCardsPDF(
+        doc,
+        [
+          { label: "Total produzido", value: inteiroBR(totalProduzido), color: PDF_COLORS.blue },
+          { label: "Custo total", value: moedaBR(custoTotalProduzido), color: PDF_COLORS.amber },
+          { label: "Custo médio", value: moedaBR(custoMedioProducao), color: PDF_COLORS.green },
+          { label: "Registros", value: inteiroBR(producoesFiltradas.length), color: PDF_COLORS.blue },
+        ],
+        y
+      );
+
+      tabelaPDF(doc, {
+        startY: y,
+        head: [["Data", "Produto", "Quantidade", "Custo Total", "Custo Unit.", "Classe"]],
+        body: producoesFiltradas.map((producao) => {
+          const produtoCadastro =
+            produtosPorId.get(producao.produtoId) ||
+            (produtos || []).find(
+              (produto) =>
+                produto.codigo === producao.codigo ||
+                produto.nome === producao.nomeProduto
+            );
+          return [
+            dataBR(producao.data),
+            textoPDF(producao.produtoNome || producao.produto),
+            inteiroBR(numeroSeguro(producao.quantidade)),
+            moedaBR(numeroSeguro(producao.custoTotal)),
+            moedaBR(numeroSeguro(producao.custoUnitario)),
+            getClasseIndustrialLabel(produtoCadastro?.classeIndustrial),
+          ];
+        }),
+        columnStyles: {
+          2: { halign: "right" },
+          3: { halign: "right" },
+          4: { halign: "right" },
+        },
       });
 
       gerarRodapePDF(doc);
@@ -665,18 +931,68 @@ const gerarCabecalhoPDF = async (doc, titulo) => {
     }
 
     if (tipo === "insumos") {
-      await gerarCabecalhoPDF(doc, "Relatório de Insumos");
+      let y = await gerarCabecalhoPDF(
+        doc,
+        "Relatório de Insumos",
+        "Controle de matérias-primas, estoque atual, custo médio, valor em estoque e itens críticos."
+      );
+      const valorTotalEstoqueInsumos = insumosEstoqueCalculado.reduce(
+        (total, insumo) => total + numeroSeguro(insumo.valorEstoque),
+        0
+      );
+      const insumosZerados = insumosEstoqueCalculado.filter(
+        (insumo) => numeroSeguro(insumo.saldo) <= 0
+      ).length;
+      const insumosCriticos = insumosEstoqueCalculado.filter((insumo) => {
+        const cadastro = (insumos || []).find(
+          (item) => item.id === insumo.insumoId || item.nome === insumo.nome
+        );
+        const minimo = numeroSeguro(cadastro?.estoqueMinimo);
+        return minimo > 0 && numeroSeguro(insumo.saldo) <= minimo;
+      }).length;
 
-      autoTable(doc, {
-        startY: 55,
-        head: [["Insumo", "Estoque", "Estoque Mínimo", "Custo Médio"]],
-        body: (insumos || []).map((insumo) => [
-          insumo.nome || "-",
-          numeroBR(Number(insumo.estoqueAtual ?? insumo.estoque ?? 0), 2),
-          numeroBR(Number(insumo.estoqueMinimo ?? 0), 2),
-          moedaBR(Number(insumo.custoMedio ?? insumo.valorUnitario ?? 0)),
-        ]),
-        headStyles: { fillColor: [37, 99, 235] },
+      y = desenharCardsPDF(
+        doc,
+        [
+          { label: "Total de insumos", value: inteiroBR(insumosEstoqueCalculado.length), color: PDF_COLORS.blue },
+          { label: "Valor em estoque", value: moedaBR(valorTotalEstoqueInsumos), color: PDF_COLORS.green },
+          { label: "Zerados", value: inteiroBR(insumosZerados), color: PDF_COLORS.red },
+          { label: "Críticos", value: inteiroBR(insumosCriticos), color: PDF_COLORS.amber },
+        ],
+        y
+      );
+
+      tabelaPDF(doc, {
+        startY: y,
+        head: [["Insumo", "Estoque atual", "Estoque mínimo", "Custo médio", "Valor em estoque", "Status"]],
+        body: insumosEstoqueCalculado.map((insumo) => {
+          const cadastro = (insumos || []).find(
+            (item) => item.id === insumo.insumoId || item.nome === insumo.nome
+          );
+          const estoqueAtual = numeroSeguro(insumo.saldo);
+          const estoqueMinimo = numeroSeguro(cadastro?.estoqueMinimo);
+          const status =
+            estoqueAtual <= 0
+              ? "Zerado"
+              : estoqueMinimo > 0 && estoqueAtual <= estoqueMinimo
+              ? "Crítico"
+              : "OK";
+
+          return [
+            textoPDF(insumo.nome),
+            numeroBR(estoqueAtual, 2),
+            numeroBR(estoqueMinimo, 2),
+            moedaBR(numeroSeguro(insumo.custoMedio)),
+            moedaBR(numeroSeguro(insumo.valorEstoque)),
+            status,
+          ];
+        }),
+        columnStyles: {
+          1: { halign: "right" },
+          2: { halign: "right" },
+          3: { halign: "right" },
+          4: { halign: "right" },
+        },
       });
 
       gerarRodapePDF(doc);
