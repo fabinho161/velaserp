@@ -102,6 +102,7 @@ export default function Produtos() {
     precoVenda: "",
     dataCadastro: "",
     consumos: {},
+    componentesProduto: {},
     fiscal: FISCAL_PRODUTO_PADRAO,
     classeIndustrial: CLASSE_INDUSTRIAL_PADRAO,
     vendavel: true,
@@ -149,12 +150,23 @@ export default function Produtos() {
   // 🔹 CALCULAR CUSTO UNITÁRIO DO PRODUTO
   // ================================
   const calcularCustoUnitario = () => {
-    return insumos.reduce((total, insumo) => {
+    const custoInsumos = insumos.reduce((total, insumo) => {
       const quantidadeConsumida = Number(form.consumos?.[insumo.nome] || 0);
       const custoMedio = calcularCustoMedio(insumo.compras || []);
 
       return total + quantidadeConsumida * custoMedio;
     }, 0);
+
+    const custoComponentes = produtos.reduce((total, produto) => {
+      const quantidadeConsumida = Number(
+        form.componentesProduto?.[produto.id]?.quantidade || 0
+      );
+      const custoUnitarioComponente = Number(produto.custoUnitario || 0);
+
+      return total + quantidadeConsumida * custoUnitarioComponente;
+    }, 0);
+
+    return custoInsumos + custoComponentes;
   };
 
   // ================================
@@ -244,6 +256,10 @@ export default function Produtos() {
       return valores[chave] ?? "";
     }
   );
+  const produtoEditadoId = editIndex !== null ? produtos[editIndex]?.id : "";
+  const componentesProdutoDisponiveis = produtos.filter(
+    (produto) => produto.consumivelEmProducao === true && produto.id !== produtoEditadoId
+  );
 
   const renderCabecalhoOrdenavel = (label, chave, sort) => {
     const ativo = sort.ativo(chave);
@@ -287,6 +303,7 @@ export default function Produtos() {
       precoVenda: "",
       dataCadastro: "",
       consumos: {},
+      componentesProduto: {},
       fiscal: FISCAL_PRODUTO_PADRAO,
       classeIndustrial: CLASSE_INDUSTRIAL_PADRAO,
       vendavel: true,
@@ -317,6 +334,26 @@ export default function Produtos() {
     }),
     {}
   );
+  const componentesProdutoNormalizados = Object.entries(
+    form.componentesProduto || {}
+  ).reduce((acc, [produtoId, componente]) => {
+    const quantidade = Number(componente?.quantidade || 0);
+    const produtoComponente = produtos.find((produto) => produto.id === produtoId);
+
+    if (!produtoComponente || quantidade <= 0) return acc;
+
+    return {
+      ...acc,
+      [produtoId]: {
+        produtoId,
+        codigo: produtoComponente.codigo || "",
+        nome: produtoComponente.nome || "",
+        quantidade,
+        unidade: produtoComponente.unidade || "un",
+        custoUnitarioSnapshot: Number(produtoComponente.custoUnitario || 0),
+      },
+    };
+  }, {});
 
   const produtoCalculado = {
     ...form,
@@ -327,6 +364,7 @@ export default function Produtos() {
     qtdProducao,
     precoVenda,
     consumos: consumosNormalizados,
+    componentesProduto: componentesProdutoNormalizados,
     dataCadastro: form.dataCadastro || new Date().toISOString().split("T")[0],
     custoUnitario,
     custoProducao,
@@ -370,6 +408,7 @@ export default function Produtos() {
       precoVenda: produto.precoVenda || "",
       dataCadastro: produto.dataCadastro || "",
       consumos: produto.consumos || {},
+      componentesProduto: produto.componentesProduto || {},
       fiscal: normalizarFiscalProduto(produto.fiscal),
       classeIndustrial: normalizarClasseIndustrial(produto.classeIndustrial),
       vendavel: produto.vendavel !== false,
@@ -808,6 +847,69 @@ export default function Produtos() {
             </div>
           );
         })}
+      </div>
+
+      <br />
+
+      <div className="card section-card">
+        <h3>Componentes de Produto/Semiacabado</h3>
+        <p className="section-description">
+          Use esta seção para consumir produtos internos ou semiacabados
+          produzidos anteriormente.
+        </p>
+
+        {componentesProdutoDisponiveis.length === 0 ? (
+          <p className="empty-state">
+            Nenhum produto marcado como consumível em produção.
+          </p>
+        ) : (
+          componentesProdutoDisponiveis.map((produto) => {
+            const componente = form.componentesProduto?.[produto.id] || {};
+            const quantidade = Number(componente.quantidade || 0);
+            const custoUnitarioComponente = Number(produto.custoUnitario || 0);
+            const custoParcial = quantidade * custoUnitarioComponente;
+
+            return (
+              <div key={produto.id} className="product-consumption-row">
+                <div>
+                  <strong>
+                    {produto.codigo} - {produto.nome}
+                  </strong>
+                  <br />
+                  <small>
+                    Custo unitário: R$ {numeroBR(custoUnitarioComponente, 2)}
+                    {" "} / {produto.unidade || "un"}
+                  </small>
+                </div>
+
+                <input
+                  type="number"
+                  step="0.001"
+                  placeholder="Qtd por produto final"
+                  value={componente.quantidade || ""}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      componentesProduto: {
+                        ...form.componentesProduto,
+                        [produto.id]: {
+                          ...(form.componentesProduto?.[produto.id] || {}),
+                          quantidade: e.target.value,
+                        },
+                      },
+                    })
+                  }
+                />
+
+                <div>
+                  <small>Custo parcial</small>
+                  <br />
+                  <strong>R$ {numeroBR(custoParcial, 2)}</strong>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       <br />

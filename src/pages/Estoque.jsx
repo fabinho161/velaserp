@@ -213,6 +213,7 @@ export default function Estoque() {
         produzido: Number(item.produto.produzido || 0),
         vendido: Number(item.produto.vendido || 0),
         baixado: Number(item.produto.baixado || 0),
+        consumidoEmProducao: Number(item.produto.consumidoEmProducao || 0),
         saldo: Number(item.produto.saldo || 0),
         custoMedio: Number(item.produto.custoMedio || 0),
         valorEstoque: Number(item.produto.valorEstoque || 0),
@@ -277,6 +278,7 @@ export default function Estoque() {
             <th>{renderCabecalhoOrdenavel("Produzido", "produzido", ordenacaoProdutos)}</th>
             <th>{renderCabecalhoOrdenavel("Vendido", "vendido", ordenacaoProdutos)}</th>
             <th>{renderCabecalhoOrdenavel("Baixado", "baixado", ordenacaoProdutos)}</th>
+            <th>{renderCabecalhoOrdenavel("Consumido", "consumidoEmProducao", ordenacaoProdutos)}</th>
             <th>{renderCabecalhoOrdenavel("Saldo", "saldo", ordenacaoProdutos)}</th>
             <th>{renderCabecalhoOrdenavel("Custo Médio", "custoMedio", ordenacaoProdutos)}</th>
             <th>{renderCabecalhoOrdenavel("Valor em Estoque", "valorEstoque", ordenacaoProdutos)}</th>
@@ -296,6 +298,7 @@ export default function Estoque() {
                 <td>{produto.produzido}</td>
                 <td>{produto.vendido}</td>
                 <td>{produto.baixado}</td>
+                <td>{produto.consumidoEmProducao || 0}</td>
 
                 <td style={{ color: emAlerta ? "#dc2626" : "#16a34a" }}>
                   {produto.saldo}
@@ -360,7 +363,7 @@ export default function Estoque() {
 
           {lista.length === 0 && (
             <tr>
-              <td colSpan="10">{mensagemVazia}</td>
+              <td colSpan="11">{mensagemVazia}</td>
             </tr>
           )}
         </tbody>
@@ -579,6 +582,7 @@ export default function Estoque() {
               <th>{renderCabecalhoOrdenavel("Produzido", "produzido", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Vendido", "vendido", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Baixado", "baixado", ordenacaoProdutos)}</th>
+              <th>{renderCabecalhoOrdenavel("Consumido", "consumidoEmProducao", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Saldo", "saldo", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Custo Médio", "custoMedio", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Valor em Estoque", "valorEstoque", ordenacaoProdutos)}</th>
@@ -598,6 +602,7 @@ export default function Estoque() {
                   <td>{produto.produzido}</td>
                   <td>{produto.vendido}</td>
                   <td>{produto.baixado}</td>
+                  <td>{produto.consumidoEmProducao || 0}</td>
 
                   <td style={{ color: emAlerta ? "#dc2626" : "#16a34a" }}>
                     {produto.saldo}
@@ -662,7 +667,7 @@ export default function Estoque() {
 
             {produtosAcabadosEstoqueOrdenados.length === 0 && (
               <tr>
-                <td colSpan="10">Nenhum produto acabado em estoque.</td>
+                <td colSpan="11">Nenhum produto acabado em estoque.</td>
               </tr>
             )}
           </tbody>

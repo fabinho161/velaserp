@@ -6782,6 +6782,18 @@ button,
   box-shadow: 0 14px 34px rgba(22, 163, 74, 0.1);
 }
 
+.learning-industrial-featured {
+  border-top-color: #0f766e;
+  background:
+    linear-gradient(135deg, rgba(240, 253, 250, 0.86), rgba(255, 255, 255, 0.96)),
+    #fff;
+}
+
+.learning-industrial-featured .learning-section-icon {
+  background: #ccfbf1;
+  color: #0f766e;
+}
+
 .learning-section-heading {
   display: flex;
   align-items: flex-start;
@@ -6944,6 +6956,92 @@ button,
 .learning-info-highlight {
   border-color: #bfdbfe;
   background: #eff6ff;
+}
+
+.learning-industrial-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.learning-industrial-badges span {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #ccfbf1;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.learning-industrial-alert {
+  margin-top: 14px;
+  padding: 13px;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.learning-industrial-alert strong,
+.learning-industrial-alert p {
+  display: block;
+}
+
+.learning-industrial-alert strong {
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.learning-industrial-alert p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.learning-industrial-flow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.learning-industrial-step {
+  position: relative;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #99f6e4;
+  border-radius: 8px;
+  background: #f0fdfa;
+}
+
+.learning-industrial-step span,
+.learning-industrial-step strong,
+.learning-industrial-step small {
+  display: block;
+}
+
+.learning-industrial-step span {
+  margin-bottom: 8px;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.learning-industrial-step strong {
+  color: #134e4a;
+  line-height: 1.35;
+}
+
+.learning-industrial-step small {
+  margin-top: 8px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.4;
 }
 
 .learning-article-module {

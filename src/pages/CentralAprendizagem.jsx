@@ -41,6 +41,13 @@ const textoDoArtigo = (item) =>
     item.descricao,
     item.pergunta,
     item.resposta,
+    item.alerta,
+    ...(item.badges || []),
+    ...(item.fluxoVisual || []).flatMap((etapa) => [
+      etapa.titulo,
+      etapa.descricao,
+      etapa.resultado,
+    ]),
     ...(item.passos || []),
     ...(item.camposPrincipais || []),
     ...(item.aposSalvar || []),
@@ -104,6 +111,33 @@ function ArticleCard({ item, variant = "article" }) {
           <div className="learning-info-block learning-info-highlight">
             <strong>Objetivo</strong>
             <p>{item.objetivo}</p>
+          </div>
+        )}
+
+        {item.badges?.length > 0 && (
+          <div className="learning-industrial-badges">
+            {item.badges.map((badge) => (
+              <span key={badge}>{badge}</span>
+            ))}
+          </div>
+        )}
+
+        {item.alerta && (
+          <div className="learning-industrial-alert">
+            <strong>Atenção operacional</strong>
+            <p>{item.alerta}</p>
+          </div>
+        )}
+
+        {item.fluxoVisual?.length > 0 && (
+          <div className="learning-industrial-flow">
+            {item.fluxoVisual.map((etapa, index) => (
+              <div key={`${etapa.titulo}-${index}`} className="learning-industrial-step">
+                <span>{etapa.titulo}</span>
+                <strong>{etapa.descricao}</strong>
+                <small>{etapa.resultado}</small>
+              </div>
+            ))}
           </div>
         )}
 
@@ -199,7 +233,18 @@ export default function CentralAprendizagem() {
   const fluxoRecomendado = primeirosPassos.find((item) =>
     normalizar(item.titulo).includes("fluxo recomendado")
   );
+  const guiaIndustrialPrincipal = tutoriaisPorModulo.find((item) =>
+    normalizar(item.titulo || item.modulo).includes(
+      "tudo sobre producao industrial em etapas"
+    )
+  );
   const fluxoRecomendadoVisivel = fluxoRecomendado && filtroCombina(fluxoRecomendado);
+  const guiaIndustrialVisivel =
+    guiaIndustrialPrincipal &&
+    filtroCombina({
+      titulo: guiaIndustrialPrincipal.titulo || guiaIndustrialPrincipal.modulo,
+      ...guiaIndustrialPrincipal,
+    });
   const primeirosPassosLista = fluxoRecomendadoVisivel
     ? primeirosPassosFiltrados.filter((item) => item !== fluxoRecomendado)
     : primeirosPassosFiltrados;
@@ -297,6 +342,19 @@ export default function CentralAprendizagem() {
         </section>
       )}
 
+      {!mostrandoChecklist && guiaIndustrialVisivel && (
+        <section className="card learning-section-card learning-featured-flow learning-industrial-featured">
+          <SectionTitle
+            icon={Layers3}
+            label="Produção Industrial"
+            title="Tudo sobre Produção Industrial em Etapas"
+            description="Guia completo para semiacabados, ficha técnica híbrida, consumo interno, estoque industrial e custo correto."
+          />
+
+          <ArticleCard item={guiaIndustrialPrincipal} variant="featured" />
+        </section>
+      )}
+
       {!mostrandoChecklist && (
         <section className="learning-category-grid">
           <button
@@ -329,6 +387,8 @@ export default function CentralAprendizagem() {
               <span className="learning-category-icon">
                 {categoria.titulo === CATEGORIA_CHECKLIST ? (
                   <ClipboardCheck size={19} />
+                ) : categoria.titulo === "Produção Industrial Avançada" ? (
+                  <Layers3 size={19} />
                 ) : (
                   <BookOpen size={19} />
                 )}

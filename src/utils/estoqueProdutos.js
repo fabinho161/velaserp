@@ -158,6 +158,7 @@ export const calcularEstoqueProdutos = ({
         produzido: 0,
         vendido: 0,
         baixado: 0,
+        consumidoEmProducao: 0,
         custoTotal: 0,
         estoqueMinimo: Number(registro.estoqueMinimo || 0),
       });
@@ -203,6 +204,35 @@ export const calcularEstoqueProdutos = ({
       : garantirItem(producao);
     item.produzido += Number(producao.quantidade || 0);
     item.custoTotal += Number(producao.custoTotal || 0);
+
+    const componentesProduto = Array.isArray(producao.componentesProduto)
+      ? producao.componentesProduto
+      : Object.values(producao.componentesProduto || {});
+
+    componentesProduto.forEach((componente) => {
+      const produtoId = componente.produtoId || "";
+      const aliasesComponente = obterAliasesProduto({
+        produto: componente.produto,
+        codigo: componente.codigo,
+        nome: componente.nome,
+        produtoNome: componente.nome,
+      });
+      const chaveComponente = produtoId && mapa.has(`produto:${produtoId}`)
+        ? `produto:${produtoId}`
+        : resolverChavePorAliases(aliasesComponente);
+      const itemComponente = chaveComponente
+        ? mapa.get(chaveComponente)
+        : garantirItem({
+            produtoId,
+            codigo: componente.codigo,
+            nome: componente.nome,
+            produtoNome: componente.nome,
+          });
+
+      itemComponente.consumidoEmProducao += Number(
+        componente.quantidadeTotal || componente.quantidade || 0
+      );
+    });
   });
 
   (vendas || []).forEach((venda, vendaIndex) => {
@@ -245,7 +275,11 @@ export const calcularEstoqueProdutos = ({
   });
 
   return Array.from(mapa.values()).map((item) => {
-    const saldoReal = item.produzido - item.vendido - item.baixado;
+    const saldoReal =
+      item.produzido -
+      item.vendido -
+      item.baixado -
+      Number(item.consumidoEmProducao || 0);
     const saldo = Math.max(0, saldoReal);
     const custoMedio = item.produzido > 0 ? item.custoTotal / item.produzido : 0;
 

@@ -6,7 +6,10 @@ import { useTableSort } from "../hooks/useTableSort";
 import ActionMenu from "../components/ActionMenu";
 import { moedaBR, numeroBR, inteiroBR, dataBR } from "../utils/formatters";
 import { extrairNumeroCodigo } from "../utils/sortUtils";
-import { calcularEstoqueInsumos } from "../utils/estoqueProdutos";
+import {
+  calcularEstoqueInsumos,
+  calcularEstoqueProdutos,
+} from "../utils/estoqueProdutos";
 
 const normalizarClasseIndustrial = (valor) =>
   String(valor || "produto_acabado").trim();
@@ -37,6 +40,7 @@ export default function Producao() {
   produtos,
   insumos,
   producoes,
+  vendas = [],
   perdasDoacoes = [],
   addItem,
   deleteItem,
@@ -144,14 +148,55 @@ export default function Producao() {
     producoes,
     perdasDoacoes,
   });
+  const estoqueProdutos = calcularEstoqueProdutos({
+    produtos,
+    producoes,
+    vendas,
+    perdasDoacoes,
+  });
+  const calcularComponentesProduto = () => {
+    if (!produtoSelecionado) return [];
+
+    return Object.values(produtoSelecionado.componentesProduto || {})
+      .map((componente) => {
+        const produtoComponente =
+          produtosPorId.get(componente.produtoId) ||
+          produtos.find((produto) => produto.codigo === componente.codigo);
+        const quantidadeUnitario = Number(componente.quantidade || 0);
+        const quantidadeTotal = quantidadeUnitario * Number(form.quantidade || 0);
+        const custoUnitarioSnapshot = Number(
+          componente.custoUnitarioSnapshot ||
+            produtoComponente?.custoUnitario ||
+            0
+        );
+
+        return {
+          produtoId: componente.produtoId || produtoComponente?.id || "",
+          codigo: componente.codigo || produtoComponente?.codigo || "",
+          nome: componente.nome || produtoComponente?.nome || "",
+          unidade: componente.unidade || produtoComponente?.unidade || "un",
+          quantidadeUnitario,
+          quantidadeTotal,
+          custoUnitarioSnapshot,
+          custoTotal: quantidadeTotal * custoUnitarioSnapshot,
+        };
+      })
+      .filter((componente) => componente.quantidadeTotal > 0);
+  };
+  const componentesProdutoCalculados = calcularComponentesProduto();
 
   // ================================
   // 🔹 CUSTOS DA PRODUÇÃO
   // ================================
-  const custoTotalProducao = consumosCalculados.reduce(
+  const custoTotalInsumos = consumosCalculados.reduce(
     (total, item) => total + Number(item.custoTotal || 0),
     0
   );
+  const custoTotalComponentesProduto = componentesProdutoCalculados.reduce(
+    (total, item) => total + Number(item.custoTotal || 0),
+    0
+  );
+  const custoTotalProducao = custoTotalInsumos + custoTotalComponentesProduto;
 
   const custoUnitario =
     Number(form.quantidade || 0) > 0
@@ -229,6 +274,25 @@ export default function Producao() {
       }
     }
 
+    for (let componente of componentesProdutoCalculados) {
+      const estoqueComponente = estoqueProdutos.find((item) =>
+        componente.produtoId
+          ? item.produtoId === componente.produtoId
+          : item.codigo === componente.codigo
+      );
+
+      if (
+        Number(estoqueComponente?.saldo || 0) <
+        Number(componente.quantidadeTotal || 0)
+      ) {
+        showToast(
+          `Estoque insuficiente do componente ${componente.codigo} - ${componente.nome}.`,
+          "warning"
+        );
+        return false;
+      }
+    }
+
     return true;
   };
 
@@ -257,6 +321,7 @@ export default function Producao() {
       quantidade: Number(form.quantidade),
       data: form.data,
       consumos: consumosCalculados,
+      componentesProduto: componentesProdutoCalculados,
       custoTotal: custoTotalProducao,
       custoUnitario,
     };
@@ -425,7 +490,13 @@ export default function Producao() {
             <tbody>
               {consumosCalculados.map((item, index) => {
                 const insumo = insumos.find((i) => i.nome === item.nome);
-                const estoqueAtual = Number(insumo?.estoque || 0);
+                const estoqueInsumo = estoqueInsumos.find(
+                  (estoque) =>
+                    estoque.insumoId === insumo?.id || estoque.nome === item.nome
+                );
+                const estoqueAtual = Number(
+                  estoqueInsumo?.saldo ?? insumo?.estoque ?? 0
+                );
 
                 const faltaEstoque =
                   item.nome !== "Energia" &&
@@ -468,6 +539,67 @@ export default function Producao() {
               })}
             </tbody>
           </table>
+
+          {componentesProdutoCalculados.length > 0 && (
+            <>
+              <br />
+              <h3>Componentes de Produto/Semiacabado</h3>
+
+              <table>
+                <thead>
+                  <tr>
+                    <th>Componente</th>
+                    <th>Qtd Consumida</th>
+                    <th>Estoque Atual</th>
+                    <th>Custo Unit.</th>
+                    <th>Custo Total</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {componentesProdutoCalculados.map((item, index) => {
+                    const estoqueComponente = estoqueProdutos.find((estoque) =>
+                      item.produtoId
+                        ? estoque.produtoId === item.produtoId
+                        : estoque.codigo === item.codigo
+                    );
+                    const estoqueAtual = Number(estoqueComponente?.saldo || 0);
+                    const faltaEstoque =
+                      estoqueAtual < Number(item.quantidadeTotal || 0);
+
+                    return (
+                      <tr key={item.produtoId || item.codigo || index}>
+                        <td>
+                          {item.codigo} - {item.nome}
+                        </td>
+                        <td>
+                          {numeroBR(item.quantidadeTotal, 3)} {item.unidade}
+                        </td>
+                        <td>
+                          {numeroBR(estoqueAtual, 3)} {item.unidade}
+                        </td>
+                        <td>{moedaBR(item.custoUnitarioSnapshot)}</td>
+                        <td>{moedaBR(item.custoTotal)}</td>
+                        <td>
+                          <span
+                            style={{
+                              padding: "5px 10px",
+                              borderRadius: "20px",
+                              background: faltaEstoque ? "#fee2e2" : "#dcfce7",
+                              color: faltaEstoque ? "#991b1b" : "#166534",
+                            }}
+                          >
+                            {faltaEstoque ? "Insuficiente" : "OK"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </>
+          )}
         </div>
       )}
 
