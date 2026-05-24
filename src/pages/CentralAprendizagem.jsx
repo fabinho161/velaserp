@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   ArrowRight,
   ArrowLeft,
@@ -8,6 +9,7 @@ import {
   FileQuestion,
   GraduationCap,
   Layers3,
+  LifeBuoy,
   Lightbulb,
   PlayCircle,
   Search,
@@ -528,6 +530,29 @@ export default function CentralAprendizagem() {
               <PlayCircle size={34} />
               <strong>Biblioteca visual futura</strong>
               <span>Sem backend nesta primeira versao.</span>
+            </div>
+          </section>
+
+          <section className="card learning-section-card learning-support-card">
+            <SectionTitle
+              icon={LifeBuoy}
+              label="Suporte"
+              title="Precisa de ajuda?"
+              description="Se não encontrou o que procurava, fale com o suporte oficial do Renovar ERP."
+            />
+
+            <div className="learning-support-grid">
+              <span className="learning-support-contact">
+                <strong>WhatsApp</strong>
+                (64) 9 99328-6124
+              </span>
+              <span className="learning-support-contact">
+                <strong>E-mail</strong>
+                fabio.souza@renovarerp.com.br
+              </span>
+              <Link className="learning-support-button" to="/suporte">
+                Acessar Suporte
+              </Link>
             </div>
           </section>
 

@@ -32,6 +32,7 @@ import PagamentoRetorno from "./pages/PagamentoRetorno";
 import UsuariosEmpresa from "./pages/UsuariosEmpresa";
 import AceitarConvite from "./pages/AceitarConvite";
 import CentralAprendizagem from "./pages/CentralAprendizagem";
+import Suporte from "./pages/Suporte";
 
 function AuthenticatedApp() {
   const {
@@ -198,6 +199,7 @@ function AuthenticatedApp() {
               </EmpresaPermissionRoute>
             )}
           />
+          <Route path="/suporte" element={<Suporte />} />
           <Route path="/admin" element={<Navigate to="/admin/clientes" replace />} />
           <Route
             path="/admin/clientes"

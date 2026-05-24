@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
   BookOpen,
+  LifeBuoy,
   LayoutDashboard,
   Package,
   Boxes,
@@ -105,15 +106,18 @@ export default function Sidebar() {
     },
     {
       title: "Ajuda",
-      items: estaEmAdminSaaS
-        ? []
-        : [
-            {
-              path: "/central-aprendizagem",
-              label: "Central de Aprendizagem",
-              icon: BookOpen,
-            },
-          ],
+      items: [
+        !estaEmAdminSaaS && {
+          path: "/central-aprendizagem",
+          label: "Central de Aprendizagem",
+          icon: BookOpen,
+        },
+        {
+          path: "/suporte",
+          label: "Suporte",
+          icon: LifeBuoy,
+        },
+      ].filter(Boolean),
     },
     {
       title: "Administracao",
