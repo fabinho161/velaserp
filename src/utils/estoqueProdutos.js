@@ -158,6 +158,14 @@ export const calcularEstoqueProdutos = ({
         custoUnitarioAtual: Number(
           registro.custoUnitario || registro.custoProducao || registro.custo || 0
         ),
+        precoVendaAtual: Number(
+          registro.precoVenda ||
+            registro.valorUnitario ||
+            registro.preco ||
+            registro.precoUnitario ||
+            registro.venda ||
+            0
+        ),
         produzido: 0,
         vendido: 0,
         baixado: 0,
@@ -191,6 +199,16 @@ export const calcularEstoqueProdutos = ({
             registro.custoUnitario ||
               registro.custoProducao ||
               registro.custo ||
+              0
+          ),
+        precoVendaAtual:
+          Number(itemExistente.precoVendaAtual || 0) ||
+          Number(
+            registro.precoVenda ||
+              registro.valorUnitario ||
+              registro.preco ||
+              registro.precoUnitario ||
+              registro.venda ||
               0
           ),
         estoqueMinimo: Number(registro.estoqueMinimo || itemExistente.estoqueMinimo || 0),
@@ -304,6 +322,7 @@ export const calcularEstoqueProdutos = ({
       saldoReal,
       custoMedio,
       custoAtual,
+      precoAtual: Number(item.precoVendaAtual || 0),
       valorEstoque: saldo * custoMedio,
     };
   });

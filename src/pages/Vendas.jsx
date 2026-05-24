@@ -299,16 +299,32 @@ export default function Vendas() {
       )
     : 0;
 
-  const precoSugeridoItem =
+  const precoCadastroItem = produtoSelecionado
+    ? Number(
+        produtoSelecionado.precoAtual ||
+          produtoSelecionado.precoVendaAtual ||
+          produtoSelecionado.precoVenda ||
+          produtoSelecionado.valorUnitario ||
+          produtoSelecionado.preco ||
+          produtoSelecionado.precoUnitario ||
+          0
+      )
+    : 0;
+
+  const precoPorMargemItem =
     produtoSelecionado && margemDesejadaItem > 0 && margemDesejadaItem < 100
       ? custoUnitarioItem / (1 - margemDesejadaItem / 100)
       : 0;
+  const precoSugeridoItem = precoCadastroItem;
 
   // ================================
   // 🔹 CÁLCULOS DO ITEM ATUAL
   // ================================
   const quantidadeItem = Number(itemAtual.quantidade || 0);
-  const valorUnitarioItem = Number(itemAtual.valorUnitario || 0);
+  const valorUnitarioManualInformado = itemAtual.valorUnitario !== "";
+  const valorUnitarioItem = valorUnitarioManualInformado
+    ? Number(itemAtual.valorUnitario || 0)
+    : precoSugeridoItem;
   const descontoItem = Number(itemAtual.desconto || 0);
 
   const valorBrutoItem = quantidadeItem * valorUnitarioItem;
@@ -344,12 +360,12 @@ export default function Vendas() {
 
     setItemAtual({
       ...itemAtual,
-      valorUnitario: precoSugeridoItem.toFixed(2),
+      valorUnitario: precoPorMargemItem.toFixed(2),
     });
   };
 
   const adicionarItem = () => {
-    if (!itemAtual.produto || !itemAtual.quantidade || !itemAtual.valorUnitario) {
+    if (!itemAtual.produto || !itemAtual.quantidade || valorUnitarioItem <= 0) {
       showToast("Preencha produto, quantidade e valor unitário.", "warning");
       return;
     }
