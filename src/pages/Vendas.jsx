@@ -265,7 +265,51 @@ export default function Vendas() {
     ignorarVendaIndex: editIndex,
   });
 
-  const produtoSelecionado = estoqueProdutos.find(
+  const produtoEstaAtivoParaVenda = (produto = {}) => {
+    const status = String(produto.status || "ativo").trim().toLowerCase();
+    const statusInativo = ["inativo", "removido", "excluido", "excluído", "cancelado"];
+
+    return produto.ativo !== false && !statusInativo.includes(status);
+  };
+
+  const produtosCadastradosVendaveis = new Map(
+    produtos
+      .filter((produto) => {
+        const produtoId = produto.id || produto.produtoId || "";
+        return (
+          produtoId &&
+          produtoEstaAtivoParaVenda(produto) &&
+          produto.vendavel !== false
+        );
+      })
+      .map((produto) => [produto.id || produto.produtoId, produto])
+  );
+
+  const produtosDisponiveisVenda = estoqueProdutos
+    .filter((produtoEstoque) => {
+      if (!produtoEstoque.produtoId) return false;
+      if (!produtosCadastradosVendaveis.has(produtoEstoque.produtoId)) return false;
+
+      return Number(produtoEstoque.saldo || 0) > 0;
+    })
+    .map((produtoEstoque) => {
+      const produtoCadastro = produtosCadastradosVendaveis.get(produtoEstoque.produtoId) || {};
+
+      return {
+        ...produtoEstoque,
+        codigo: produtoCadastro.codigo || produtoEstoque.codigo,
+        nome: produtoCadastro.nome || produtoEstoque.nome,
+        produto:
+          produtoEstoque.produto ||
+          textoSeguro({
+            codigo: produtoCadastro.codigo,
+            nome: produtoCadastro.nome,
+            tipo: produtoCadastro.tipo,
+          }),
+      };
+    });
+
+  const produtoSelecionado = produtosDisponiveisVenda.find(
     (p) => p.produto === itemAtual.produto
   );
 
@@ -1252,8 +1296,8 @@ export default function Vendas() {
         >
           <option value="">Selecione o produto</option>
 
-          {estoqueProdutos.map((p, index) => (
-            <option key={index} value={p.produto}>
+          {produtosDisponiveisVenda.map((p) => (
+            <option key={p.produtoId} value={p.produto}>
               {p.produto} — Estoque: {p.saldo}
             </option>
           ))}
