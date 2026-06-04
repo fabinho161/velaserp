@@ -39,6 +39,7 @@ export default function Relatorios() {
     empresas,
     empresaId,
     configuracoes,
+    clientesComerciais = [],
   } = useERP();
   const { showToast } = useToast();
   const { podeUsarDRE, podeGerarPDF } = usePlano();
@@ -57,7 +58,132 @@ export default function Relatorios() {
   const [filtro, setFiltro] = useState({
     inicio: "",
     fim: "",
+    cliente: "",
   });
+  const [buscaCliente, setBuscaCliente] = useState("");
+
+  const normalizarTexto = (valor = "") =>
+    String(valor || "")
+      .trim()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+
+  const obterNomeClienteVenda = (venda = {}) => {
+    const clienteObjeto =
+      typeof venda.cliente === "object" && venda.cliente !== null
+        ? venda.cliente
+        : {};
+
+    return (
+      venda.clienteNome ||
+      venda.nomeCliente ||
+      venda.comprador ||
+      clienteObjeto.nome ||
+      (typeof venda.cliente === "string" ? venda.cliente : "") ||
+      "Cliente não informado"
+    );
+  };
+
+  const obterClienteIdVenda = (venda = {}) => {
+    const clienteObjeto =
+      typeof venda.cliente === "object" && venda.cliente !== null
+        ? venda.cliente
+        : {};
+
+    return (
+      venda.clienteId ||
+      venda.clienteComercialId ||
+      venda.compradorId ||
+      clienteObjeto.id ||
+      ""
+    );
+  };
+
+  const criarChaveCliente = ({ id = "", nome = "" }) => {
+    if (id) return `id:${id}`;
+    const nomeNormalizado = normalizarTexto(nome);
+    return nomeNormalizado ? `nome:${nomeNormalizado}` : "";
+  };
+
+  const clientesRelatorioMap = new Map();
+
+  const adicionarClienteRelatorio = ({ id = "", nome = "", origem = "" }) => {
+    const nomeLimpo = String(nome || "").trim();
+    if (!nomeLimpo || nomeLimpo === "Cliente não informado") return;
+
+    const chave = criarChaveCliente({ id, nome: nomeLimpo });
+    if (!chave) return;
+
+    const existente = clientesRelatorioMap.get(chave);
+    clientesRelatorioMap.set(chave, {
+      chave,
+      id,
+      nome: existente?.nome || nomeLimpo,
+      nomeNormalizado: normalizarTexto(existente?.nome || nomeLimpo),
+      origem: existente?.origem || origem,
+    });
+  };
+
+  (clientesComerciais || []).forEach((cliente) => {
+    adicionarClienteRelatorio({
+      id: cliente.id || "",
+      nome: cliente.nome || cliente.razaoSocial || cliente.email || "",
+      origem: "CRM",
+    });
+  });
+
+  (vendas || []).forEach((venda) => {
+    adicionarClienteRelatorio({
+      id: obterClienteIdVenda(venda),
+      nome: obterNomeClienteVenda(venda),
+      origem: "Histórico",
+    });
+  });
+
+  const clientesRelatorio = Array.from(clientesRelatorioMap.values()).sort(
+    (a, b) =>
+      String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR", {
+        numeric: true,
+        sensitivity: "base",
+      })
+  );
+
+  const clienteSelecionado =
+    clientesRelatorio.find((cliente) => cliente.chave === filtro.cliente) || null;
+
+  const clientePDF = clienteSelecionado?.nome || "Todos os clientes";
+
+  const clientesFiltradosBusca = clientesRelatorio.filter((cliente) => {
+    const busca = normalizarTexto(buscaCliente);
+    if (!busca) return true;
+
+    return (
+      cliente.nomeNormalizado.includes(busca) ||
+      normalizarTexto(cliente.origem).includes(busca)
+    );
+  });
+
+  const clientesVisiveisFiltro =
+    clienteSelecionado &&
+    !clientesFiltradosBusca.some((cliente) => cliente.chave === clienteSelecionado.chave)
+      ? [clienteSelecionado, ...clientesFiltradosBusca]
+      : clientesFiltradosBusca;
+
+  const vendaPertenceAoClienteSelecionado = (venda = {}) => {
+    if (!clienteSelecionado) return true;
+
+    const vendaClienteId = obterClienteIdVenda(venda);
+    if (clienteSelecionado.id && vendaClienteId === clienteSelecionado.id) {
+      return true;
+    }
+
+    const nomeVendaNormalizado = normalizarTexto(obterNomeClienteVenda(venda));
+    return (
+      Boolean(nomeVendaNormalizado) &&
+      nomeVendaNormalizado === clienteSelecionado.nomeNormalizado
+    );
+  };
 
   // ================================
   // 🔹 FILTRAR LISTAS POR PERÍODO
@@ -76,7 +202,9 @@ export default function Relatorios() {
   // ================================
   // 🔹 DADOS FILTRADOS
   // ================================
-  const vendasFiltradas = filtrarPorPeriodo(vendas);
+  const vendasFiltradas = filtrarPorPeriodo(vendas).filter(
+    vendaPertenceAoClienteSelecionado
+  );
   const despesasFiltradas = filtrarPorPeriodo(despesas);
   const producoesFiltradas = filtrarPorPeriodo(producoes);
 
@@ -93,14 +221,15 @@ export default function Relatorios() {
     0
   );
 
-  const saldoFinanceiro = totalVendas - totalDespesas;
-
   const custoProdutosVendidos = vendasFiltradas.reduce(
     (total, venda) => total + Number(venda.custoTotal ?? 0),
     0
   );
 
   const lucroBruto = totalVendas - custoProdutosVendidos;
+  const filtroClienteAtivo = Boolean(clienteSelecionado);
+  const despesasAtribuidasResultado = filtroClienteAtivo ? 0 : totalDespesas;
+  const saldoFinanceiro = totalVendas - despesasAtribuidasResultado;
 
   const margemBruta =
     totalVendas > 0 ? (lucroBruto / totalVendas) * 100 : 0;
@@ -212,7 +341,7 @@ export default function Relatorios() {
       const valores = {
         data: item.venda.data || "",
         pedido: item.venda.numeroPedido || "",
-        cliente: item.venda.cliente || "",
+        cliente: obterNomeClienteVenda(item.venda),
         total: item.total,
         custo: item.custo,
         margem: item.margem,
@@ -265,7 +394,7 @@ export default function Relatorios() {
 
   const receitaLiquida = receitaBruta - descontosVendas;
 
-  const resultadoLiquido = lucroBruto - totalDespesas;
+  const resultadoLiquido = lucroBruto - despesasAtribuidasResultado;
 
   const margemLiquida =
     receitaLiquida > 0 ? (resultadoLiquido / receitaLiquida) * 100 : 0;
@@ -416,7 +545,12 @@ export default function Relatorios() {
     return y + linhas.length * 4;
   };
 
-  const gerarCabecalhoPDF = async (doc, titulo, subtitulo = "") => {
+  const gerarCabecalhoPDF = async (
+    doc,
+    titulo,
+    subtitulo = "",
+    clienteCabecalho = clientePDF
+  ) => {
     doc.setFillColor(...PDF_COLORS.navy);
     doc.rect(0, 0, PDF_WIDTH, 42, "F");
     doc.setFillColor(...PDF_COLORS.blue);
@@ -450,6 +584,7 @@ export default function Relatorios() {
     doc.text(`E-mail: ${textoPDF(dadosEmpresaPDF.email)}`, 145, 19);
     doc.text(`Geração: ${dataGeracaoPDF}`, 145, 25);
     doc.text(`Período: ${periodoPDF}`, 145, 31);
+    doc.text(`Cliente: ${textoPDF(clienteCabecalho)}`, 145, 37, { maxWidth: 52 });
 
     doc.setTextColor(...PDF_COLORS.navy);
     doc.setFontSize(17);
@@ -638,7 +773,7 @@ export default function Relatorios() {
           return [
             dataBR(venda.data),
             textoPDF(venda.numeroPedido),
-            textoPDF(venda.cliente, "Cliente não informado"),
+            textoPDF(obterNomeClienteVenda(venda), "Cliente não informado"),
             moedaBR(total),
             moedaBR(custo),
             moedaBR(lucro),
@@ -671,7 +806,7 @@ export default function Relatorios() {
           { label: "Total de vendas", value: moedaBR(totalVendas), color: PDF_COLORS.green },
           { label: "Despesas", value: moedaBR(totalDespesas), color: PDF_COLORS.red },
           {
-            label: "Saldo operacional",
+            label: filtroClienteAtivo ? "Lucro bruto cliente" : "Saldo operacional",
             value: moedaBR(saldoFinanceiro),
             color: saldoFinanceiro >= 0 ? PDF_COLORS.green : PDF_COLORS.red,
           },
@@ -682,7 +817,9 @@ export default function Relatorios() {
       );
       y = desenharAvisoPDF(
         doc,
-        "Saldo financeiro operacional: pode divergir do saldo bancário real sem conciliação.",
+        filtroClienteAtivo
+          ? "Filtro por cliente: despesas operacionais gerais não são rateadas por cliente nesta visão."
+          : "Saldo financeiro operacional: pode divergir do saldo bancário real sem conciliação.",
         y
       );
 
@@ -691,8 +828,16 @@ export default function Relatorios() {
         head: [["Indicador", "Valor"]],
         body: [
           ["Total de Vendas", moedaBR(totalVendas)],
-          ["Total de Despesas", moedaBR(totalDespesas)],
-          ["Saldo Financeiro", moedaBR(saldoFinanceiro)],
+          [
+            filtroClienteAtivo
+              ? "Despesas Gerais da Empresa no Período"
+              : "Total de Despesas",
+            moedaBR(totalDespesas),
+          ],
+          [
+            filtroClienteAtivo ? "Lucro Bruto do Cliente" : "Saldo Financeiro",
+            moedaBR(saldoFinanceiro),
+          ],
           ["Custo dos Produtos Vendidos", moedaBR(custoProdutosVendidos)],
           ["Lucro Bruto", moedaBR(lucroBruto)],
           ["Margem Bruta", `${numeroBR(margemBruta, 2)}%`],
@@ -720,29 +865,56 @@ export default function Relatorios() {
           { label: "Receita líquida", value: moedaBR(receitaLiquida), color: PDF_COLORS.blue },
           { label: "Lucro bruto", value: moedaBR(lucroBruto), color: PDF_COLORS.green },
           {
-            label: "Resultado líquido",
-            value: moedaBR(resultadoLiquido),
-            color: resultadoLiquido >= 0 ? PDF_COLORS.green : PDF_COLORS.red,
+            label: filtroClienteAtivo ? "Despesas gerais" : "Resultado líquido",
+            value: filtroClienteAtivo ? moedaBR(totalDespesas) : moedaBR(resultadoLiquido),
+            color: filtroClienteAtivo
+              ? PDF_COLORS.amber
+              : resultadoLiquido >= 0
+              ? PDF_COLORS.green
+              : PDF_COLORS.red,
           },
           { label: "Margem bruta", value: `${numeroBR(margemBruta, 2)}%`, color: PDF_COLORS.blue },
-          { label: "Margem líquida", value: `${numeroBR(margemLiquida, 2)}%`, color: PDF_COLORS.amber },
+          {
+            label: filtroClienteAtivo ? "Visão" : "Margem líquida",
+            value: filtroClienteAtivo ? "Sem rateio" : `${numeroBR(margemLiquida, 2)}%`,
+            color: PDF_COLORS.amber,
+          },
         ],
         y
       );
+
+      if (filtroClienteAtivo) {
+        y = desenharAvisoPDF(
+          doc,
+          "DRE por cliente: despesas gerais aparecem separadas e não são atribuídas ao cliente.",
+          y
+        );
+      }
 
       tabelaPDF(doc, {
         startY: y,
         head: [["Descrição", "Valor"]],
         body: [
-          ["Receita Bruta", moedaBR(receitaBruta)],
+          [filtroClienteAtivo ? "Receita Bruta do Cliente" : "Receita Bruta", moedaBR(receitaBruta)],
           ["(-) Descontos Concedidos", moedaBR(descontosVendas)],
           ["= Receita Líquida", moedaBR(receitaLiquida)],
           ["(-) Custo dos Produtos Vendidos", moedaBR(custoProdutosVendidos)],
           ["= Lucro Bruto", moedaBR(lucroBruto)],
-          ["(-) Despesas Operacionais", moedaBR(totalDespesas)],
-          ["= Resultado Líquido", moedaBR(resultadoLiquido)],
+          [
+            filtroClienteAtivo
+              ? "Despesas Gerais da Empresa no Período"
+              : "(-) Despesas Operacionais",
+            moedaBR(totalDespesas),
+          ],
+          [
+            filtroClienteAtivo ? "= Resultado Líquido" : "= Resultado Líquido",
+            filtroClienteAtivo ? "Não calculado por cliente" : moedaBR(resultadoLiquido),
+          ],
           ["Margem Bruta", `${numeroBR(margemBruta, 2)}%`],
-          ["Margem Líquida", `${numeroBR(margemLiquida, 2)}%`],
+          [
+            "Margem Líquida",
+            filtroClienteAtivo ? "Não calculada por cliente" : `${numeroBR(margemLiquida, 2)}%`,
+          ],
         ],
         columnStyles: {
           0: { fontStyle: "bold" },
@@ -751,7 +923,7 @@ export default function Relatorios() {
         didParseCell: (data) => {
           if (data.section !== "body" || data.column.index !== 1) return;
           const descricao = String(data.row.raw?.[0] || "");
-          if (descricao.includes("Resultado Líquido")) {
+          if (!filtroClienteAtivo && descricao.includes("Resultado Líquido")) {
             data.cell.styles.textColor =
               resultadoLiquido >= 0 ? PDF_COLORS.green : PDF_COLORS.red;
             data.cell.styles.fontStyle = "bold";
@@ -789,7 +961,8 @@ export default function Relatorios() {
       let y = await gerarCabecalhoPDF(
         doc,
         "Relatório de Estoque",
-        "Saldos gerenciais de insumos, semiacabados, produtos acabados e alertas de estoque."
+        "Saldos gerenciais de insumos, semiacabados, produtos acabados e alertas de estoque.",
+        "Não aplicável"
       );
 
       const valorTotalInsumos = insumosEstoqueCalculado.reduce(
@@ -878,7 +1051,8 @@ export default function Relatorios() {
       let y = await gerarCabecalhoPDF(
         doc,
         "Relatório de Produção",
-        "Produções realizadas, volumes fabricados, custo total, custo unitário e classificação industrial."
+        "Produções realizadas, volumes fabricados, custo total, custo unitário e classificação industrial.",
+        "Não aplicável"
       );
       const custoTotalProduzido = producoesFiltradas.reduce(
         (total, producao) => total + numeroSeguro(producao.custoTotal),
@@ -934,7 +1108,8 @@ export default function Relatorios() {
       let y = await gerarCabecalhoPDF(
         doc,
         "Relatório de Insumos",
-        "Controle de matérias-primas, estoque atual, custo médio, valor em estoque e itens críticos."
+        "Controle de matérias-primas, estoque atual, custo médio, valor em estoque e itens críticos.",
+        "Não aplicável"
       );
       const valorTotalEstoqueInsumos = insumosEstoqueCalculado.reduce(
         (total, insumo) => total + numeroSeguro(insumo.valorEstoque),
@@ -1000,6 +1175,11 @@ export default function Relatorios() {
     }
   };
 
+  const limparFiltrosRelatorios = () => {
+    setFiltro({ inicio: "", fim: "", cliente: "" });
+    setBuscaCliente("");
+  };
+
   return (
     <div className="reports-page">
       <h1 className="page-title">Relatórios</h1>
@@ -1008,25 +1188,75 @@ export default function Relatorios() {
           🔹 FILTROS
       ================================= */}
       <div className="card reports-filter-card">
-        <h3>Filtros dos Relatórios</h3>
+        <div className="reports-filter-heading">
+          <div>
+            <h3>Filtros inteligentes</h3>
+            <p>Combine período e cliente para analisar vendas, financeiro e DRE.</p>
+          </div>
+
+          {clienteSelecionado && (
+            <span className="reports-client-active">
+              Relatórios filtrados para: {clienteSelecionado.nome}
+            </span>
+          )}
+        </div>
 
         <div className="reports-filter-grid">
-          <input
-            type="date"
-            value={filtro.inicio}
-            onChange={(e) => setFiltro({ ...filtro, inicio: e.target.value })}
-          />
+          <label className="reports-filter-field">
+            <span>Data inicial</span>
+            <input
+              type="date"
+              value={filtro.inicio}
+              onChange={(e) => setFiltro({ ...filtro, inicio: e.target.value })}
+            />
+          </label>
 
-          <input
-            type="date"
-            value={filtro.fim}
-            onChange={(e) => setFiltro({ ...filtro, fim: e.target.value })}
-          />
+          <label className="reports-filter-field">
+            <span>Data final</span>
+            <input
+              type="date"
+              value={filtro.fim}
+              onChange={(e) => setFiltro({ ...filtro, fim: e.target.value })}
+            />
+          </label>
 
-          <button onClick={() => setFiltro({ inicio: "", fim: "" })}>
-            Limpar Filtro
+          <label className="reports-filter-field reports-filter-client-search">
+            <span>Buscar cliente</span>
+            <input
+              type="search"
+              placeholder="Digite parte do nome"
+              value={buscaCliente}
+              onChange={(e) => setBuscaCliente(e.target.value)}
+            />
+          </label>
+
+          <label className="reports-filter-field reports-filter-client-select">
+            <span>Cliente</span>
+            <select
+              value={filtro.cliente}
+              onChange={(e) => setFiltro({ ...filtro, cliente: e.target.value })}
+            >
+              <option value="">Todos os clientes</option>
+              {clientesVisiveisFiltro.map((cliente) => (
+                <option key={cliente.chave} value={cliente.chave}>
+                  {cliente.nome}
+                  {cliente.origem ? ` (${cliente.origem})` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button type="button" onClick={limparFiltrosRelatorios}>
+            Limpar filtros
           </button>
         </div>
+
+        {clienteSelecionado && (
+          <p className="reports-filter-note">
+            Vendas, Financeiro e DRE respeitam o cliente selecionado. Produção,
+            Estoque e Insumos continuam como relatórios operacionais da empresa.
+          </p>
+        )}
       </div>
 
       {/* ================================
@@ -1036,13 +1266,20 @@ export default function Relatorios() {
         <div className="card reports-metric-card reports-metric-green">
           <p>Vendas</p>
           <h2>{moedaBR(totalVendas)}</h2>
-          <small>{inteiroBR(vendasFiltradas.length)} vendas no período</small>
+          <small>
+            {inteiroBR(vendasFiltradas.length)} vendas no período
+            {clienteSelecionado ? ` para ${clienteSelecionado.nome}` : ""}
+          </small>
         </div>
 
         <div className="card reports-metric-card reports-metric-red">
           <p>Despesas</p>
           <h2>{moedaBR(totalDespesas)}</h2>
-          <small>Saídas no período</small>
+          <small>
+            {clienteSelecionado
+              ? "Saídas gerais da empresa, sem rateio por cliente"
+              : "Saídas no período"}
+          </small>
         </div>
 
         <div className="card reports-metric-card reports-metric-blue">
@@ -1050,7 +1287,11 @@ export default function Relatorios() {
           <h2 className={saldoFinanceiro >= 0 ? "text-blue" : "text-red"}>
             {moedaBR(saldoFinanceiro)}
           </h2>
-          <small>Vendas - despesas</small>
+          <small>
+            {clienteSelecionado
+              ? "Lucro bruto do cliente, sem despesas gerais"
+              : "Vendas - despesas"}
+          </small>
         </div>
 
         <div className="card reports-metric-card reports-metric-amber">
@@ -1187,7 +1428,7 @@ export default function Relatorios() {
                 <tr key={venda.id}>
                   <td>{dataBR(venda.data)}</td>
                   <td>{venda.numeroPedido || "-"}</td>
-                  <td>{venda.cliente || "Cliente não informado"}</td>
+                  <td>{obterNomeClienteVenda(venda)}</td>
                   <td>{moedaBR(total)}</td>
                   <td>{moedaBR(custo)}</td>
                   <td>{numeroBR(margem, 2)}%</td>
