@@ -4165,15 +4165,75 @@ tr:hover td {
   font-weight: 800;
 }
 
-.reports-filter-client-search,
 .reports-filter-client-select {
-  flex-basis: 240px;
+  flex-basis: 300px;
 }
 
 .reports-filter-grid input,
 .reports-filter-grid select,
 .reports-filter-grid button {
   margin: 0;
+}
+
+.reports-client-combobox {
+  position: relative;
+}
+
+.reports-client-combobox input {
+  width: 100%;
+}
+
+.reports-client-options {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+}
+
+.reports-client-options button {
+  width: 100%;
+  min-height: auto;
+  margin: 0;
+  padding: 10px 11px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #0f172a;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  text-align: left;
+  box-shadow: none;
+}
+
+.reports-client-options button:hover,
+.reports-client-options button.active {
+  background: #eff6ff;
+  color: #1d4ed8;
+  transform: none;
+  box-shadow: none;
+}
+
+.reports-client-options small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.reports-client-empty {
+  padding: 12px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .reports-filter-grid button {

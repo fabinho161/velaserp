@@ -61,6 +61,7 @@ export default function Relatorios() {
     cliente: "",
   });
   const [buscaCliente, setBuscaCliente] = useState("");
+  const [clienteDropdownAberto, setClienteDropdownAberto] = useState(false);
 
   const normalizarTexto = (valor = "") =>
     String(valor || "")
@@ -107,22 +108,46 @@ export default function Relatorios() {
   };
 
   const clientesRelatorioMap = new Map();
+  const clientesPorNome = new Map();
 
   const adicionarClienteRelatorio = ({ id = "", nome = "", origem = "" }) => {
     const nomeLimpo = String(nome || "").trim();
     if (!nomeLimpo || nomeLimpo === "Cliente não informado") return;
 
-    const chave = criarChaveCliente({ id, nome: nomeLimpo });
+    const nomeNormalizado = normalizarTexto(nomeLimpo);
+    const chavePorId = id ? `id:${id}` : "";
+    const chavePorNome = nomeNormalizado ? `nome:${nomeNormalizado}` : "";
+    const chaveExistentePorNome = clientesPorNome.get(nomeNormalizado);
+    const clienteExistentePorNome = chaveExistentePorNome
+      ? clientesRelatorioMap.get(chaveExistentePorNome)
+      : null;
+    const podeConsolidarPorNome = !(
+      id &&
+      clienteExistentePorNome?.id &&
+      clienteExistentePorNome.id !== id
+    );
+    const chave =
+      (podeConsolidarPorNome ? chaveExistentePorNome : "") ||
+      (chavePorId && clientesRelatorioMap.has(chavePorId) ? chavePorId : "") ||
+      criarChaveCliente({ id, nome: nomeLimpo });
+
     if (!chave) return;
 
     const existente = clientesRelatorioMap.get(chave);
+    const origemFinal = Array.from(
+      new Set([existente?.origem, origem].filter(Boolean))
+    ).join(" + ");
+
     clientesRelatorioMap.set(chave, {
       chave,
-      id,
+      id: existente?.id || id,
       nome: existente?.nome || nomeLimpo,
       nomeNormalizado: normalizarTexto(existente?.nome || nomeLimpo),
-      origem: existente?.origem || origem,
+      origem: origemFinal,
     });
+
+    if (nomeNormalizado) clientesPorNome.set(nomeNormalizado, chave);
+    if (chavePorNome && chavePorNome !== chave) clientesPorNome.set(nomeNormalizado, chave);
   };
 
   (clientesComerciais || []).forEach((cliente) => {
@@ -169,6 +194,22 @@ export default function Relatorios() {
     !clientesFiltradosBusca.some((cliente) => cliente.chave === clienteSelecionado.chave)
       ? [clienteSelecionado, ...clientesFiltradosBusca]
       : clientesFiltradosBusca;
+
+  const valorCampoCliente = clienteDropdownAberto
+    ? buscaCliente
+    : clienteSelecionado?.nome || "";
+
+  const selecionarClienteRelatorio = (cliente) => {
+    setFiltro({ ...filtro, cliente: cliente?.chave || "" });
+    setBuscaCliente("");
+    setClienteDropdownAberto(false);
+  };
+
+  const limparClienteRelatorio = () => {
+    setFiltro({ ...filtro, cliente: "" });
+    setBuscaCliente("");
+    setClienteDropdownAberto(false);
+  };
 
   const vendaPertenceAoClienteSelecionado = (venda = {}) => {
     if (!clienteSelecionado) return true;
@@ -1178,6 +1219,7 @@ export default function Relatorios() {
   const limparFiltrosRelatorios = () => {
     setFiltro({ inicio: "", fim: "", cliente: "" });
     setBuscaCliente("");
+    setClienteDropdownAberto(false);
   };
 
   return (
@@ -1220,31 +1262,71 @@ export default function Relatorios() {
             />
           </label>
 
-          <label className="reports-filter-field reports-filter-client-search">
-            <span>Buscar cliente</span>
-            <input
-              type="search"
-              placeholder="Digite parte do nome"
-              value={buscaCliente}
-              onChange={(e) => setBuscaCliente(e.target.value)}
-            />
-          </label>
-
-          <label className="reports-filter-field reports-filter-client-select">
+          <div className="reports-filter-field reports-filter-client-select">
             <span>Cliente</span>
-            <select
-              value={filtro.cliente}
-              onChange={(e) => setFiltro({ ...filtro, cliente: e.target.value })}
+            <div
+              className="reports-client-combobox"
+              onBlur={() => {
+                setTimeout(() => setClienteDropdownAberto(false), 120);
+              }}
             >
-              <option value="">Todos os clientes</option>
-              {clientesVisiveisFiltro.map((cliente) => (
-                <option key={cliente.chave} value={cliente.chave}>
-                  {cliente.nome}
-                  {cliente.origem ? ` (${cliente.origem})` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
+              <input
+                type="search"
+                placeholder="Selecione um cliente"
+                value={valorCampoCliente}
+                onFocus={() => {
+                  setBuscaCliente("");
+                  setClienteDropdownAberto(true);
+                }}
+                onChange={(e) => {
+                  setBuscaCliente(e.target.value);
+                  setClienteDropdownAberto(true);
+                  if (filtro.cliente) {
+                    setFiltro({ ...filtro, cliente: "" });
+                  }
+                }}
+              />
+
+              {clienteDropdownAberto && (
+                <div className="reports-client-options">
+                  <button
+                    type="button"
+                    className={!clienteSelecionado ? "active" : ""}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      limparClienteRelatorio();
+                    }}
+                  >
+                    <strong>Todos os clientes</strong>
+                    <small>Remover filtro por cliente</small>
+                  </button>
+
+                  {clientesVisiveisFiltro.map((cliente) => (
+                    <button
+                      type="button"
+                      key={cliente.chave}
+                      className={
+                        clienteSelecionado?.chave === cliente.chave ? "active" : ""
+                      }
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        selecionarClienteRelatorio(cliente);
+                      }}
+                    >
+                      <strong>{cliente.nome}</strong>
+                      {cliente.origem && <small>{cliente.origem}</small>}
+                    </button>
+                  ))}
+
+                  {clientesVisiveisFiltro.length === 0 && (
+                    <div className="reports-client-empty">
+                      Nenhum cliente encontrado.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
 
           <button type="button" onClick={limparFiltrosRelatorios}>
             Limpar filtros
