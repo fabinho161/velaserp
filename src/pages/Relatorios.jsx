@@ -305,6 +305,16 @@ export default function Relatorios() {
   const produtosPorId = new Map(
     (produtos || []).map((produto) => [produto.id, produto])
   );
+  const normalizarOrigemProdutoRelatorio = (valor = "") =>
+    String(valor || "fabricado").trim().toLowerCase() === "revenda"
+      ? "revenda"
+      : "fabricado";
+  const totalProdutosFabricados = (produtos || []).filter(
+    (produto) => normalizarOrigemProdutoRelatorio(produto.origemProduto) === "fabricado"
+  ).length;
+  const totalProdutosRevenda = (produtos || []).filter(
+    (produto) => normalizarOrigemProdutoRelatorio(produto.origemProduto) === "revenda"
+  ).length;
 
   // ================================
   // 🔹 ALERTAS DE ESTOQUE
@@ -1032,6 +1042,8 @@ export default function Relatorios() {
           },
           { label: "Abaixo do mínimo", value: inteiroBR(itensAbaixoMinimo), color: PDF_COLORS.amber },
           { label: "Itens zerados", value: inteiroBR(itensZerados), color: PDF_COLORS.red },
+          { label: "Fabricados", value: inteiroBR(totalProdutosFabricados), color: PDF_COLORS.blue },
+          { label: "Revenda", value: inteiroBR(totalProdutosRevenda), color: PDF_COLORS.amber },
         ],
         y
       );
@@ -1409,6 +1421,18 @@ export default function Relatorios() {
           <p>Produtos em Alerta</p>
           <h2 className="text-red">{inteiroBR(produtosAbaixoMinimo.length)}</h2>
           <small>Abaixo ou igual ao estoque mínimo</small>
+        </div>
+
+        <div className="card reports-metric-card">
+          <p>Produtos Fabricados</p>
+          <h2>{inteiroBR(totalProdutosFabricados)}</h2>
+          <small>Origem operacional fabricado</small>
+        </div>
+
+        <div className="card reports-metric-card">
+          <p>Produtos de Revenda</p>
+          <h2>{inteiroBR(totalProdutosRevenda)}</h2>
+          <small>Comprados prontos para venda</small>
         </div>
       </div>
 

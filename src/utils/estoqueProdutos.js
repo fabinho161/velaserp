@@ -114,6 +114,11 @@ const vendaMovimentaEstoque = (venda = {}) => {
   return expedicao !== "cancelado" && pagamento !== "cancelado";
 };
 
+const normalizarOrigemProduto = (valor = "") =>
+  String(valor || "fabricado").trim().toLowerCase() === "revenda"
+    ? "revenda"
+    : "fabricado";
+
 export const calcularEstoqueProdutos = ({
   produtos = [],
   producoes = [],
@@ -152,6 +157,7 @@ export const calcularEstoqueProdutos = ({
         nome: registro.nome || registro.nomeProduto || registro.produtoNome || "",
         tipo: registro.tipo || "",
         tipoProduto: registro.tipoProduto || "",
+        origemProduto: normalizarOrigemProduto(registro.origemProduto),
         classeIndustrial: registro.classeIndustrial || "produto_acabado",
         vendavel: registro.vendavel !== false,
         consumivelEmProducao: Boolean(registro.consumivelEmProducao),
@@ -167,6 +173,9 @@ export const calcularEstoqueProdutos = ({
             0
         ),
         produzido: 0,
+        comprado: normalizarOrigemProduto(registro.origemProduto) === "revenda"
+          ? Number(registro.estoqueInicial || registro.qtdProducao || 0)
+          : 0,
         vendido: 0,
         baixado: 0,
         consumidoEmProducao: 0,
@@ -185,6 +194,9 @@ export const calcularEstoqueProdutos = ({
         nome: registro.nome || registro.nomeProduto || registro.produtoNome || itemExistente.nome,
         tipo: registro.tipo || itemExistente.tipo,
         tipoProduto: registro.tipoProduto || itemExistente.tipoProduto,
+        origemProduto: normalizarOrigemProduto(
+          registro.origemProduto || itemExistente.origemProduto
+        ),
         classeIndustrial: registro.classeIndustrial || itemExistente.classeIndustrial || "produto_acabado",
         vendavel:
           registro.vendavel === undefined
@@ -212,6 +224,10 @@ export const calcularEstoqueProdutos = ({
               0
           ),
         estoqueMinimo: Number(registro.estoqueMinimo || itemExistente.estoqueMinimo || 0),
+        comprado:
+          normalizarOrigemProduto(registro.origemProduto || itemExistente.origemProduto) === "revenda"
+            ? Number(registro.estoqueInicial || registro.qtdProducao || itemExistente.comprado || 0)
+            : Number(itemExistente.comprado || 0),
       });
     }
 
@@ -304,13 +320,20 @@ export const calcularEstoqueProdutos = ({
   });
 
   return Array.from(mapa.values()).map((item) => {
+    const comprado = Number(item.comprado || 0);
     const saldoReal =
-      item.produzido -
+      item.produzido +
+      comprado -
       item.vendido -
       item.baixado -
       Number(item.consumidoEmProducao || 0);
     const saldo = Math.max(0, saldoReal);
-    const custoMedio = item.produzido > 0 ? item.custoTotal / item.produzido : 0;
+    const custoMedio =
+      item.produzido > 0
+        ? item.custoTotal / item.produzido
+        : comprado > 0
+        ? Number(item.custoUnitarioAtual || 0)
+        : 0;
     const custoAtual =
       Number(item.custoUnitarioAtual || 0) > 0
         ? Number(item.custoUnitarioAtual || 0)

@@ -98,6 +98,7 @@ export default function Producao() {
       produto,
       index,
     }))
+    .filter(({ produto }) => String(produto.origemProduto || "fabricado") !== "revenda")
     .sort((itemA, itemB) => {
       const numeroA = extrairNumeroCodigo(itemA.produto.codigo);
       const numeroB = extrairNumeroCodigo(itemB.produto.codigo);

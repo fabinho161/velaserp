@@ -34,6 +34,12 @@ const ORIGENS_PRODUTO = [
 ];
 
 const CLASSE_INDUSTRIAL_PADRAO = "produto_acabado";
+const ORIGEM_PRODUTO_PADRAO = "fabricado";
+
+const ORIGENS_OPERACIONAIS_PRODUTO = [
+  { valor: "fabricado", label: "Fabricado" },
+  { valor: "revenda", label: "Revenda" },
+];
 
 const CLASSES_INDUSTRIAIS = [
   { valor: "produto_acabado", label: "Produto acabado" },
@@ -53,6 +59,16 @@ const getClasseIndustrialLabel = (valor) =>
   CLASSES_INDUSTRIAIS.find(
     (classe) => classe.valor === normalizarClasseIndustrial(valor)
   )?.label || "Produto acabado";
+
+const normalizarOrigemProduto = (valor) =>
+  ORIGENS_OPERACIONAIS_PRODUTO.some((origem) => origem.valor === valor)
+    ? valor
+    : ORIGEM_PRODUTO_PADRAO;
+
+const getOrigemProdutoLabel = (valor) =>
+  ORIGENS_OPERACIONAIS_PRODUTO.find(
+    (origem) => origem.valor === normalizarOrigemProduto(valor)
+  )?.label || "Fabricado";
 
 const normalizarAliquotaFiscal = (valor) => {
   if (valor === "" || valor === null || valor === undefined) return "";
@@ -100,6 +116,8 @@ export default function Produtos() {
     qtdPorMaco: "",
     qtdProducao: "",
     precoVenda: "",
+    custoUnitario: "",
+    origemProduto: ORIGEM_PRODUTO_PADRAO,
     dataCadastro: "",
     consumos: {},
     componentesProduto: {},
@@ -150,6 +168,10 @@ export default function Produtos() {
   // 🔹 CALCULAR CUSTO UNITÁRIO DO PRODUTO
   // ================================
   const calcularCustoUnitario = () => {
+    if (normalizarOrigemProduto(form.origemProduto) === "revenda") {
+      return Number(form.custoUnitario || 0);
+    }
+
     const custoInsumos = insumos.reduce((total, insumo) => {
       const quantidadeConsumida = Number(form.consumos?.[insumo.nome] || 0);
       const custoMedio = calcularCustoMedio(insumo.compras || []);
@@ -173,6 +195,7 @@ export default function Produtos() {
   // 🔹 RESULTADOS CALCULADOS
   // ================================
   const custoUnitario = calcularCustoUnitario();
+  const produtoRevenda = normalizarOrigemProduto(form.origemProduto) === "revenda";
 
   const tipoProduto = form.tipoProduto || tiposProdutoAtivos[0]?.id || "";
 
@@ -191,7 +214,9 @@ export default function Produtos() {
   const qtdProducao = Number(form.qtdProducao || 0);
   const precoVenda = Number(form.precoVenda || 0);
 
-  const custoProducao = produtoSimples
+  const custoProducao = produtoRevenda
+    ? custoUnitario
+    : produtoSimples
     ? custoUnitario
     : custoUnitario * qtdProducao;
 
@@ -199,7 +224,9 @@ export default function Produtos() {
 
   const margem = precoVenda > 0 ? (lucro / precoVenda) * 100 : 0;
 
-  const valorUnitario = produtoSimples
+  const valorUnitario = produtoRevenda
+    ? precoVenda
+    : produtoSimples
     ? precoVenda
     : qtdProducao > 0
     ? precoVenda / qtdProducao
@@ -251,6 +278,7 @@ export default function Produtos() {
         lucro: Number(produto.lucro || 0),
         margem: Number(produto.margem || 0),
         classeIndustrial: getClasseIndustrialLabel(produto.classeIndustrial),
+        origemProduto: getOrigemProdutoLabel(produto.origemProduto),
       };
 
       return valores[chave] ?? "";
@@ -301,6 +329,8 @@ export default function Produtos() {
       qtdPorMaco: "",
       qtdProducao: "",
       precoVenda: "",
+      custoUnitario: "",
+      origemProduto: ORIGEM_PRODUTO_PADRAO,
       dataCadastro: "",
       consumos: {},
       componentesProduto: {},
@@ -317,9 +347,16 @@ export default function Produtos() {
   // 🔹 SALVAR / ATUALIZAR PRODUTO
   // ================================
   const salvarProduto = async () => {
-  if (!form.codigo || !form.nome || !form.precoVenda || !form.qtdProducao) {
+  if (
+    !form.codigo ||
+    !form.nome ||
+    !form.precoVenda ||
+    (!produtoRevenda && !form.qtdProducao)
+  ) {
     showToast(
-      produtoSimples
+      produtoRevenda
+        ? "Preencha código, nome e preço de venda."
+        : produtoSimples
         ? "Preencha código, nome, quantidade de produtos finais e preço de venda."
         : "Preencha código, nome, quantidade produzida e preço de venda.",
       "warning"
@@ -363,8 +400,9 @@ export default function Produtos() {
     conteudoPorProduto: conteudoPorProduto || 1,
     qtdProducao,
     precoVenda,
-    consumos: consumosNormalizados,
-    componentesProduto: componentesProdutoNormalizados,
+    origemProduto: normalizarOrigemProduto(form.origemProduto),
+    consumos: produtoRevenda ? {} : consumosNormalizados,
+    componentesProduto: produtoRevenda ? {} : componentesProdutoNormalizados,
     dataCadastro: form.dataCadastro || new Date().toISOString().split("T")[0],
     custoUnitario,
     custoProducao,
@@ -406,6 +444,8 @@ export default function Produtos() {
       qtdPorMaco: produto.qtdPorMaco || "",
       qtdProducao: produto.qtdProducao || "",
       precoVenda: produto.precoVenda || "",
+      custoUnitario: produto.custoUnitario || "",
+      origemProduto: normalizarOrigemProduto(produto.origemProduto),
       dataCadastro: produto.dataCadastro || "",
       consumos: produto.consumos || {},
       componentesProduto: produto.componentesProduto || {},
@@ -536,6 +576,25 @@ export default function Produtos() {
           </label>
 
           <label>
+            Origem do produto
+            <select
+              value={form.origemProduto}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  origemProduto: normalizarOrigemProduto(e.target.value),
+                })
+              }
+            >
+              {ORIGENS_OPERACIONAIS_PRODUTO.map((origem) => (
+                <option key={origem.valor} value={origem.valor}>
+                  {origem.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
             Data de cadastro
             <input
               type="date"
@@ -576,14 +635,39 @@ export default function Produtos() {
           </label>
 
           <label>
-            {produtoSimples ? "Quantidade de produtos finais" : "Quantidade produzida"}
+            {produtoRevenda
+              ? "Quantidade inicial em estoque"
+              : produtoSimples
+              ? "Quantidade de produtos finais"
+              : "Quantidade produzida"}
             <input
               type="number"
-              placeholder={produtoSimples ? "Ex: 1 caixa" : "Ex: 56 unidades"}
+              placeholder={
+                produtoRevenda
+                  ? "Ex: 10 unidades"
+                  : produtoSimples
+                  ? "Ex: 1 caixa"
+                  : "Ex: 56 unidades"
+              }
               value={form.qtdProducao}
               onChange={(e) => setForm({ ...form, qtdProducao: e.target.value })}
             />
           </label>
+
+          {produtoRevenda && (
+            <label>
+              Custo de compra unitário
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Custo de compra"
+                value={form.custoUnitario}
+                onChange={(e) =>
+                  setForm({ ...form, custoUnitario: e.target.value })
+                }
+              />
+            </label>
+          )}
 
           <label>
             Preço de venda
@@ -598,7 +682,9 @@ export default function Produtos() {
         </div>
 
         <div className="product-type-help">
-          {produtoSimples
+          {produtoRevenda
+            ? "Use Revenda para produtos comprados prontos. Eles não exigem ficha técnica nem produção industrial."
+            : produtoSimples
             ? "Use este tipo quando a ficha técnica representa o consumo total de 1 produto final, como uma caixa, kit ou pacote."
             : "Use este tipo quando a ficha técnica representa o consumo de 1 unidade."}
         </div>
@@ -801,6 +887,8 @@ export default function Produtos() {
       {/* ================================
           🔹 CONSUMO DE INSUMOS
       ================================= */}
+      {!produtoRevenda && (
+        <>
       <div className="card section-card">
         <h3>
           {produtoSimples
@@ -913,17 +1001,21 @@ export default function Produtos() {
       </div>
 
       <br />
+        </>
+      )}
 
       {/* ================================
           🔹 RESULTADO DA FICHA TÉCNICA
       ================================= */}
       <div className="card section-card">
-        <h3>Resultado da Ficha Técnica</h3>
+        <h3>{produtoRevenda ? "Resultado do Produto de Revenda" : "Resultado da Ficha Técnica"}</h3>
 
         <div className="info-grid">
           <div className="info-tile">
             <strong>
-              {produtoSimples
+              {produtoRevenda
+                ? "Custo de compra unitário:"
+                : produtoSimples
                 ? "Custo unitário/produto final:"
                 : "Custo unitário:"}
             </strong>
@@ -933,7 +1025,11 @@ export default function Produtos() {
 
           <div className="info-tile">
             <strong>
-              {produtoSimples ? "Custo do produto final:" : "Custo produção:"}
+              {produtoRevenda
+                ? "Custo do produto:"
+                : produtoSimples
+                ? "Custo do produto final:"
+                : "Custo produção:"}
             </strong>
             <br />
             <span>{moedaBR(custoProducao.toFixed(2))}</span>
@@ -961,7 +1057,11 @@ export default function Produtos() {
 
           <div className="info-tile">
             <strong>
-              {produtoSimples ? "Valor do produto final:" : "Valor unitário:"}
+              {produtoRevenda
+                ? "Valor unitário de venda:"
+                : produtoSimples
+                ? "Valor do produto final:"
+                : "Valor unitário:"}
             </strong>
             <br />
             <span>{moedaBR(valorUnitario.toFixed(2))}</span>
@@ -1005,6 +1105,7 @@ export default function Produtos() {
               <th>{renderCabecalhoOrdenavel("Data", "dataCadastro", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Código", "codigo", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Produto", "nome", ordenacaoProdutos)}</th>
+              <th>{renderCabecalhoOrdenavel("Origem", "origemProduto", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Classe", "classeIndustrial", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Tipo produto", "tipoProduto", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Categoria", "tipo", ordenacaoProdutos)}</th>
@@ -1024,6 +1125,17 @@ export default function Produtos() {
                 <td>{formatarDataBR(produto.dataCadastro)}</td>
                 <td>{produto.codigo}</td>
                 <td>{produto.nome}</td>
+                <td>
+                  <span
+                    className={
+                      normalizarOrigemProduto(produto.origemProduto) === "revenda"
+                        ? "badge badge-warning"
+                        : "badge badge-info"
+                    }
+                  >
+                    {getOrigemProdutoLabel(produto.origemProduto)}
+                  </span>
+                </td>
                 <td>
                   <span className="badge badge-info">
                     {getClasseIndustrialLabel(produto.classeIndustrial)}
@@ -1079,7 +1191,7 @@ export default function Produtos() {
 
             {produtos.length === 0 && (
               <tr>
-                <td colSpan="13">Nenhum produto cadastrado.</td>
+                <td colSpan="14">Nenhum produto cadastrado.</td>
               </tr>
             )}
           </tbody>
