@@ -274,10 +274,20 @@ service cloud.firestore {
           .hasOnly(["status", "aceitoEm", "uidAuth", "atualizadoEm"]);
     }
 
+    function isCreatingOwnUserProfile(userId) {
+      return isOwner(userId) &&
+        request.resource.data.role == "cliente";
+    }
+
+    function isUpdatingOwnUserProfile(userId) {
+      return isOwner(userId) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(["role"]);
+    }
+
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdminMaster();
-      allow create: if isOwner(userId) || isAdminMaster();
-      allow update: if isOwner(userId) || isAdminMaster();
+      allow create: if isCreatingOwnUserProfile(userId) || isAdminMaster();
+      allow update: if isUpdatingOwnUserProfile(userId) || isAdminMaster();
       allow delete: if isAdminMaster();
 
       match /assinatura/{documentId} {
