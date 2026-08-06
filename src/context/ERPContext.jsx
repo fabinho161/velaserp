@@ -223,7 +223,6 @@ export function ERPProvider({ children }) {
       const prepararUsuario = async () => {
         try {
           const userRef = doc(db, "users", usuario.uid);
-          const assinaturaRef = doc(db, "users", usuario.uid, "assinatura", "plano");
           const userSnapshot = await getDoc(userRef);
 
           if (!userSnapshot.exists()) {
@@ -240,30 +239,6 @@ export function ERPProvider({ children }) {
             }, { merge: true });
           }
 
-          const empresasRef = collection(db, "users", usuario.uid, "empresas");
-          const vinculosRef = collection(db, "usuariosPorAuth", usuario.uid, "empresas");
-          const [assinaturaSnapshot, empresasSnapshot, vinculosSnapshot] = await Promise.all([
-            getDoc(assinaturaRef),
-            getDocs(empresasRef),
-            getDocs(vinculosRef),
-          ]);
-          const possuiEmpresaPropria = empresasSnapshot.docs.some((docSnap) => {
-            const dados = docSnap.data();
-            return !dados?.ownerUid || dados.ownerUid === usuario.uid;
-          });
-          const possuiSomenteVinculoConvite =
-            !possuiEmpresaPropria &&
-            (
-              !vinculosSnapshot.empty ||
-              empresasSnapshot.docs.some((docSnap) => docSnap.data()?.ownerUid !== usuario.uid)
-            );
-
-          if (!assinaturaSnapshot.exists() && !possuiSomenteVinculoConvite) {
-            await setDoc(assinaturaRef, {
-              ...assinaturaPadrao,
-              atualizadoEm: new Date(),
-            });
-          }
         } catch (error) {
           console.error("Erro ao preparar perfil do usuário:", error);
         }

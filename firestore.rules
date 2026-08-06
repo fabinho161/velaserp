@@ -292,7 +292,7 @@ service cloud.firestore {
 
       match /assinatura/{documentId} {
         allow read: if isOwner(userId) || isAdminMaster();
-        allow write: if isOwner(userId) || isAdminMaster();
+        allow write: if isAdminMaster();
       }
 
       match /empresas/{empresaId} {
