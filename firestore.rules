@@ -556,7 +556,16 @@ service cloud.firestore {
         }
 
         match /vendas/{documentId} {
-          allow read, write: if hasCompanyAccess(userId, empresaId);
+          allow read: if hasCompanyRole(userId, empresaId, [
+            "administrador_empresa",
+            "financeiro",
+            "producao",
+            "comercial",
+            "estoque",
+            "visualizacao"
+          ]);
+          allow create, update: if canWriteModule(userId, empresaId, "vendas");
+          allow delete: if false;
         }
 
         match /despesas/{documentId} {
