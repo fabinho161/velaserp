@@ -450,11 +450,17 @@ service cloud.firestore {
     function isAcceptingConvite() {
       return signedIn() &&
         resource.data.status == "pendente" &&
+        resource.data.token is string &&
         resource.data.email == request.auth.token.email &&
+        resource.data.expiraEm is timestamp &&
+        resource.data.expiraEm > request.time &&
+        request.resource.data.token == resource.data.token &&
         request.resource.data.ownerUid == resource.data.ownerUid &&
         request.resource.data.empresaId == resource.data.empresaId &&
         request.resource.data.usuarioEmpresaId == resource.data.usuarioEmpresaId &&
         request.resource.data.email == resource.data.email &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.expiraEm == resource.data.expiraEm &&
         request.resource.data.status == "aceito" &&
         request.resource.data.uidAuth == request.auth.uid &&
         request.resource.data.diff(resource.data).affectedKeys()
@@ -852,8 +858,119 @@ service cloud.firestore {
     }
 
     match /convitesEmpresa/{token} {
+      function isValidConviteRole(role) {
+        return [
+          "administrador_empresa",
+          "financeiro",
+          "producao",
+          "comercial",
+          "estoque",
+          "visualizacao"
+        ].hasAny([role]);
+      }
+
+      function isReadablePendingConvite() {
+        return resource.data.status == "pendente" &&
+          resource.data.token == token &&
+          resource.data.expiraEm is timestamp &&
+          resource.data.expiraEm > request.time &&
+          (
+            !signedIn() ||
+            resource.data.email == request.auth.token.email ||
+            isCompanyAdmin(resource.data.ownerUid, resource.data.empresaId)
+          );
+      }
+
+      function isCreatingCompanyInvite() {
+        return signedIn() &&
+          request.resource.data.keys().hasOnly([
+            "token",
+            "ownerUid",
+            "empresaId",
+            "usuarioEmpresaId",
+            "nome",
+            "email",
+            "role",
+            "nomeEmpresa",
+            "status",
+            "criadoEm",
+            "expiraEm"
+          ]) &&
+          request.resource.data.token == token &&
+          request.resource.data.ownerUid is string &&
+          request.resource.data.empresaId is string &&
+          request.resource.data.usuarioEmpresaId is string &&
+          request.resource.data.nome is string &&
+          request.resource.data.email is string &&
+          request.resource.data.nomeEmpresa is string &&
+          request.resource.data.status == "pendente" &&
+          request.resource.data.criadoEm is timestamp &&
+          request.resource.data.expiraEm is timestamp &&
+          request.resource.data.expiraEm > request.time &&
+          isValidConviteRole(request.resource.data.role) &&
+          isCompanyAdmin(request.resource.data.ownerUid, request.resource.data.empresaId) &&
+          getAfter(companyUserPath(
+            request.resource.data.ownerUid,
+            request.resource.data.empresaId,
+            request.resource.data.usuarioEmpresaId
+          )).data.status == "pendente" &&
+          getAfter(companyUserPath(
+            request.resource.data.ownerUid,
+            request.resource.data.empresaId,
+            request.resource.data.usuarioEmpresaId
+          )).data.convitePendente == true &&
+          getAfter(companyUserPath(
+            request.resource.data.ownerUid,
+            request.resource.data.empresaId,
+            request.resource.data.usuarioEmpresaId
+          )).data.conviteToken == token &&
+          getAfter(companyUserPath(
+            request.resource.data.ownerUid,
+            request.resource.data.empresaId,
+            request.resource.data.usuarioEmpresaId
+          )).data.email == request.resource.data.email &&
+          getAfter(companyUserPath(
+            request.resource.data.ownerUid,
+            request.resource.data.empresaId,
+            request.resource.data.usuarioEmpresaId
+          )).data.role == request.resource.data.role &&
+          getAfter(companyUserPath(
+            request.resource.data.ownerUid,
+            request.resource.data.empresaId,
+            request.resource.data.usuarioEmpresaId
+          )).data.dono == false &&
+          getAfter(companyUserPath(
+            request.resource.data.ownerUid,
+            request.resource.data.empresaId,
+            request.resource.data.usuarioEmpresaId
+          )).data.uidAuth == null;
+      }
+
+      function isCancelingPendingInvite() {
+        return isCompanyAdmin(resource.data.ownerUid, resource.data.empresaId) &&
+          resource.data.status == "pendente" &&
+          request.resource.data.status == "cancelado" &&
+          request.resource.data.token == resource.data.token &&
+          request.resource.data.ownerUid == resource.data.ownerUid &&
+          request.resource.data.empresaId == resource.data.empresaId &&
+          request.resource.data.usuarioEmpresaId == resource.data.usuarioEmpresaId &&
+          request.resource.data.email == resource.data.email &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.canceladoEm is timestamp &&
+          (
+            !request.resource.data.keys().hasAny(["canceladoPor"]) ||
+            request.resource.data.canceladoPor == request.auth.uid
+          ) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "status",
+            "canceladoEm",
+            "canceladoPor",
+            "atualizadoEm"
+          ]);
+      }
+
       allow list: if false;
-      allow get: if resource.data.status == "pendente" ||
+      allow get: if isReadablePendingConvite() ||
         (
           signedIn() &&
           (
@@ -861,11 +978,8 @@ service cloud.firestore {
             isCompanyAdmin(resource.data.ownerUid, resource.data.empresaId)
           )
         );
-      allow create: if signedIn() &&
-        request.resource.data.status == "pendente" &&
-        request.resource.data.token == token &&
-        isCompanyAdmin(request.resource.data.ownerUid, request.resource.data.empresaId);
-      allow update: if isCompanyAdmin(resource.data.ownerUid, resource.data.empresaId) ||
+      allow create: if isCreatingCompanyInvite();
+      allow update: if isCancelingPendingInvite() ||
         isAcceptingConvite();
       allow delete: if false;
     }
