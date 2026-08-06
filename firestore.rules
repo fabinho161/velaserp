@@ -517,7 +517,15 @@ service cloud.firestore {
         }
 
         match /insumos/{documentId} {
-          allow read, write: if hasCompanyAccess(userId, empresaId);
+          allow read: if hasCompanyRole(userId, empresaId, [
+            "administrador_empresa",
+            "financeiro",
+            "producao",
+            "comercial",
+            "estoque",
+            "visualizacao"
+          ]);
+          allow create, update, delete: if canWriteModule(userId, empresaId, "insumos");
         }
 
         match /produtos/{documentId} {
