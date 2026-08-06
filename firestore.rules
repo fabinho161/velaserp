@@ -564,7 +564,15 @@ service cloud.firestore {
         }
 
         match /perdasDoacoes/{documentId} {
-          allow read, create, update: if canManagePerdasDoacoes(userId, empresaId);
+          allow read: if hasCompanyRole(userId, empresaId, [
+            "administrador_empresa",
+            "financeiro",
+            "producao",
+            "comercial",
+            "estoque",
+            "visualizacao"
+          ]);
+          allow create, update: if canManagePerdasDoacoes(userId, empresaId);
           allow delete: if false;
         }
 
