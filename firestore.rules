@@ -521,7 +521,15 @@ service cloud.firestore {
         }
 
         match /produtos/{documentId} {
-          allow read, write: if hasCompanyAccess(userId, empresaId);
+          allow read: if hasCompanyRole(userId, empresaId, [
+            "administrador_empresa",
+            "financeiro",
+            "producao",
+            "comercial",
+            "estoque",
+            "visualizacao"
+          ]);
+          allow create, update, delete: if canWriteModule(userId, empresaId, "produtos");
         }
 
         match /producoes/{documentId} {
