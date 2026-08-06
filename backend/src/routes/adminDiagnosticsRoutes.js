@@ -1,6 +1,9 @@
 const express = require("express");
 const authFirebase = require("../middlewares/authFirebase");
-const { getDb } = require("../firebaseAdmin");
+const { FieldValue, getDb } = require("../firebaseAdmin");
+const {
+  sincronizarPlanoEspelhoEmpresasOwner,
+} = require("../services/sincronizarPlanoEspelhoEmpresasOwner");
 const {
   logAuditoriaError,
   logAuditoriaInfo,
@@ -8,6 +11,17 @@ const {
 } = require("../utils/auditoriaFirestore");
 
 const LIMITE_REGISTROS = 30;
+const PLANOS_ASSINATURA_ADMIN = new Set([
+  "gratis",
+  "basico",
+  "profissional",
+  "premium",
+]);
+const STATUS_ASSINATURA_ADMIN = new Set([
+  "active",
+  "inactive",
+  "blocked",
+]);
 const STATUS_LIMPEZA_TESTE = new Set([
   "pending",
   "pendente",
@@ -75,6 +89,95 @@ const validarAdminMaster = async (db, uid) => {
 
   return adminData?.role === "admin_master";
 };
+
+const criarErroHttp = (statusCode, message) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+};
+
+const normalizarTexto = (valor) => {
+  return typeof valor === "string" ? valor.trim().toLowerCase() : "";
+};
+
+const validarLimiteUsuariosManual = (valor) => {
+  if (valor === null) return null;
+
+  if (
+    typeof valor !== "number" ||
+    !Number.isFinite(valor) ||
+    !Number.isInteger(valor) ||
+    valor <= 0
+  ) {
+    throw criarErroHttp(
+      400,
+      "limiteUsuariosManual deve ser null ou um inteiro positivo."
+    );
+  }
+
+  return valor;
+};
+
+const validarPayloadAssinaturaManual = (body) => {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw criarErroHttp(400, "Requisicao invalida.");
+  }
+
+  const camposPermitidos = new Set([
+    "ownerUid",
+    "plano",
+    "status",
+    "limiteUsuariosManual",
+  ]);
+  const camposInvalidos = Object.keys(body).filter(
+    (campo) => !camposPermitidos.has(campo)
+  );
+
+  if (camposInvalidos.length > 0) {
+    throw criarErroHttp(400, "Campos nao permitidos na requisicao.");
+  }
+
+  const ownerUid = typeof body.ownerUid === "string" ? body.ownerUid.trim() : "";
+  const plano = normalizarTexto(body.plano);
+  const status = normalizarTexto(body.status);
+
+  if (!ownerUid) {
+    throw criarErroHttp(400, "ownerUid obrigatorio.");
+  }
+
+  if (!PLANOS_ASSINATURA_ADMIN.has(plano)) {
+    throw criarErroHttp(400, "Plano invalido.");
+  }
+
+  if (!STATUS_ASSINATURA_ADMIN.has(status)) {
+    throw criarErroHttp(400, "Status invalido.");
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(body, "limiteUsuariosManual")) {
+    throw criarErroHttp(400, "limiteUsuariosManual obrigatorio.");
+  }
+
+  return {
+    ownerUid,
+    plano,
+    status,
+    limiteUsuariosManual: validarLimiteUsuariosManual(body.limiteUsuariosManual),
+  };
+};
+
+const validarOwnerExistente = async (db, ownerUid) => {
+  const ownerSnapshot = await db.collection("users").doc(ownerUid).get();
+
+  if (!ownerSnapshot.exists) {
+    throw criarErroHttp(404, "Usuario alvo nao encontrado.");
+  }
+};
+
+const montarResumoSincronizacao = (resultado = {}) => ({
+  empresasEncontradas: resultado.empresasEncontradas || 0,
+  empresasAtualizadas: resultado.empresasAtualizadas || 0,
+  lotesExecutados: resultado.lotesExecutados || 0,
+});
 
 const carregarSubcolecaoUsuario = async (db, uid, colecao, falhas) => {
   try {
@@ -410,6 +513,114 @@ router.post("/pagamentos/limpeza-testes", authFirebase, async (req, res) => {
     res.status(500).json({
       ok: false,
       error: error.message || "Erro ao executar limpeza de testes.",
+    });
+  }
+});
+
+router.post("/assinaturas/manual", authFirebase, async (req, res) => {
+  const db = getDb();
+  const uid = req.user.uid;
+  let dadosValidados = null;
+
+  try {
+    logAuditoriaInfo("admin.assinatura.manual: solicitado", { uid });
+
+    if (!(await validarAdminMaster(db, uid))) {
+      res.status(403).json({
+        ok: false,
+        success: false,
+        error: "Apenas administradores master podem alterar assinaturas manualmente.",
+      });
+      return;
+    }
+
+    dadosValidados = validarPayloadAssinaturaManual(req.body);
+    await validarOwnerExistente(db, dadosValidados.ownerUid);
+
+    const assinaturaRef = db
+      .collection("users")
+      .doc(dadosValidados.ownerUid)
+      .collection("assinatura")
+      .doc("plano");
+    const camposAdministrativos = {
+      plano: dadosValidados.plano,
+      status: dadosValidados.status,
+      limiteUsuariosManual: dadosValidados.limiteUsuariosManual,
+      atualizadoEm: FieldValue.serverTimestamp(),
+    };
+
+    await assinaturaRef.set(camposAdministrativos, { merge: true });
+
+    const assinaturaSnapshot = await assinaturaRef.get();
+    const assinaturaFinal = assinaturaSnapshot.exists
+      ? assinaturaSnapshot.data()
+      : camposAdministrativos;
+
+    let resultadoSincronizacao = null;
+
+    try {
+      resultadoSincronizacao = await sincronizarPlanoEspelhoEmpresasOwner({
+        db,
+        ownerUid: dadosValidados.ownerUid,
+        assinatura: assinaturaFinal,
+      });
+    } catch (error) {
+      logAuditoriaError("admin.assinatura.manual.espelho: falha", error, {
+        uid,
+        ownerUid: dadosValidados.ownerUid,
+      });
+      await registrarErroAuditoria(db, "admin.assinatura.manual.espelho", error, {
+        uid,
+        ownerUid: dadosValidados.ownerUid,
+      });
+
+      res.status(207).json({
+        ok: false,
+        success: false,
+        ownerUid: dadosValidados.ownerUid,
+        assinaturaAtualizada: true,
+        planoEspelhoSincronizado: false,
+        sincronizacao: null,
+        error: "Assinatura atualizada, mas falha ao sincronizar planoEspelho.",
+      });
+      return;
+    }
+
+    logAuditoriaInfo("admin.assinatura.manual: concluido", {
+      uid,
+      ownerUid: dadosValidados.ownerUid,
+      plano: dadosValidados.plano,
+      status: dadosValidados.status,
+      ...montarResumoSincronizacao(resultadoSincronizacao),
+    });
+
+    res.json({
+      ok: true,
+      success: true,
+      ownerUid: dadosValidados.ownerUid,
+      assinaturaAtualizada: true,
+      planoEspelhoSincronizado: true,
+      sincronizacao: montarResumoSincronizacao(resultadoSincronizacao),
+    });
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+
+    logAuditoriaError("admin.assinatura.manual: falha", error, {
+      uid,
+      ownerUid: dadosValidados?.ownerUid || null,
+    });
+
+    if (statusCode >= 500) {
+      await registrarErroAuditoria(db, "admin.assinatura.manual", error, {
+        uid,
+        ownerUid: dadosValidados?.ownerUid || null,
+      });
+    }
+
+    res.status(statusCode).json({
+      ok: false,
+      success: false,
+      error: error.message || "Erro ao alterar assinatura manualmente.",
     });
   }
 });
