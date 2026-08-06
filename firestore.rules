@@ -504,15 +504,18 @@ service cloud.firestore {
         }
 
         match /configuracoes/{documentId} {
-          allow read: if hasCompanyAccess(userId, empresaId);
-          allow write: if (
+          allow get: if ["empresa", "fiscal", "estoqueMinimoProdutos"].hasAny([documentId]) &&
+            hasCompanyAccess(userId, empresaId);
+          allow list: if hasCompanyAccess(userId, empresaId);
+          allow create, update: if (
             documentId == "fiscal" && isCompanyAdmin(userId, empresaId)
           ) || (
             documentId == "estoqueMinimoProdutos" && canWriteModule(userId, empresaId, "estoque")
           ) || (
-            !["fiscal", "estoqueMinimoProdutos"].hasAny([documentId]) &&
-            hasCompanyAccess(userId, empresaId)
+            documentId == "empresa" &&
+            isCompanyAdministratorCanonical(userId, empresaId)
           );
+          allow delete: if false;
         }
 
         match /parametros/{documentId} {
