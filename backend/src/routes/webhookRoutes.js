@@ -11,10 +11,14 @@ const {
 } = require("../utils/datas");
 const {
   executarCommitAuditoria,
+  logAuditoriaError,
   logAuditoriaInfo,
   registrarErroAuditoria,
 } = require("../utils/auditoriaFirestore");
 const { PLANOS_PAGOS, normalizarPlano } = require("../utils/planos");
+const {
+  sincronizarPlanoEspelhoEmpresasOwner,
+} = require("../services/sincronizarPlanoEspelhoEmpresasOwner");
 
 const router = express.Router();
 
@@ -177,6 +181,25 @@ const getVencimentoPagamentoAvulso = (payment) => {
   return date.toISOString().slice(0, 10);
 };
 
+const sincronizarPlanoEspelhoComAuditoria = async ({
+  db,
+  ownerUid,
+  assinatura,
+  contexto,
+}) => {
+  try {
+    return await sincronizarPlanoEspelhoEmpresasOwner({
+      db,
+      ownerUid,
+      assinatura,
+    });
+  } catch (error) {
+    logAuditoriaError("planoEspelho.sincronizar: falha", error, contexto);
+    await registrarErroAuditoria(db, "planoEspelho.sincronizar", error, contexto);
+    return null;
+  }
+};
+
 const processarWebhookPagamento = async ({ db, logRef, paymentId, res }) => {
   let payment = null;
 
@@ -267,6 +290,7 @@ const processarWebhookPagamento = async ({ db, logRef, paymentId, res }) => {
     .doc(uid)
     .collection("assinatura")
     .doc("plano");
+  let assinaturaFinalParaEspelho = null;
   const agora = FieldValue.serverTimestamp();
   const batch = db.batch();
 
@@ -306,7 +330,9 @@ const processarWebhookPagamento = async ({ db, logRef, paymentId, res }) => {
   }, { merge: true });
 
   if (statusAtivaPlano) {
-    batch.set(assinaturaRef, {
+    const assinaturaSnapshot = await assinaturaRef.get();
+    const assinaturaAtual = assinaturaSnapshot.exists ? assinaturaSnapshot.data() : {};
+    const assinaturaAtualizada = {
       plano: planoSolicitado,
       status: "active",
       vencimento: getVencimentoPagamentoAvulso(payment),
@@ -316,7 +342,14 @@ const processarWebhookPagamento = async ({ db, logRef, paymentId, res }) => {
       mercadoPagoPaymentId: String(payment.id || paymentId),
       gateway: "mercado_pago",
       atualizadoEm: agora,
-    }, { merge: true });
+    };
+
+    assinaturaFinalParaEspelho = {
+      ...assinaturaAtual,
+      ...assinaturaAtualizada,
+    };
+
+    batch.set(assinaturaRef, assinaturaAtualizada, { merge: true });
   }
 
   const webhookAuditoria = {
@@ -365,11 +398,28 @@ const processarWebhookPagamento = async ({ db, logRef, paymentId, res }) => {
     commit: () => batch.commit(),
   });
 
+  const planoEspelhoResultado = statusAtivaPlano
+    ? await sincronizarPlanoEspelhoComAuditoria({
+        db,
+        ownerUid: uid,
+        assinatura: assinaturaFinalParaEspelho,
+        contexto: {
+          uid,
+          planoSolicitado,
+          statusMercadoPago,
+          checkoutSessionId,
+          pagamentoId: pagamentoSnapshot.id,
+          webhookLogId: logRef.id,
+        },
+      })
+    : null;
+
   res.status(200).json({
     ok: true,
     received: true,
     processed: true,
     assinaturaAtualizada: statusAtivaPlano,
+    planoEspelhoSincronizado: statusAtivaPlano ? Boolean(planoEspelhoResultado) : false,
     statusMercadoPago,
     logId: logRef.id,
   });
@@ -528,6 +578,7 @@ router.post("/mercado-pago", async (req, res) => {
       .doc(uid)
       .collection("pagamentos")
       .doc(checkoutSnapshot.id);
+    let assinaturaFinalParaEspelho = null;
     const agora = FieldValue.serverTimestamp();
     const batch = db.batch();
 
@@ -556,7 +607,9 @@ router.post("/mercado-pago", async (req, res) => {
     }, { merge: true });
 
     if (statusAtivaPlano) {
-      batch.set(assinaturaRef, {
+      const assinaturaSnapshot = await assinaturaRef.get();
+      const assinaturaAtual = assinaturaSnapshot.exists ? assinaturaSnapshot.data() : {};
+      const assinaturaAtualizada = {
         plano: planoSolicitado,
         status: "active",
         vencimento: getDataInputValue(preapproval.next_payment_date),
@@ -566,7 +619,14 @@ router.post("/mercado-pago", async (req, res) => {
         mercadoPagoPreapprovalId: preapproval.id || preapprovalId,
         gateway: "mercado_pago",
         atualizadoEm: agora,
-      }, { merge: true });
+      };
+
+      assinaturaFinalParaEspelho = {
+        ...assinaturaAtual,
+        ...assinaturaAtualizada,
+      };
+
+      batch.set(assinaturaRef, assinaturaAtualizada, { merge: true });
     }
 
     const webhookAuditoria = {
@@ -611,11 +671,28 @@ router.post("/mercado-pago", async (req, res) => {
       commit: () => batch.commit(),
     });
 
+    const planoEspelhoResultado = statusAtivaPlano
+      ? await sincronizarPlanoEspelhoComAuditoria({
+          db,
+          ownerUid: uid,
+          assinatura: assinaturaFinalParaEspelho,
+          contexto: {
+            uid,
+            planoSolicitado,
+            statusMercadoPago,
+            checkoutSessionId: checkoutSnapshot.id,
+            mercadoPagoPreapprovalId: preapproval.id || preapprovalId,
+            webhookLogId: logRef.id,
+          },
+        })
+      : null;
+
     res.status(200).json({
       ok: true,
       received: true,
       processed: true,
       assinaturaAtualizada: statusAtivaPlano,
+      planoEspelhoSincronizado: statusAtivaPlano ? Boolean(planoEspelhoResultado) : false,
       statusMercadoPago,
       logId: logRef.id,
     });
