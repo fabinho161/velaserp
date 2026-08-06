@@ -577,7 +577,14 @@ service cloud.firestore {
         }
 
         match /fornecedores/{documentId} {
-          allow read, write: if canManageFornecedores(userId, empresaId);
+          allow read: if hasCompanyRole(userId, empresaId, [
+            "administrador_empresa",
+            "financeiro",
+            "producao"
+          ]) || canManageFornecedores(userId, empresaId);
+          allow create, update: if canWriteModule(userId, empresaId, "fornecedores") ||
+            canManageFornecedores(userId, empresaId);
+          allow delete: if false;
         }
 
         match /clientesComerciais/{documentId} {
