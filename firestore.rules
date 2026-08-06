@@ -569,7 +569,9 @@ service cloud.firestore {
         }
 
         match /despesas/{documentId} {
-          allow read, write: if hasCompanyAccess(userId, empresaId);
+          allow read: if canReadModule(userId, empresaId, "despesas");
+          allow create, update: if canWriteModule(userId, empresaId, "despesas");
+          allow delete: if false;
         }
 
         match /perdasDoacoes/{documentId} {
