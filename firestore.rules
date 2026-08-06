@@ -849,12 +849,7 @@ service cloud.firestore {
 
     match /usuariosPorAuth/{uidAuth}/empresas/{empresaId} {
       allow read: if isOwner(uidAuth) || isAdminMaster();
-      allow create: if isCreatingInvitedCompanyPointer(uidAuth, empresaId) || isAdminMaster();
-      allow update: if isOwner(uidAuth) &&
-        resource.data.ownerUid == request.resource.data.ownerUid &&
-        resource.data.usuarioEmpresaId == request.resource.data.usuarioEmpresaId &&
-        request.resource.data.status == "ativo";
-      allow delete: if isAdminMaster();
+      allow create, update, delete: if false;
     }
 
     match /convitesEmpresa/{token} {
