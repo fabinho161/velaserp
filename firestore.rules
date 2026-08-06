@@ -508,7 +508,10 @@ service cloud.firestore {
           allow write: if (
             documentId == "fiscal" && isCompanyAdmin(userId, empresaId)
           ) || (
-            documentId != "fiscal" && hasCompanyAccess(userId, empresaId)
+            documentId == "estoqueMinimoProdutos" && canWriteModule(userId, empresaId, "estoque")
+          ) || (
+            !["fiscal", "estoqueMinimoProdutos"].hasAny([documentId]) &&
+            hasCompanyAccess(userId, empresaId)
           );
         }
 
