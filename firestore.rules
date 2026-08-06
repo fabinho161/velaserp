@@ -110,6 +110,185 @@ service cloud.firestore {
         hasCompanyAdminLink(userCompanyPath(request.auth.uid, empresaId), ownerUid, empresaId);
     }
 
+    function isCompanyRole(role, perfil, roles) {
+      return roles.hasAny([role]) || roles.hasAny([perfil]);
+    }
+
+    function hasCompanyRoleLink(linkPath, ownerUid, empresaId, roles) {
+      let usuarioEmpresa = get(companyUserPath(
+        ownerUid,
+        empresaId,
+        get(linkPath).data.usuarioEmpresaId
+      )).data;
+
+      return hasValidCompanyLink(linkPath, ownerUid, empresaId) &&
+        isCompanyRole(usuarioEmpresa.role, usuarioEmpresa.perfil, roles);
+    }
+
+    function hasCompanyMemberRole(ownerUid, empresaId, roles) {
+      return hasCompanyRoleLink(
+        authCompanyPath(request.auth.uid, empresaId),
+        ownerUid,
+        empresaId,
+        roles
+      ) ||
+        hasCompanyRoleLink(
+          userCompanyPath(request.auth.uid, empresaId),
+          ownerUid,
+          empresaId,
+          roles
+        );
+    }
+
+    function hasCompanyRole(ownerUid, empresaId, roles) {
+      return isOwner(ownerUid) ||
+        isAdminMaster() ||
+        hasCompanyMemberRole(ownerUid, empresaId, roles);
+    }
+
+    function isCompanyAdministratorCanonical(ownerUid, empresaId) {
+      return hasCompanyRole(ownerUid, empresaId, ["administrador_empresa"]);
+    }
+
+    function canReadModuleRole(role, perfil, modulo) {
+      return canWriteModuleRole(role, perfil, modulo) ||
+        (
+          modulo == "dashboard" &&
+          isCompanyRole(role, perfil, [
+            "administrador_empresa",
+            "financeiro",
+            "producao",
+            "comercial",
+            "estoque",
+            "visualizacao"
+          ])
+        ) ||
+        (
+          modulo == "relatorios" &&
+          isCompanyRole(role, perfil, [
+            "administrador_empresa",
+            "financeiro",
+            "comercial",
+            "visualizacao"
+          ])
+        ) ||
+        (
+          isCompanyRole(role, perfil, ["visualizacao"]) &&
+          [
+            "insumos",
+            "produtos",
+            "producao",
+            "vendas",
+            "despesas",
+            "perdasDoacoes",
+            "clientesComerciais"
+          ].hasAny([modulo])
+        );
+    }
+
+    function canWriteModuleRole(role, perfil, modulo) {
+      return isCompanyRole(role, perfil, ["administrador_empresa"]) ||
+        (
+          isCompanyRole(role, perfil, ["financeiro"]) &&
+          [
+            "despesas",
+            "fornecedores"
+          ].hasAny([modulo])
+        ) ||
+        (
+          isCompanyRole(role, perfil, ["producao"]) &&
+          [
+            "insumos",
+            "produtos",
+            "producao",
+            "estoque",
+            "perdasDoacoes",
+            "fornecedores"
+          ].hasAny([modulo])
+        ) ||
+        (
+          isCompanyRole(role, perfil, ["comercial"]) &&
+          [
+            "vendas",
+            "clientesComerciais"
+          ].hasAny([modulo])
+        ) ||
+        (
+          isCompanyRole(role, perfil, ["estoque"]) &&
+          [
+            "insumos",
+            "estoque",
+            "perdasDoacoes"
+          ].hasAny([modulo])
+        );
+    }
+
+    function hasCompanyModulePermissionLink(linkPath, ownerUid, empresaId, modulo, escrita) {
+      let usuarioEmpresa = get(companyUserPath(
+        ownerUid,
+        empresaId,
+        get(linkPath).data.usuarioEmpresaId
+      )).data;
+
+      return hasValidCompanyLink(linkPath, ownerUid, empresaId) &&
+        (
+          (
+            escrita == true &&
+            canWriteModuleRole(usuarioEmpresa.role, usuarioEmpresa.perfil, modulo)
+          ) ||
+          (
+            escrita == false &&
+            canReadModuleRole(usuarioEmpresa.role, usuarioEmpresa.perfil, modulo)
+          )
+        );
+    }
+
+    function canReadModule(ownerUid, empresaId, modulo) {
+      return isOwner(ownerUid) ||
+        isAdminMaster() ||
+        hasCompanyModulePermissionLink(
+          authCompanyPath(request.auth.uid, empresaId),
+          ownerUid,
+          empresaId,
+          modulo,
+          false
+        ) ||
+        hasCompanyModulePermissionLink(
+          userCompanyPath(request.auth.uid, empresaId),
+          ownerUid,
+          empresaId,
+          modulo,
+          false
+        );
+    }
+
+    function canWriteModule(ownerUid, empresaId, modulo) {
+      return isOwner(ownerUid) ||
+        isAdminMaster() ||
+        hasCompanyModulePermissionLink(
+          authCompanyPath(request.auth.uid, empresaId),
+          ownerUid,
+          empresaId,
+          modulo,
+          true
+        ) ||
+        hasCompanyModulePermissionLink(
+          userCompanyPath(request.auth.uid, empresaId),
+          ownerUid,
+          empresaId,
+          modulo,
+          true
+        );
+    }
+
+    function canWriteCompanyConfiguration(ownerUid, empresaId, documentId) {
+      return isCompanyAdministratorCanonical(ownerUid, empresaId) ||
+        (
+          documentId == "estoqueMinimo" &&
+          canWriteModule(ownerUid, empresaId, "estoque")
+        );
+    }
+
     function isFornecedorRoleAllowed(role) {
       return role == "administrador_empresa" ||
         role == "Administrador da Empresa" ||
