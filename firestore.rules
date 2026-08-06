@@ -516,7 +516,39 @@ service cloud.firestore {
         }
 
         match /parametros/{documentId} {
-          allow read, write: if hasCompanyAccess(userId, empresaId);
+          allow read: if [
+            "unidadesMedida",
+            "tiposProduto",
+            "categoriasDespesa"
+          ].hasAny([documentId]) &&
+            hasCompanyRole(userId, empresaId, [
+              "administrador_empresa",
+              "financeiro",
+              "producao",
+              "estoque"
+            ]);
+          allow create: if (
+            documentId == "unidadesMedida" &&
+            hasCompanyRole(userId, empresaId, [
+              "administrador_empresa",
+              "producao",
+              "estoque"
+            ])
+          ) || (
+            documentId == "tiposProduto" &&
+            hasCompanyRole(userId, empresaId, [
+              "administrador_empresa",
+              "producao"
+            ])
+          ) || (
+            documentId == "categoriasDespesa" &&
+            hasCompanyRole(userId, empresaId, [
+              "administrador_empresa",
+              "financeiro"
+            ])
+          );
+          allow update: if isCompanyAdministratorCanonical(userId, empresaId);
+          allow delete: if false;
         }
 
         match /insumos/{documentId} {
