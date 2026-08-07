@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ERPContext } from "./ERPContextBase";
 import { useToast } from "./useToast";
 import { auth, db } from "../firebase";
@@ -17,7 +17,6 @@ import {
 import {
   assinaturaGratisPadrao,
   getLimiteUsuariosEfetivo,
-  getPlanoConfig,
 } from "../config/planos";
 import {
   PERFIL_EMPRESA_PADRAO,
@@ -217,6 +216,7 @@ export function ERPProvider({ children }) {
   const [empresas, setEmpresas] = useState([]);
   const [usuariosEmpresa, setUsuariosEmpresa] = useState([]);
   const [usuariosEmpresaCarregando, setUsuariosEmpresaCarregando] = useState(false);
+  const criacaoInicialEmpresaRef = useRef(new Set());
 
   const [insumos, setInsumos] = useState([]);
   const [produtos, setProdutos] = useState([]);
@@ -226,6 +226,41 @@ export function ERPProvider({ children }) {
   const [perdasDoacoes, setPerdasDoacoes] = useState([]);
   const [clientesComerciais, setClientesComerciais] = useState([]);
   const [configuracoes, setConfiguracoes] = useState({});
+
+  const criarEmpresaBackend = useCallback(async (nome) => {
+    const usuarioAuth = auth.currentUser;
+
+    if (!usuarioAuth) {
+      throw new Error("Usuario autenticado nao encontrado.");
+    }
+
+    const idToken = await usuarioAuth.getIdToken(true);
+    const response = await fetch(`${API_URL}/api/empresas`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ nome }),
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok || data.ok === false || data.success === false) {
+      const detalhesLimite = data.motivo === "limite_empresas_atingido"
+        ? ` Plano: ${data.plano || "-"}. Limite: ${data.limiteEmpresas ?? "-"}. Atual: ${data.quantidadeAtual ?? "-"}.`
+        : "";
+
+      throw new Error(
+        `${data.error || "Nao foi possivel criar a empresa."}${detalhesLimite}`
+      );
+    }
+
+    if (!data.empresa?.id) {
+      throw new Error("Resposta invalida ao criar empresa.");
+    }
+
+    return data.empresa;
+  }, []);
 
   // ================================
   // 🔹 AUTENTICAÇÃO
@@ -362,60 +397,25 @@ export function ERPProvider({ children }) {
 const criarNovaEmpresa = async (nomeEmpresa) => {
   if (!user) return;
 
-  if (!nomeEmpresa) {
+  const nomeTratado = String(nomeEmpresa || "").trim();
+
+  if (!nomeTratado) {
     showToast("Informe o nome da empresa.", "warning");
     return;
   }
 
-  const assinaturaAtual = {
-    ...assinaturaPadrao,
-    ...(assinaturaUsuario || {}),
-  };
-
-  const planoAtual = getPlanoConfig(assinaturaAtual.plano);
-  const limiteEmpresas = planoAtual.empresas;
-  const adminMaster = perfilUsuario?.role === "admin_master";
-
-  if (
-    !adminMaster &&
-    (
-      assinaturaAtual.status !== "active" ||
-      (limiteEmpresas !== null && empresas.length >= limiteEmpresas)
-    )
-  ) {
-    showToast("Limite de empresas atingido.", "warning");
-    return;
-  }
-
   try {
-    const ref = collection(db, "users", user.uid, "empresas");
-
-    const novaEmpresa = await addDoc(ref, {
-      nome: nomeEmpresa,
-      criadoEm: new Date(),
-    });
-
-    await garantirUsuarioDonoEmpresa({
-      ownerUid: user.uid,
-      empresaId: novaEmpresa.id,
-      usuario: user,
-    });
-
-    const empresaCriada = {
-      id: novaEmpresa.id,
-      nome: nomeEmpresa,
-      ownerUid: user.uid,
-    };
+    const empresaCriada = await criarEmpresaBackend(nomeTratado);
 
     setEmpresas([...empresas, empresaCriada]);
     setUsuariosEmpresaCarregando(true);
-    setEmpresaId(novaEmpresa.id);
-    setEmpresaOwnerUid(user.uid);
-    localStorage.setItem(`renovarEmpresaAtiva_${user.uid}`, novaEmpresa.id);
+    setEmpresaId(empresaCriada.id);
+    setEmpresaOwnerUid(empresaCriada.ownerUid || user.uid);
+    localStorage.setItem(`renovarEmpresaAtiva_${user.uid}`, empresaCriada.id);
     showToast("Empresa criada com sucesso!", "success");
   } catch (error) {
     console.error("Erro ao criar empresa:", error);
-    showToast("Erro ao criar empresa.", "error");
+    showToast(error.message || "Erro ao criar empresa.", "error");
   }
 };
 
@@ -436,30 +436,26 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
           const snapshot = await getDocs(ref);
 
           if (snapshot.empty && vinculosSnapshot.empty) {
-            const novaEmpresa = await addDoc(ref, {
-              nome: "Minha Empresa",
-              criadoEm: new Date(),
-            });
+            if (criacaoInicialEmpresaRef.current.has(user.uid)) return;
 
-            const empresaCriada = {
-              id: novaEmpresa.id,
-              nome: "Minha Empresa",
-              ownerUid: user.uid,
-            };
+            criacaoInicialEmpresaRef.current.add(user.uid);
 
-            await garantirUsuarioDonoEmpresa({
-              ownerUid: user.uid,
-              empresaId: novaEmpresa.id,
-              usuario: user,
-            });
+            let empresaCriada = null;
+
+            try {
+              empresaCriada = await criarEmpresaBackend("Minha Empresa");
+            } catch (error) {
+              criacaoInicialEmpresaRef.current.delete(user.uid);
+              throw error;
+            }
 
             if (cancelado) return;
 
             setEmpresas([empresaCriada]);
             setUsuariosEmpresaCarregando(true);
-            setEmpresaId(novaEmpresa.id);
-            setEmpresaOwnerUid(user.uid);
-            localStorage.setItem(`renovarEmpresaAtiva_${user.uid}`, novaEmpresa.id);
+            setEmpresaId(empresaCriada.id);
+            setEmpresaOwnerUid(empresaCriada.ownerUid || user.uid);
+            localStorage.setItem(`renovarEmpresaAtiva_${user.uid}`, empresaCriada.id);
           } else {
             const mapaEmpresas = new Map();
 
@@ -520,7 +516,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
       return () => {
         cancelado = true;
       };
-    }, [showToast, user]);
+    }, [criarEmpresaBackend, showToast, user]);
 
     
     // ================================
