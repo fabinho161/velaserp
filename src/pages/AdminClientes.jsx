@@ -4,7 +4,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  setDoc,
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { useToast } from "../context/useToast";
@@ -22,6 +21,10 @@ const assinaturaPadraoCliente = assinaturaGratisPadrao;
 const planos = Object.keys(PLANOS);
 const statusAssinatura = ["active", "inactive", "blocked"];
 const formasPagamento = ["", "manual", "pix", "cartao", "boleto"];
+const API_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_URL ||
+  "http://localhost:10000";
 
 const formatarDataSistema = (valor) => {
   if (!valor) return "-";
@@ -78,6 +81,20 @@ const normalizarValorPago = (valor) => {
 
   const numero = Number(valor);
   return Number.isFinite(numero) ? numero : null;
+};
+
+const prepararLimiteUsuariosManualBackend = (valor) => {
+  const texto = String(valor ?? "").trim();
+
+  if (!texto) return null;
+
+  const numero = Number(texto);
+
+  if (!Number.isInteger(numero) || numero <= 0) {
+    throw new Error("Informe um limite manual valido ou deixe em branco para remover.");
+  }
+
+  return numero;
 };
 
 const getLimitePlanoUsuarios = (plano) =>
@@ -167,32 +184,80 @@ export default function AdminClientes() {
     }));
   };
 
+  const chamarAtualizacaoAssinaturaAdmin = async ({
+    ownerUid,
+    plano,
+    status,
+    limiteUsuariosManual,
+  }) => {
+    const token = await auth.currentUser?.getIdToken(true);
+
+    if (!token) {
+      throw new Error("Sessao expirada. Faca login novamente.");
+    }
+
+    const response = await fetch(`${API_URL}/api/admin/assinaturas/manual`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        ownerUid,
+        plano,
+        status,
+        limiteUsuariosManual,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (
+      data?.assinaturaAtualizada === true &&
+      data?.planoEspelhoSincronizado === false
+    ) {
+      return {
+        ...data,
+        parcial: true,
+      };
+    }
+
+    if (!response.ok || data?.ok === false || data?.success === false) {
+      throw new Error(data?.error || "Nao foi possivel atualizar a assinatura.");
+    }
+
+    return {
+      ...data,
+      parcial: false,
+    };
+  };
+
   // ================================
   // 🔹 SALVAR PLANO MANUALMENTE
   // ================================
   const salvarPlano = async (cliente) => {
     const form = prepararFormAssinatura(formularios[cliente.uid]);
-    const assinaturaRef = doc(db, "users", cliente.uid, "assinatura", "plano");
-
     setSalvandoUid(cliente.uid);
 
     try {
-      await setDoc(assinaturaRef, {
+      const resultado = await chamarAtualizacaoAssinaturaAdmin({
+        ownerUid: cliente.uid,
         plano: form.plano,
         status: form.status,
-        vencimento: form.vencimento || null,
-        ativadoManual: true,
-        formaPagamento: form.formaPagamento || "manual",
-        valorPago: normalizarValorPago(form.valorPago),
-        observacao: form.observacao || "",
-        atualizadoEm: new Date(),
-      }, { merge: true });
+        limiteUsuariosManual: prepararLimiteUsuariosManualBackend(
+          form.limiteUsuariosManual
+        ),
+      });
 
-      showToast("Plano atualizado com sucesso.", "success");
+      showToast(
+        resultado.parcial
+          ? "Plano atualizado, mas ocorreu falha ao sincronizar as empresas."
+          : "Plano atualizado com sucesso.",
+        resultado.parcial ? "warning" : "success"
+      );
       await carregarClientes();
     } catch (error) {
       console.error("Erro ao atualizar plano:", error);
-      showToast("Erro ao atualizar plano.", "error");
+      showToast(error.message || "Erro ao atualizar plano.", "error");
     } finally {
       setSalvandoUid(null);
     }
@@ -230,35 +295,37 @@ export default function AdminClientes() {
   const salvarLimiteUsuarios = async () => {
     if (!clienteLimite) return;
 
-    const limiteRaw = String(limiteForm.limiteUsuariosManual || "").trim();
-    const limiteNumero = limiteRaw === "" ? 0 : Number(limiteRaw);
+    const assinatura = prepararFormAssinatura(
+      formularios[clienteLimite.uid] || clienteLimite.assinatura
+    );
+    let limiteManual;
 
-    if (!Number.isFinite(limiteNumero) || limiteNumero < 0) {
-      showToast("Informe um limite manual valido, sem numero negativo.", "warning");
+    try {
+      limiteManual = prepararLimiteUsuariosManualBackend(
+        limiteForm.limiteUsuariosManual
+      );
+    } catch (error) {
+      showToast(error.message, "warning");
       return;
     }
-
-    const limiteManual = normalizarLimiteUsuariosManual(limiteNumero);
-    const assinaturaRef = doc(db, "users", clienteLimite.uid, "assinatura", "plano");
 
     setSalvandoLimite(true);
 
     try {
-      await setDoc(assinaturaRef, {
+      const resultado = await chamarAtualizacaoAssinaturaAdmin({
+        ownerUid: clienteLimite.uid,
+        plano: assinatura.plano,
+        status: assinatura.status,
         limiteUsuariosManual: limiteManual,
-        motivoLiberacaoUsuarios: limiteManual
-          ? String(limiteForm.motivoLiberacaoUsuarios || "").trim()
-          : "",
-        limiteUsuariosAtualizadoPor: auth.currentUser?.uid || "",
-        limiteUsuariosAtualizadoEm: new Date(),
-        atualizadoEm: new Date(),
-      }, { merge: true });
+      });
 
       showToast(
-        limiteManual
-          ? "Limite manual de usuarios atualizado com sucesso."
-          : "Limite manual de usuarios removido com sucesso.",
-        "success"
+        resultado.parcial
+          ? "Limite atualizado, mas ocorreu falha ao sincronizar as empresas."
+          : limiteManual
+            ? "Limite manual de usuarios atualizado com sucesso."
+            : "Limite manual de usuarios removido com sucesso.",
+        resultado.parcial ? "warning" : "success"
       );
       setClienteLimite(null);
       setLimiteForm({
@@ -268,7 +335,7 @@ export default function AdminClientes() {
       await carregarClientes();
     } catch (error) {
       console.error("Erro ao atualizar limite de usuarios:", error);
-      showToast("Erro ao atualizar limite de usuarios.", "error");
+      showToast(error.message || "Erro ao atualizar limite de usuarios.", "error");
     } finally {
       setSalvandoLimite(false);
     }
