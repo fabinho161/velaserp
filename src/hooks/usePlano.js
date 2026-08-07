@@ -8,31 +8,80 @@ import {
   normalizarLimiteUsuariosManual,
 } from "../config/planos";
 
+const PLANOS_CANONICOS = new Set(["gratis", "basico", "profissional", "premium"]);
+const STATUS_CANONICOS = new Set(["active", "inactive", "blocked"]);
+const assinaturaConvidadoFallback = {
+  ...assinaturaGratisPadrao,
+  plano: "gratis",
+  status: "inactive",
+  limiteUsuariosManual: null,
+};
+
+const normalizarTexto = (valor) => String(valor || "").trim().toLowerCase();
+
+const resolverAssinaturaNormalizada = (assinatura, fallback) => {
+  const dados = assinatura && typeof assinatura === "object" && !Array.isArray(assinatura)
+    ? assinatura
+    : {};
+  const planoInformado = normalizarTexto(dados.plano);
+  const statusInformado = normalizarTexto(dados.status);
+  const plano = PLANOS_CANONICOS.has(planoInformado)
+    ? planoInformado
+    : fallback.plano;
+  const status = STATUS_CANONICOS.has(statusInformado)
+    ? statusInformado
+    : fallback.status;
+
+  return {
+    ...fallback,
+    ...dados,
+    plano,
+    status,
+    limiteUsuariosManual: normalizarLimiteUsuariosManual(
+      dados.limiteUsuariosManual
+    ),
+  };
+};
+
 export function usePlano() {
   const {
     assinaturaUsuario,
     perfilCarregando,
     isAdminMaster,
     user,
+    empresaId,
     empresaOwnerUid,
     usuarioEmpresaAtual,
     empresas = [],
   } = useERP() || {};
 
   return useMemo(() => {
+    const empresaAtual = empresas.find((empresa) =>
+      empresa.id === empresaId &&
+      (empresa.ownerUid || user?.uid) === (empresaOwnerUid || user?.uid)
+    ) || null;
     const usuarioConvidadoEmpresa = Boolean(
       user?.uid &&
       empresaOwnerUid &&
       empresaOwnerUid !== user.uid &&
       usuarioEmpresaAtual?.uidAuth === user.uid
     );
-    const assinatura = {
-      ...assinaturaGratisPadrao,
-      ...(assinaturaUsuario || {}),
-    };
+    const planoEspelhoCarregando = Boolean(
+      usuarioConvidadoEmpresa &&
+      !empresaAtual
+    );
+    const assinatura = usuarioConvidadoEmpresa
+      ? resolverAssinaturaNormalizada(
+          empresaAtual?.planoEspelho,
+          assinaturaConvidadoFallback
+        )
+      : resolverAssinaturaNormalizada(
+          assinaturaUsuario,
+          assinaturaGratisPadrao
+        );
 
-    const planoAtual = assinatura.plano || "gratis";
-    const status = assinatura.status || "active";
+    const planoAtual = assinatura.plano;
+    const status = assinatura.status;
     const limites = getPlanoConfig(planoAtual);
     const planoNivel = getPlanoNivel(planoAtual);
     const assinaturaAtiva = status === "active";
@@ -50,6 +99,7 @@ export function usePlano() {
 
     const podeCriarEmpresa =
       isAdminMaster ||
+      !usuarioConvidadoEmpresa &&
       assinaturaAtiva &&
       (limiteEmpresas === null || empresas.length < limiteEmpresas);
 
@@ -59,7 +109,7 @@ export function usePlano() {
       planoNivel,
       status,
       limites,
-      assinaturaCarregando: Boolean(perfilCarregando),
+      assinaturaCarregando: Boolean(perfilCarregando || planoEspelhoCarregando),
       isGratis: planoAtual === "gratis",
       isBasico: planoAtual === "basico",
       isProfissional: planoAtual === "profissional",
@@ -67,39 +117,25 @@ export function usePlano() {
       podeCriarEmpresa,
       podeCriarUsuarioEmpresa: isAdminMaster || assinaturaAtiva,
       podeUsarVendas:
-        isAdminMaster || usuarioConvidadoEmpresa || assinaturaAtiva && Boolean(limites.vendas),
+        isAdminMaster || assinaturaAtiva && Boolean(limites.vendas),
       podeUsarDRE:
-        isAdminMaster || usuarioConvidadoEmpresa || assinaturaAtiva && Boolean(limites.dre),
+        isAdminMaster || assinaturaAtiva && Boolean(limites.dre),
       podeGerarPDF:
-        isAdminMaster ||
-        usuarioConvidadoEmpresa ||
-        assinaturaAtiva && Boolean(limites.pdfProfissional),
+        isAdminMaster || assinaturaAtiva && Boolean(limites.pdfProfissional),
       podePersonalizarSistema:
-        isAdminMaster ||
-        usuarioConvidadoEmpresa ||
-        assinaturaAtiva && Boolean(limites.personalizacao),
+        isAdminMaster || assinaturaAtiva && Boolean(limites.personalizacao),
       podeUsarRelatoriosAvancados:
-        isAdminMaster ||
-        usuarioConvidadoEmpresa ||
-        assinaturaAtiva && Boolean(limites.relatoriosAvancados),
+        isAdminMaster || assinaturaAtiva && Boolean(limites.relatoriosAvancados),
       podeUsarCRMComercial:
-        isAdminMaster ||
-        usuarioConvidadoEmpresa ||
-        assinaturaAtiva && Boolean(limites.crmComercial),
+        isAdminMaster || assinaturaAtiva && Boolean(limites.crmComercial),
       podeUsarCRMBasico:
-        isAdminMaster || usuarioConvidadoEmpresa || assinaturaAtiva && Boolean(limites.crmBasico),
+        isAdminMaster || assinaturaAtiva && Boolean(limites.crmBasico),
       podeUsarCRMInteligente:
-        isAdminMaster ||
-        usuarioConvidadoEmpresa ||
-        assinaturaAtiva && Boolean(limites.crmInteligente),
+        isAdminMaster || assinaturaAtiva && Boolean(limites.crmInteligente),
       podeUsarCRMWhatsapp:
-        isAdminMaster ||
-        usuarioConvidadoEmpresa ||
-        assinaturaAtiva && Boolean(limites.crmWhatsapp),
+        isAdminMaster || assinaturaAtiva && Boolean(limites.crmWhatsapp),
       podeUsarCRMFollowUp:
-        isAdminMaster ||
-        usuarioConvidadoEmpresa ||
-        assinaturaAtiva && Boolean(limites.crmFollowUp),
+        isAdminMaster || assinaturaAtiva && Boolean(limites.crmFollowUp),
       limiteEmpresas: isAdminMaster ? null : limiteEmpresas,
       limiteUsuarios: isAdminMaster ? null : limiteUsuariosEfetivo,
       limiteUsuariosPlano,
@@ -109,6 +145,7 @@ export function usePlano() {
     };
   }, [
     assinaturaUsuario,
+    empresaId,
     empresaOwnerUid,
     empresas,
     isAdminMaster,
