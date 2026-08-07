@@ -56,6 +56,11 @@ service cloud.firestore {
         request.resource.data.status == resource.data.status;
     }
 
+    function hasNoProtectedCompanyRootChanges() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(["ownerUid", "planoEspelho", "criadoEm"]);
+    }
+
     function hasValidCompanyLink(linkPath, ownerUid, empresaId) {
       return signedIn() &&
         exists(linkPath) &&
@@ -396,33 +401,6 @@ service cloud.firestore {
         get(invitePath(token)).data.usuarioEmpresaId == usuarioId;
     }
 
-    function isValidInviteForCompanyLink(token, ownerUid, empresaId) {
-      return isValidPendingInvite(token, ownerUid, empresaId) ||
-        (
-          signedIn() &&
-          token is string &&
-          exists(invitePath(token)) &&
-          get(invitePath(token)).data.status == "aceito" &&
-          get(invitePath(token)).data.ownerUid == ownerUid &&
-          get(invitePath(token)).data.empresaId == empresaId &&
-          get(invitePath(token)).data.email == request.auth.token.email &&
-          get(invitePath(token)).data.uidAuth == request.auth.uid
-        );
-    }
-
-    function isCreatingInvitedCompanyPointer(userId, empresaId) {
-      return isOwner(userId) &&
-        request.resource.data.ownerUid is string &&
-        request.resource.data.ownerUid != userId &&
-        request.resource.data.conviteToken is string &&
-        request.resource.data.status == "ativo" &&
-        isValidInviteForCompanyLink(
-          request.resource.data.conviteToken,
-          request.resource.data.ownerUid,
-          empresaId
-        );
-    }
-
     function isAcceptingUsuarioEmpresa(ownerUid, empresaId, usuarioId) {
       return signedIn() &&
         resource.data.status == "pendente" &&
@@ -490,16 +468,16 @@ service cloud.firestore {
 
       match /empresas/{empresaId} {
         allow read: if hasCompanyAccess(userId, empresaId) || isOwner(userId) || isAdminMaster();
-        allow create: if (
-          isOwner(userId) &&
-          (isOwnCompanyDocument(userId) || isCreatingInvitedCompanyPointer(userId, empresaId))
-        ) || isAdminMaster();
-        allow update: if isAdminMaster() ||
+        allow create: if false;
+        allow update: if hasNoProtectedCompanyRootChanges() &&
           (
-            isOwner(userId) &&
+            isAdminMaster() ||
             (
-              (isExistingOwnCompanyDocument(userId) && isOwnCompanyDocument(userId)) ||
-              isSafeCompanyPointerUpdate(userId)
+              isOwner(userId) &&
+              (
+                (isExistingOwnCompanyDocument(userId) && isOwnCompanyDocument(userId)) ||
+                isSafeCompanyPointerUpdate(userId)
+              )
             )
           );
         allow delete: if isOwner(userId) || isAdminMaster();
