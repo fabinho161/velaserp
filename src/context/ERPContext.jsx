@@ -145,6 +145,41 @@ const montarDadosDonoEmpresa = (usuario, dadosAtuais = {}) => ({
   dono: true,
 });
 
+const removerPlanoEspelhoEmpresa = (empresasAtuais, empresaId, ownerUid) => {
+  let alterou = false;
+  const proximasEmpresas = empresasAtuais.map((empresa) => {
+    if (empresa.id !== empresaId || empresa.ownerUid !== ownerUid) return empresa;
+    if (!Object.prototype.hasOwnProperty.call(empresa, "planoEspelho")) return empresa;
+
+    alterou = true;
+    const empresaSemPlanoEspelho = { ...empresa };
+    delete empresaSemPlanoEspelho.planoEspelho;
+    return empresaSemPlanoEspelho;
+  });
+
+  return alterou ? proximasEmpresas : empresasAtuais;
+};
+
+const mesclarEmpresaComDocumentoReal = ({
+  empresa,
+  dadosEmpresaReal,
+  empresaId,
+  ownerUid,
+}) => {
+  const metadadosVinculo = { ...empresa };
+  delete metadadosVinculo.planoEspelho;
+
+  return {
+    ...dadosEmpresaReal,
+    ...metadadosVinculo,
+    id: empresa.id,
+    nome: dadosEmpresaReal.nome || empresa.nome,
+    ownerUid,
+    empresaId,
+    planoEspelho: dadosEmpresaReal.planoEspelho,
+  };
+};
+
 const garantirUsuarioDonoEmpresa = async ({ ownerUid, empresaId, usuario }) => {
   if (!ownerUid || !empresaId || !usuario?.uid || ownerUid !== usuario.uid) return;
 
@@ -755,6 +790,100 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     normalizarStatusUsuarioEmpresa(usuarioEmpresaAtual?.status)
   );
   const usuarioEmpresaSomenteLeitura = perfilEmpresaSomenteLeitura(perfilEmpresaAtual);
+  const usuarioUid = user?.uid || null;
+  const empresaSelecionada = useMemo(
+    () => empresas.find((empresa) =>
+      empresa.id === empresaId &&
+      (empresa.ownerUid || usuarioUid) === (empresaOwnerUid || usuarioUid)
+    ) || null,
+    [empresaId, empresaOwnerUid, empresas, usuarioUid]
+  );
+  const empresaSelecionadaExiste = Boolean(empresaSelecionada);
+  const statusEmpresaSelecionada = normalizarStatusUsuarioEmpresa(
+    empresaSelecionada?.status
+  );
+  const usuarioEmpresaAtualAtivo = Boolean(
+    usuarioEmpresaAtual &&
+    !usuarioEmpresaInativo &&
+    normalizarStatusUsuarioEmpresa(usuarioEmpresaAtual.status) === "ativo"
+  );
+
+  useEffect(() => {
+    const empresaConvidada =
+      usuarioUid &&
+      empresaId &&
+      empresaOwnerUid &&
+      empresaOwnerUid !== usuarioUid;
+
+    if (!empresaConvidada) {
+      return undefined;
+    }
+
+    if (
+      !empresaSelecionadaExiste ||
+      statusEmpresaSelecionada !== "ativo" ||
+      !usuarioEmpresaAtualAtivo
+    ) {
+      return undefined;
+    }
+
+    const empresaRealRef = doc(
+      db,
+      "users",
+      empresaOwnerUid,
+      "empresas",
+      empresaId
+    );
+
+    const unsubscribe = onSnapshot(
+      empresaRealRef,
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setEmpresas((empresasAtuais) =>
+            removerPlanoEspelhoEmpresa(empresasAtuais, empresaId, empresaOwnerUid)
+          );
+          return;
+        }
+
+        const dadosEmpresaReal = snapshot.data() || {};
+
+        setEmpresas((empresasAtuais) =>
+          empresasAtuais.map((empresa) => {
+            if (empresa.id !== empresaId || empresa.ownerUid !== empresaOwnerUid) {
+              return empresa;
+            }
+
+            return mesclarEmpresaComDocumentoReal({
+              empresa,
+              dadosEmpresaReal,
+              empresaId,
+              ownerUid: empresaOwnerUid,
+            });
+          })
+        );
+      },
+      (error) => {
+        console.error("Erro ao ouvir documento raiz da empresa convidada:", error);
+        setEmpresas((empresasAtuais) =>
+          removerPlanoEspelhoEmpresa(empresasAtuais, empresaId, empresaOwnerUid)
+        );
+      }
+    );
+
+    return () => {
+      unsubscribe();
+      setEmpresas((empresasAtuais) =>
+        removerPlanoEspelhoEmpresa(empresasAtuais, empresaId, empresaOwnerUid)
+      );
+    };
+  }, [
+    empresaId,
+    empresaOwnerUid,
+    empresaSelecionadaExiste,
+    statusEmpresaSelecionada,
+    usuarioEmpresaAtualAtivo,
+    usuarioUid,
+  ]);
 
   const podeGerenciarUsuariosEmpresa = useMemo(
     () => !usuarioEmpresaInativo && temPermissaoEmpresa(perfilEmpresaAtual, "usuarios_empresa"),
