@@ -16,7 +16,6 @@ import {
 } from "firebase/firestore";
 import {
   assinaturaGratisPadrao,
-  getLimiteUsuariosEfetivo,
 } from "../config/planos";
 import {
   PERFIL_EMPRESA_PADRAO,
@@ -29,7 +28,6 @@ import {
 } from "../config/perfisEmpresa";
 
 const assinaturaPadrao = assinaturaGratisPadrao;
-const DIAS_EXPIRACAO_CONVITE = 7;
 const API_URL =
   import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_URL ||
@@ -87,51 +85,6 @@ const escolherUsuarioEmpresaAtual = (usuariosEmpresa = [], usuario) => {
     .sort(ordenarUsuariosEmpresaPorAcesso)[0] || null;
 };
 
-const gerarTokenConvite = () => {
-  if (globalThis.crypto?.randomUUID) {
-    return globalThis.crypto.randomUUID().replaceAll("-", "");
-  }
-
-  const bytes = new Uint8Array(24);
-  globalThis.crypto?.getRandomValues(bytes);
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-};
-
-const criarDatasConvite = () => {
-  const criadoEm = new Date();
-  const expiraEm = new Date(criadoEm);
-  expiraEm.setDate(expiraEm.getDate() + DIAS_EXPIRACAO_CONVITE);
-
-  return { criadoEm, expiraEm };
-};
-
-const montarIndiceConvite = ({
-  token,
-  ownerUid,
-  empresaId,
-  usuarioEmpresaId,
-  nome,
-  email,
-  role,
-  perfil,
-  profile,
-  nomeEmpresa,
-  criadoEm,
-  expiraEm,
-}) => ({
-  token,
-  ownerUid,
-  empresaId,
-  usuarioEmpresaId,
-  nome,
-  email,
-  role: normalizarRoleEmpresa(role || perfil || profile),
-  nomeEmpresa: nomeEmpresa || "",
-  status: "pendente",
-  criadoEm,
-  expiraEm,
-});
-
 const montarDadosDonoEmpresa = (usuario, dadosAtuais = {}) => ({
   nome: usuario.displayName || dadosAtuais.nome || usuario.email || "Dono da conta",
   email: usuario.email || dadosAtuais.email || "",
@@ -157,6 +110,64 @@ const removerPlanoEspelhoEmpresa = (empresasAtuais, empresaId, ownerUid) => {
   });
 
   return alterou ? proximasEmpresas : empresasAtuais;
+};
+
+const getMensagemErroConviteUsuario = (status, data = {}) => {
+  if (status === 400) return "Dados invalidos para criar o convite.";
+  if (status === 401) return "Sua sessao expirou. Entre novamente para continuar.";
+  if (status === 403) return "Voce nao tem permissao para gerenciar usuarios desta empresa.";
+  if (status === 404) return "Empresa nao encontrada ou vinculo invalido.";
+  if (status >= 500) return "Nao foi possivel processar o convite agora. Tente novamente.";
+
+  if (status === 409) {
+    const mensagensPorCodigo = {
+      limite_usuarios_atingido: "Limite de usuarios atingido para este plano.",
+      usuario_ativo: "Este usuario ja esta ativo nesta empresa.",
+      usuario_inativo: "Este usuario esta inativo. Use o fluxo de reativacao futuramente.",
+      duplicidade_ambigua: "Ha duplicidade de usuarios para este e-mail. Regularize antes de convidar.",
+      convite_owner: "O dono da empresa nao pode ser convidado.",
+      status_inconsistente: "O status deste usuario esta inconsistente. Regularize antes de convidar.",
+      token_indisponivel: "Nao foi possivel gerar o convite. Tente novamente.",
+    };
+
+    return mensagensPorCodigo[data.codigo] || "Nao foi possivel criar o convite por conflito de dados.";
+  }
+
+  return "Nao foi possivel criar o convite. Tente novamente.";
+};
+
+const montarUrlConvitesUsuariosEmpresa = (ownerUid, empresaId) =>
+  `${API_URL}/api/empresas/${encodeURIComponent(ownerUid)}/${encodeURIComponent(empresaId)}/usuarios/convites`;
+
+const getResumoVagasConviteUsuario = (data = {}) => {
+  if (data.vagasOcupadas == null || data.limiteUsuarios == null) {
+    return "";
+  }
+
+  const vagasOcupadas = Number(data.vagasOcupadas);
+  const limiteUsuarios = Number(data.limiteUsuarios);
+
+  if (!Number.isFinite(vagasOcupadas) || !Number.isFinite(limiteUsuarios)) {
+    return "";
+  }
+
+  return ` Vagas usadas: ${vagasOcupadas}/${limiteUsuarios}.`;
+};
+
+const getMensagemSucessoConviteUsuario = (data = {}) => {
+  const resumoVagas = getResumoVagasConviteUsuario(data);
+
+  if (data.conviteEnviado === false) {
+    return `Usuario cadastrado e vaga reservada. O email nao foi enviado automaticamente; copie o link ou tente enviar novamente.${resumoVagas}`;
+  }
+
+  const mensagensPorOperacao = {
+    criado: "Convite criado e enviado por email com sucesso.",
+    reenviado: "Convite reenviado por email com sucesso.",
+    reconvidado: "Usuario reconvidado e email enviado com sucesso.",
+  };
+
+  return `${mensagensPorOperacao[data.operacao] || "Convite processado com sucesso."}${resumoVagas}`;
 };
 
 const mesclarEmpresaComDocumentoReal = ({
@@ -935,9 +946,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
   }, [showToast, user]);
 
   const criarUsuarioEmpresa = useCallback(async ({ nome, email, role, perfil }) => {
-    const usuariosEmpresaRef = getUsuariosEmpresaRef();
-
-    if (!user || !empresaId || !usuariosEmpresaRef) {
+    if (!user || !empresaId) {
       showToast("Empresa ainda não carregou. Aguarde e tente novamente.", "warning");
       return false;
     }
@@ -951,117 +960,72 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
       return false;
     }
 
-    const assinaturaAtual = {
-      ...assinaturaPadrao,
-      ...(assinaturaUsuario || {}),
-    };
-    const limiteUsuarios = getLimiteUsuariosEfetivo(
-      assinaturaAtual.plano,
-      assinaturaAtual.limiteUsuariosManual
-    );
-    const adminMaster = perfilUsuario?.role === "admin_master";
-    const totalUsuarios = Math.max(
-      usuariosEmpresa.filter(
-        (usuarioEmpresa) =>
-          normalizarStatusUsuarioEmpresa(usuarioEmpresa.status) !== "removido"
-      ).length,
-      1
-    );
-
-    if (!adminMaster && limiteUsuarios !== null && totalUsuarios >= limiteUsuarios) {
-      showToast("Limite de usuários atingido para este plano. Entre em contato para liberar usuários adicionais.", "warning");
-      return false;
-    }
-
-    const emailDuplicado = usuariosEmpresa.some(
+    const usuarioMesmoEmail = usuariosEmpresa.find(
       (usuarioEmpresa) =>
-        normalizarStatusUsuarioEmpresa(usuarioEmpresa.status) !== "removido" &&
         String(usuarioEmpresa.email || "").trim().toLowerCase() === emailTratado
     );
+    const statusMesmoEmail = normalizarStatusUsuarioEmpresa(usuarioMesmoEmail?.status);
 
-    if (emailDuplicado) {
+    if (["ativo", "pendente"].includes(statusMesmoEmail)) {
       showToast("Já existe um usuário com este e-mail nesta empresa.", "warning");
       return false;
     }
 
-    const ownerUid = empresaOwnerUid || user.uid;
-    const empresaAtual = empresas.find((empresa) => empresa.id === empresaId);
-    const usuarioRemovidoMesmoEmail = usuariosEmpresa
-      .filter(
-        (usuarioEmpresa) =>
-          !usuarioEmpresa.dono &&
-          normalizarStatusUsuarioEmpresa(usuarioEmpresa.status) === "removido" &&
-          String(usuarioEmpresa.email || "").trim().toLowerCase() === emailTratado
-      )
-      .sort(ordenarUsuariosEmpresaPorAcesso)[0];
-    const usuarioEmpresaRef = usuarioRemovidoMesmoEmail
-      ? doc(usuariosEmpresaRef, usuarioRemovidoMesmoEmail.id)
-      : doc(usuariosEmpresaRef);
-    const conviteToken = gerarTokenConvite();
-    const { criadoEm, expiraEm } = criarDatasConvite();
-    const conviteRef = doc(db, "convitesEmpresa", conviteToken);
-    const dadosUsuarioEmpresa = {
-      nome: nomeTratado,
-      email: emailTratado,
-      role: roleTratado,
-      status: "pendente",
-      uidAuth: null,
-      criadoEm,
-      atualizadoEm: criadoEm,
-      criadoPor: user.uid,
-      convitePendente: true,
-      conviteToken,
-      conviteCriadoEm: criadoEm,
-      conviteExpiraEm: expiraEm,
-      conviteAceitoEm: null,
-      dono: false,
-      reconviteEm: usuarioRemovidoMesmoEmail ? criadoEm : null,
-      reconvitePor: usuarioRemovidoMesmoEmail ? user.uid : null,
-    };
+    const ownerUid =
+      empresaOwnerUid || empresas.find((empresa) => empresa.id === empresaId)?.ownerUid;
 
-    const batch = writeBatch(db);
+    if (!ownerUid) {
+      showToast("Empresa ainda não carregou. Aguarde e tente novamente.", "warning");
+      return false;
+    }
 
-    batch.set(usuarioEmpresaRef, dadosUsuarioEmpresa, {
-      merge: Boolean(usuarioRemovidoMesmoEmail),
-    });
-    batch.set(
-      conviteRef,
-      montarIndiceConvite({
-        token: conviteToken,
-        ownerUid,
-        empresaId,
-        usuarioEmpresaId: usuarioEmpresaRef.id,
-        nome: nomeTratado,
-        email: emailTratado,
-        role: roleTratado,
-        nomeEmpresa: empresaAtual?.nome || "",
-        criadoEm,
-        expiraEm,
-      })
-    );
+    try {
+      const usuarioAuth = auth.currentUser;
 
-    await batch.commit();
+      if (!usuarioAuth) {
+        throw new Error("Usuario autenticado nao encontrado.");
+      }
 
-    const emailEnviado = await enviarConviteEmailPorToken(conviteToken, {
-      silencioso: true,
-      silenciosoErro: true,
-    });
+      const idToken = await usuarioAuth.getIdToken();
+      const response = await fetch(
+        montarUrlConvitesUsuariosEmpresa(ownerUid, empresaId),
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            nome: nomeTratado,
+            email: emailTratado,
+            role: roleTratado,
+          }),
+        }
+      );
+      const data = await response.json().catch(() => ({}));
 
-    showToast(
-      emailEnviado
-        ? "Convite criado e enviado por email com sucesso."
-        : "Convite criado. O email nao foi enviado automaticamente; copie o link ou tente enviar novamente.",
-      emailEnviado ? "success" : "warning"
-    );
-    return true;
+      if (!response.ok || data.ok === false) {
+        throw new Error(getMensagemErroConviteUsuario(response.status, data));
+      }
+
+      showToast(
+        getMensagemSucessoConviteUsuario(data),
+        data.conviteEnviado === false ? "warning" : "success"
+      );
+      return data;
+    } catch (error) {
+      console.error("Erro ao criar usuario da empresa:", error);
+      const mensagemErro =
+        error instanceof TypeError
+          ? "Nao foi possivel conectar ao servidor. Tente novamente."
+          : error.message || "Erro ao criar usuario da empresa.";
+      showToast(mensagemErro, "error");
+      return false;
+    }
   }, [
-    assinaturaUsuario,
     empresaOwnerUid,
     empresaId,
-    enviarConviteEmailPorToken,
     empresas,
-    getUsuariosEmpresaRef,
-    perfilUsuario,
     showToast,
     user,
     usuariosEmpresa,
@@ -1140,74 +1104,71 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
   }, [empresaId, empresaOwnerUid, showToast, user]);
 
   const renovarConviteUsuarioEmpresa = useCallback(async (id) => {
-    const usuarioEmpresaRef = getUsuarioEmpresaDocRef(id);
     const usuarioEmpresa = usuariosEmpresa.find((item) => item.id === id);
 
-    if (!usuarioEmpresaRef || !usuarioEmpresa || !empresaId || !user) return false;
+    if (!usuarioEmpresa || !empresaId || !user) return false;
 
     if (usuarioEmpresa.dono || usuarioEmpresa.status !== "pendente") {
       showToast("Apenas convites pendentes podem gerar novo link.", "warning");
       return false;
     }
 
-    const ownerUid = empresaOwnerUid || user.uid;
-    const empresaAtual = empresas.find((empresa) => empresa.id === empresaId);
-    const conviteToken = gerarTokenConvite();
-    const { criadoEm, expiraEm } = criarDatasConvite();
-    const batch = writeBatch(db);
-
-    batch.update(usuarioEmpresaRef, {
-      conviteToken,
-      conviteCriadoEm: criadoEm,
-      conviteExpiraEm: expiraEm,
-      conviteAceitoEm: null,
-      convitePendente: true,
-      status: "pendente",
-      atualizadoEm: criadoEm,
-    });
-
-    if (usuarioEmpresa.conviteToken) {
-      batch.set(
-        doc(db, "convitesEmpresa", usuarioEmpresa.conviteToken),
-        {
-          status: "cancelado",
-          canceladoEm: criadoEm,
-          atualizadoEm: criadoEm,
-        },
-        { merge: true }
-      );
-    }
-
-    batch.set(
-      doc(db, "convitesEmpresa", conviteToken),
-      montarIndiceConvite({
-        token: conviteToken,
-        ownerUid,
-        empresaId,
-        usuarioEmpresaId: id,
-        nome: usuarioEmpresa.nome || "",
-        email: usuarioEmpresa.email || "",
-        role: normalizarRoleEmpresa(usuarioEmpresa),
-        nomeEmpresa: empresaAtual?.nome || "",
-        criadoEm,
-        expiraEm,
-      })
-    );
+    const ownerUid =
+      empresaOwnerUid || empresas.find((empresa) => empresa.id === empresaId)?.ownerUid;
 
     try {
-      await batch.commit();
-      showToast("Novo link de convite gerado com sucesso.", "success");
-      return conviteToken;
+      if (!ownerUid) {
+        throw new Error("Empresa ainda nao carregou. Aguarde e tente novamente.");
+      }
+
+      const usuarioAuth = auth.currentUser;
+
+      if (!usuarioAuth) {
+        throw new Error("Usuario autenticado nao encontrado.");
+      }
+
+      const idToken = await usuarioAuth.getIdToken();
+      const response = await fetch(
+        montarUrlConvitesUsuariosEmpresa(ownerUid, empresaId),
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            nome: String(
+              usuarioEmpresa.nome || usuarioEmpresa.email || "Usuario convidado"
+            ).trim(),
+            email: String(usuarioEmpresa.email || "").trim().toLowerCase(),
+            role: normalizarRoleEmpresa(usuarioEmpresa),
+          }),
+        }
+      );
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || data.ok === false) {
+        throw new Error(getMensagemErroConviteUsuario(response.status, data));
+      }
+
+      showToast(
+        getMensagemSucessoConviteUsuario(data),
+        data.conviteEnviado === false ? "warning" : "success"
+      );
+      return data;
     } catch (error) {
       console.error("Erro ao renovar convite:", error);
-      showToast("Erro ao gerar novo link de convite.", "error");
+      const mensagemErro =
+        error instanceof TypeError
+          ? "Nao foi possivel conectar ao servidor. Tente novamente."
+          : error.message || "Erro ao gerar novo link de convite.";
+      showToast(mensagemErro, "error");
       return false;
     }
   }, [
     empresaId,
     empresaOwnerUid,
     empresas,
-    getUsuarioEmpresaDocRef,
     showToast,
     user,
     usuariosEmpresa,

@@ -31,6 +31,37 @@ const formatarDataSistema = (valor) => {
 const normalizarStatus = (status = "pendente") =>
   String(status || "pendente").trim().toLowerCase();
 
+const converterParaData = (valor) => {
+  if (!valor) return null;
+  if (valor?.toDate) return valor.toDate();
+  if (valor instanceof Date) return valor;
+
+  const data = new Date(valor);
+  return Number.isNaN(data.getTime()) ? null : data;
+};
+
+const convitePendenteExpirado = (usuarioEmpresa) => {
+  const expiraEm = converterParaData(usuarioEmpresa?.conviteExpiraEm);
+  return Boolean(expiraEm && expiraEm.getTime() < Date.now());
+};
+
+const usuarioEhDonoDaEmpresa = (usuarioEmpresa, ownerUid) =>
+  Boolean(usuarioEmpresa?.dono || (ownerUid && usuarioEmpresa?.uidAuth === ownerUid));
+
+const usuarioConsomeVaga = (usuarioEmpresa, ownerUid) => {
+  const status = normalizarStatus(usuarioEmpresa?.status);
+
+  if (usuarioEhDonoDaEmpresa(usuarioEmpresa, ownerUid)) return true;
+  if (status === "ativo") return true;
+  if (status !== "pendente" || convitePendenteExpirado(usuarioEmpresa)) return false;
+
+  return Boolean(
+    usuarioEmpresa?.vagaReservada === true ||
+      usuarioEmpresa?.convitePendente === true ||
+      usuarioEmpresa?.conviteToken
+  );
+};
+
 const prioridadeStatus = {
   ativo: 0,
   pendente: 1,
@@ -82,6 +113,7 @@ export default function UsuariosEmpresa() {
   const {
     user,
     isAdminMaster,
+    empresaOwnerUid,
     usuariosEmpresa = [],
     usuariosEmpresaCarregando,
     usuarioEmpresaAtual,
@@ -105,6 +137,7 @@ export default function UsuariosEmpresa() {
   const [usuarioEditando, setUsuarioEditando] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [enviandoEmailId, setEnviandoEmailId] = useState(null);
+  const [renovandoConviteId, setRenovandoConviteId] = useState(null);
 
   const usuariosOrdenados = useMemo(
     () =>
@@ -131,23 +164,25 @@ export default function UsuariosEmpresa() {
     [usuariosEmpresa]
   );
 
-  const totalUsuarios = Math.max(
-    usuariosEmpresa.filter(
-      (usuarioEmpresa) => normalizarStatus(usuarioEmpresa.status) !== "removido"
-    ).length,
-    1
+  const usuariosQueConsomemVaga = usuariosEmpresa.filter((usuarioEmpresa) =>
+    usuarioConsomeVaga(usuarioEmpresa, empresaOwnerUid)
   );
+  const usuariosNaoDonoQueConsomemVaga = usuariosQueConsomemVaga.filter(
+    (usuarioEmpresa) => !usuarioEhDonoDaEmpresa(usuarioEmpresa, empresaOwnerUid)
+  );
+  const totalUsuarios = usuariosNaoDonoQueConsomemVaga.length + 1;
   const usuariosAtivos = usuariosEmpresa.filter(
     (usuarioEmpresa) => normalizarStatus(usuarioEmpresa.status) === "ativo"
   ).length;
   const convitesPendentes = usuariosEmpresa.filter(
-    (usuarioEmpresa) => normalizarStatus(usuarioEmpresa.status) === "pendente"
+    (usuarioEmpresa) =>
+      normalizarStatus(usuarioEmpresa.status) === "pendente" &&
+      !convitePendenteExpirado(usuarioEmpresa)
   ).length;
   const limiteAtingido =
     limiteUsuariosEfetivo !== null &&
     totalUsuarios >= Number(limiteUsuariosEfetivo || 0);
-  const podeCriarUsuario =
-    (isAdminMaster || podeGerenciarUsuariosEmpresa) && !limiteAtingido;
+  const podeCriarUsuario = isAdminMaster || podeGerenciarUsuariosEmpresa;
 
   const limparFormulario = () => {
     setForm(usuarioInicial);
@@ -166,21 +201,13 @@ export default function UsuariosEmpresa() {
       return;
     }
 
-    if (limiteAtingido) {
-      showToast(
-        isAdminMaster
-          ? "Limite atingido. Ajuste o limite manual em Admin Clientes, se necessario."
-          : "Limite de usuarios atingido para este plano. Entre em contato para liberar usuarios adicionais.",
-        "warning"
-      );
-      return;
-    }
-
     limparFormulario();
     setModalNovoAberto(true);
   };
 
   const salvarNovoUsuario = async () => {
+    if (salvando) return;
+
     setSalvando(true);
 
     try {
@@ -227,14 +254,14 @@ export default function UsuariosEmpresa() {
   };
 
   const renovarLinkConvite = async (usuarioEmpresa) => {
-    const token = await renovarConviteUsuarioEmpresa(usuarioEmpresa.id);
+    if (renovandoConviteId) return;
 
-    if (token) {
-      const copiado = await copiarTexto(montarLinkConvite(token));
+    setRenovandoConviteId(usuarioEmpresa.id);
 
-      if (copiado) {
-        showToast("Novo link gerado e copiado.", "success");
-      }
+    try {
+      await renovarConviteUsuarioEmpresa(usuarioEmpresa.id);
+    } finally {
+      setRenovandoConviteId(null);
     }
   };
 
@@ -460,6 +487,7 @@ export default function UsuariosEmpresa() {
                     usuarioEmpresa.uidAuth === usuarioEmpresaAtual?.uidAuth;
                   const ultimoEnvio = usuarioEmpresa.ultimoEnvioConvite || {};
                   const enviandoEmail = enviandoEmailId === usuarioEmpresa.id;
+                  const renovandoConvite = renovandoConviteId === usuarioEmpresa.id;
 
                   return (
                     <tr key={usuarioEmpresa.id}>
@@ -517,12 +545,19 @@ export default function UsuariosEmpresa() {
                             },
                             {
                               label: "Copiar link do convite",
-                              disabled: statusAtual !== "pendente",
+                              disabled:
+                                statusAtual !== "pendente" ||
+                                !usuarioEmpresa.conviteToken,
                               onClick: () => copiarLinkConvite(usuarioEmpresa),
                             },
                             {
-                              label: "Gerar novo link",
-                              disabled: statusAtual !== "pendente" || usuarioEmpresa.dono,
+                              label: renovandoConvite
+                                ? "Gerando novo link..."
+                                : "Gerar novo link",
+                              disabled:
+                                statusAtual !== "pendente" ||
+                                usuarioEmpresa.dono ||
+                                Boolean(renovandoConviteId),
                               onClick: () => renovarLinkConvite(usuarioEmpresa),
                             },
                             {
