@@ -7,6 +7,7 @@ const adminDiagnosticsRoutes = require("./routes/adminDiagnosticsRoutes");
 const conviteRoutes = require("./routes/conviteRoutes");
 const checkoutRoutes = require("./routes/checkoutRoutes");
 const empresaRoutes = require("./routes/empresaRoutes");
+const usuariosEmpresaRoutes = require("./routes/usuariosEmpresaRoutes");
 const webhookRoutes = require("./routes/webhookRoutes");
 const { getMercadoPagoEnvironment } = require("./mercadoPago");
 const { boletoRouter, pixRouter } = require("./routes/instantPaymentRoutes");
@@ -52,6 +53,7 @@ app.use("/api/pix", pixRouter);
 app.use("/api/boleto", boletoRouter);
 app.use("/api/convites", conviteRoutes);
 app.use("/api/empresas", empresaRoutes);
+app.use("/api/empresas", usuariosEmpresaRoutes);
 app.use("/api/webhooks", webhookRoutes);
 app.use("/api/admin", adminDiagnosticsRoutes);
 
