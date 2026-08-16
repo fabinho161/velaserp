@@ -496,27 +496,10 @@ service cloud.firestore {
               isValidCompanyUserRole(request.resource.data.role);
           }
 
-          function isUpdatingCompanyUserStatus() {
-            return isCompanyAdmin(userId, empresaId) &&
-              isTargetCompanyUserManageable() &&
-              resource.data.uidAuth != request.auth.uid &&
-              ["ativo", "inativo"].hasAny([resource.data.status]) &&
-              ["ativo", "inativo"].hasAny([request.resource.data.status]) &&
-              request.resource.data.status != resource.data.status &&
-              request.resource.data.convitePendente == false &&
-              request.resource.data.atualizadoEm is timestamp &&
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-                "status",
-                "convitePendente",
-                "atualizadoEm"
-              ]);
-          }
-
           allow read: if hasCompanyAccess(userId, empresaId);
           allow create: if isCreatingInitialOwnerCompanyUserSafe();
           allow update: if isMaintainingOwnerCompanyUser() ||
-            isUpdatingCompanyUserRole() ||
-            isUpdatingCompanyUserStatus();
+            isUpdatingCompanyUserRole();
           allow delete: if false;
         }
 
