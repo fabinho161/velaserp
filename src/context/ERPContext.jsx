@@ -139,6 +139,17 @@ const getMensagemErroConviteUsuario = (status, data = {}) => {
 const montarUrlConvitesUsuariosEmpresa = (ownerUid, empresaId) =>
   `${API_URL}/api/empresas/${encodeURIComponent(ownerUid)}/${encodeURIComponent(empresaId)}/usuarios/convites`;
 
+const montarUrlStatusUsuarioEmpresa = (ownerUid, empresaId, usuarioEmpresaId) =>
+  `${API_URL}/api/empresas/${encodeURIComponent(ownerUid)}/${encodeURIComponent(empresaId)}/usuarios/${encodeURIComponent(usuarioEmpresaId)}/status`;
+
+const lerJsonSeguro = async (response) => {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+};
+
 const getResumoVagasConviteUsuario = (data = {}) => {
   if (data.vagasOcupadas == null || data.limiteUsuarios == null) {
     return "";
@@ -168,6 +179,56 @@ const getMensagemSucessoConviteUsuario = (data = {}) => {
   };
 
   return `${mensagensPorOperacao[data.operacao] || "Convite processado com sucesso."}${resumoVagas}`;
+};
+
+const getResumoVagasStatusUsuario = (data = {}) => {
+  if (data.vagasOcupadas == null || data.limiteUsuarios == null) {
+    return "";
+  }
+
+  const vagasOcupadas = Number(data.vagasOcupadas);
+  const limiteUsuarios = Number(data.limiteUsuarios);
+
+  if (!Number.isFinite(vagasOcupadas) || !Number.isFinite(limiteUsuarios)) {
+    return "";
+  }
+
+  return ` Vagas usadas: ${vagasOcupadas}/${limiteUsuarios}.`;
+};
+
+const getMensagemErroStatusUsuario = (status, data = {}) => {
+  if (status === 400) return "Requisicao invalida para alterar o status do usuario.";
+  if (status === 401) return "Sua sessao expirou. Entre novamente para continuar.";
+  if (status === 403) return "Voce nao tem permissao para alterar este usuario.";
+  if (status === 404) return "Empresa ou usuario nao encontrado.";
+  if (status >= 500) return "Nao foi possivel alterar o status agora. Tente novamente.";
+
+  if (status === 409) {
+    const mensagensPorCodigo = {
+      limite_usuarios_atingido: "Limite de usuarios atingido para este plano.",
+      estado_incompativel: "O status atual deste usuario nao permite esta alteracao.",
+      usuario_pendente: "Convites pendentes devem ser ativados pelo fluxo de convite/login.",
+      usuario_removido: "Usuarios removidos devem receber um novo convite.",
+      ponteiro_ausente: "O vinculo deste usuario precisa ser regularizado antes da reativacao.",
+      ponteiro_inconsistente: "O vinculo deste usuario esta inconsistente e precisa ser regularizado.",
+      identidade_inconsistente: "Este usuario nao possui identidade autenticada valida para reativacao.",
+    };
+
+    return mensagensPorCodigo[data.codigo] || "Nao foi possivel alterar o status por conflito de dados.";
+  }
+
+  return "Nao foi possivel alterar o status do usuario. Tente novamente.";
+};
+
+const getMensagemSucessoStatusUsuario = (data = {}) => {
+  const resumoVagas = getResumoVagasStatusUsuario(data);
+  const mensagensPorOperacao = {
+    reativado: "Usuario reativado com sucesso.",
+    inativado: "Usuario inativado com sucesso.",
+    sem_alteracao: "Status do usuario ja estava sincronizado.",
+  };
+
+  return `${mensagensPorOperacao[data.operacao] || "Status do usuario atualizado com sucesso."}${resumoVagas}`;
 };
 
 const mesclarEmpresaComDocumentoReal = ({
@@ -923,7 +984,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
         },
         body: JSON.stringify({ token }),
       });
-      const data = await response.json().catch(() => ({}));
+      const data = await lerJsonSeguro(response);
 
       if (!response.ok || data.ok === false) {
         throw new Error(data.error || "Nao foi possivel enviar o convite por email.");
@@ -1002,7 +1063,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
           }),
         }
       );
-      const data = await response.json().catch(() => ({}));
+      const data = await lerJsonSeguro(response);
 
       if (!response.ok || data.ok === false) {
         throw new Error(getMensagemErroConviteUsuario(response.status, data));
@@ -1031,24 +1092,109 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     usuariosEmpresa,
   ]);
 
+  const atualizarStatusUsuarioEmpresa = useCallback(async (id, status) => {
+    if (!user || !empresaId || !id) {
+      showToast("Empresa ainda nao carregou. Aguarde e tente novamente.", "warning");
+      return false;
+    }
+
+    const statusTratado = normalizarStatusUsuarioEmpresa(status);
+
+    if (!["ativo", "inativo"].includes(statusTratado)) {
+      showToast("Status de usuario invalido.", "warning");
+      return false;
+    }
+
+    const empresaAtiva = empresas.find((empresa) => empresa.id === empresaId);
+    const ownerUid = empresaOwnerUid || empresaAtiva?.ownerUid;
+
+    if (!ownerUid || !empresaId || !id) {
+      showToast("Empresa ainda nao carregou. Aguarde e tente novamente.", "warning");
+      return false;
+    }
+
+    try {
+      const usuarioAuth = auth.currentUser;
+
+      if (!usuarioAuth) {
+        throw new Error("Usuario autenticado nao encontrado.");
+      }
+
+      const idToken = await usuarioAuth.getIdToken();
+      const response = await fetch(
+        montarUrlStatusUsuarioEmpresa(ownerUid, empresaId, id),
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            status: statusTratado,
+          }),
+        }
+      );
+      const data = await lerJsonSeguro(response);
+
+      if (!response.ok || data.ok === false) {
+        throw new Error(getMensagemErroStatusUsuario(response.status, data));
+      }
+
+      showToast(getMensagemSucessoStatusUsuario(data), "success");
+      return data;
+    } catch (error) {
+      console.error("Erro ao alterar status do usuario da empresa:", error);
+      const mensagemErro =
+        error instanceof TypeError
+          ? "Nao foi possivel conectar ao servidor. Tente novamente."
+          : error.message || "Erro ao alterar status do usuario da empresa.";
+      showToast(mensagemErro, "error");
+      return false;
+    }
+  }, [
+    empresaId,
+    empresaOwnerUid,
+    empresas,
+    showToast,
+    user,
+  ]);
+
   const atualizarUsuarioEmpresa = useCallback(async (id, dados) => {
     const usuarioEmpresaRef = getUsuarioEmpresaDocRef(id);
 
     if (!usuarioEmpresaRef) return false;
 
     try {
-      const dadosAtualizados = { ...dados };
+      const dadosRecebidos =
+        dados && typeof dados === "object" && !Array.isArray(dados)
+          ? dados
+          : {};
 
-      if (dadosAtualizados.role || dadosAtualizados.perfil || dadosAtualizados.profile) {
-        dadosAtualizados.role = normalizarRoleEmpresa(
-          dadosAtualizados.role || dadosAtualizados.perfil || dadosAtualizados.profile
-        );
-        delete dadosAtualizados.perfil;
-        delete dadosAtualizados.profile;
+      if (Object.prototype.hasOwnProperty.call(dadosRecebidos, "status")) {
+        showToast("Use o fluxo seguro para alterar status de usuarios.", "warning");
+        return false;
+      }
+
+      const camposPermitidos = ["role", "perfil", "profile"];
+      const camposInvalidos = Object.keys(dadosRecebidos).filter(
+        (campo) => !camposPermitidos.includes(campo)
+      );
+
+      if (camposInvalidos.length > 0) {
+        showToast("Atualizacao de usuario da empresa invalida.", "warning");
+        return false;
+      }
+
+      const roleInformada =
+        dadosRecebidos.role ?? dadosRecebidos.perfil ?? dadosRecebidos.profile;
+
+      if (!roleInformada) {
+        showToast("Perfil de usuario invalido.", "warning");
+        return false;
       }
 
       await updateDoc(usuarioEmpresaRef, {
-        ...dadosAtualizados,
+        role: normalizarRoleEmpresa(roleInformada),
         atualizadoEm: new Date(),
       });
       return true;
@@ -1060,11 +1206,8 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
   }, [getUsuarioEmpresaDocRef, showToast]);
 
   const desativarUsuarioEmpresa = useCallback(async (id) => {
-    return atualizarUsuarioEmpresa(id, {
-      status: "inativo",
-      convitePendente: false,
-    });
-  }, [atualizarUsuarioEmpresa]);
+    return atualizarStatusUsuarioEmpresa(id, "inativo");
+  }, [atualizarStatusUsuarioEmpresa]);
 
   const removerUsuarioEmpresa = useCallback(async (id) => {
     if (!user || !empresaId || !id) return false;
@@ -1338,6 +1481,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
         temPermissaoEmpresaAtual,
         criarUsuarioEmpresa,
         atualizarUsuarioEmpresa,
+        atualizarStatusUsuarioEmpresa,
         desativarUsuarioEmpresa,
         removerUsuarioEmpresa,
         renovarConviteUsuarioEmpresa,

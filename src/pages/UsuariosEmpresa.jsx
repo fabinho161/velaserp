@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { UserPlus, Users, ShieldCheck, Clock3 } from "lucide-react";
 import ActionMenu from "../components/ActionMenu";
@@ -120,6 +120,7 @@ export default function UsuariosEmpresa() {
     podeGerenciarUsuariosEmpresa,
     criarUsuarioEmpresa,
     atualizarUsuarioEmpresa,
+    atualizarStatusUsuarioEmpresa,
     desativarUsuarioEmpresa,
     removerUsuarioEmpresa,
     renovarConviteUsuarioEmpresa,
@@ -138,6 +139,8 @@ export default function UsuariosEmpresa() {
   const [salvando, setSalvando] = useState(false);
   const [enviandoEmailId, setEnviandoEmailId] = useState(null);
   const [renovandoConviteId, setRenovandoConviteId] = useState(null);
+  const [alterandoStatusIds, setAlterandoStatusIds] = useState(() => new Set());
+  const alterandoStatusRef = useRef(new Set());
 
   const usuariosOrdenados = useMemo(
     () =>
@@ -309,6 +312,8 @@ export default function UsuariosEmpresa() {
   };
 
   const alternarStatusUsuario = async (usuarioEmpresa) => {
+    if (alterandoStatusRef.current.has(usuarioEmpresa.id)) return;
+
     if (usuarioEmpresa.dono) {
       showToast("O dono da empresa nao pode ser desativado.", "warning");
       return;
@@ -338,15 +343,28 @@ export default function UsuariosEmpresa() {
 
     if (!confirmado) return;
 
-    if (proximoStatus === "inativo") {
-      await desativarUsuarioEmpresa(usuarioEmpresa.id);
-      return;
-    }
-
-    await atualizarUsuarioEmpresa(usuarioEmpresa.id, {
-      status: "ativo",
-      convitePendente: false,
+    alterandoStatusRef.current.add(usuarioEmpresa.id);
+    setAlterandoStatusIds((idsAtuais) => {
+      const proximosIds = new Set(idsAtuais);
+      proximosIds.add(usuarioEmpresa.id);
+      return proximosIds;
     });
+
+    try {
+      if (proximoStatus === "inativo") {
+        await desativarUsuarioEmpresa(usuarioEmpresa.id);
+        return;
+      }
+
+      await atualizarStatusUsuarioEmpresa(usuarioEmpresa.id, "ativo");
+    } finally {
+      alterandoStatusRef.current.delete(usuarioEmpresa.id);
+      setAlterandoStatusIds((idsAtuais) => {
+        const proximosIds = new Set(idsAtuais);
+        proximosIds.delete(usuarioEmpresa.id);
+        return proximosIds;
+      });
+    }
   };
 
   const removerUsuarioDaEmpresa = async (usuarioEmpresa) => {
@@ -488,6 +506,7 @@ export default function UsuariosEmpresa() {
                   const ultimoEnvio = usuarioEmpresa.ultimoEnvioConvite || {};
                   const enviandoEmail = enviandoEmailId === usuarioEmpresa.id;
                   const renovandoConvite = renovandoConviteId === usuarioEmpresa.id;
+                  const alterandoStatus = alterandoStatusIds.has(usuarioEmpresa.id);
 
                   return (
                     <tr key={usuarioEmpresa.id}>
@@ -566,14 +585,17 @@ export default function UsuariosEmpresa() {
                             },
                             {
                               label:
-                                statusAtual === "ativo"
+                                alterandoStatus
+                                  ? "Atualizando status..."
+                                  : statusAtual === "ativo"
                                   ? "Desativar usuario"
                                   : "Ativar usuario",
                               disabled:
                                 usuarioEmpresa.dono ||
                                 statusAtual === "pendente" ||
                                 statusAtual === "removido" ||
-                                usuarioAtual,
+                                usuarioAtual ||
+                                alterandoStatus,
                               onClick: () => alternarStatusUsuario(usuarioEmpresa),
                             },
                             {
