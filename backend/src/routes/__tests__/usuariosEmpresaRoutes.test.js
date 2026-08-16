@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  criarHandlerAtualizarStatusUsuarioEmpresa,
   criarHandlerCriarConviteUsuarioEmpresa,
 } = require("../usuariosEmpresaRoutes");
 
@@ -183,6 +184,12 @@ const pathEmpresa = (ownerUid = "owner-1", empresaId = "empresa-1") =>
 
 const pathUsuarioEmpresa = (id, ownerUid = "owner-1", empresaId = "empresa-1") =>
   `${pathEmpresa(ownerUid, empresaId)}/usuariosEmpresa/${id}`;
+
+const pathEmpresaUsuario = (uidAuth, empresaId = "empresa-1") =>
+  `users/${uidAuth}/empresas/${empresaId}`;
+
+const pathUsuarioPorAuth = (uidAuth, empresaId = "empresa-1") =>
+  `usuariosPorAuth/${uidAuth}/empresas/${empresaId}`;
 
 const criarAmbiente = ({
   plano = "basico",
@@ -680,4 +687,528 @@ test("owner duplicado em usuariosEmpresa nao aumenta a contagem", async () => {
 
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.vagasOcupadas, 2);
+});
+
+const criarAmbienteStatus = ({
+  plano = "basico",
+  statusPlano = "active",
+  atorUid = "owner-1",
+  atorRole = "cliente",
+  usuarioAlvo = {},
+  usuariosEmpresa = [],
+  empresa = {},
+  criarPonteiros = true,
+  ponteiroEmpresa = {},
+  ponteiroAuth = {},
+} = {}) => {
+  const db = new FakeDb();
+  const handler = criarHandlerAtualizarStatusUsuarioEmpresa({
+    getDb: () => db,
+    criarDataAtual: () => agora,
+  });
+  const alvo = {
+    id: "membro-1",
+    nome: "Membro Teste",
+    email: "membro@erp.com",
+    uidAuth: "membro-auth",
+    status: "ativo",
+    role: "visualizacao",
+    convitePendente: false,
+    criadoEm: passado,
+    criadoPor: "owner-1",
+    dono: false,
+    ...usuarioAlvo,
+  };
+
+  db.set("users/owner-1", {
+    email: "owner@erp.com",
+    role: "cliente",
+  });
+  db.set("users/ator-1", {
+    email: "ator@erp.com",
+    role: atorRole,
+  });
+  db.set(pathEmpresa(), {
+    nome: "Empresa Teste",
+    ownerUid: "owner-1",
+    planoEspelho: {
+      plano,
+      status: statusPlano,
+    },
+    ...empresa,
+  });
+  db.set(pathUsuarioEmpresa(alvo.id), alvo);
+
+  usuariosEmpresa.forEach((usuario) => {
+    db.set(pathUsuarioEmpresa(usuario.id), usuario);
+  });
+
+  if (criarPonteiros && alvo.uidAuth) {
+    const dadosPonteiro = {
+      nome: "Empresa Teste",
+      ownerUid: "owner-1",
+      empresaId: "empresa-1",
+      usuarioEmpresaId: alvo.id,
+      email: alvo.email,
+      role: alvo.role,
+      status: alvo.status,
+      convitePendente: false,
+      atualizadoEm: passado,
+    };
+
+    db.set(pathEmpresaUsuario(alvo.uidAuth), {
+      ...dadosPonteiro,
+      ...ponteiroEmpresa,
+    });
+    db.set(pathUsuarioPorAuth(alvo.uidAuth), {
+      ...dadosPonteiro,
+      ...ponteiroAuth,
+    });
+  }
+
+  const req = {
+    user: atorUid ? {
+      uid: atorUid,
+      email: atorUid === "owner-1" ? "owner@erp.com" : "ator@erp.com",
+    } : null,
+    params: {
+      ownerUid: "owner-1",
+      empresaId: "empresa-1",
+      usuarioEmpresaId: alvo.id,
+    },
+    body: {
+      status: "inativo",
+    },
+  };
+  const res = {
+    statusCode: 200,
+    body: null,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(body) {
+      this.body = body;
+      return this;
+    },
+  };
+
+  return {
+    alvo,
+    db,
+    handler,
+    req,
+    res,
+  };
+};
+
+const executarStatus = async (ambiente, overrides = {}) => {
+  Object.assign(ambiente.req, overrides.req || {});
+  ambiente.req.params = {
+    ...ambiente.req.params,
+    ...(overrides.params || {}),
+  };
+  ambiente.req.body = Object.prototype.hasOwnProperty.call(overrides, "rawBody")
+    ? overrides.rawBody
+    : {
+        ...ambiente.req.body,
+        ...(overrides.body || {}),
+      };
+
+  await ambiente.handler(ambiente.req, ambiente.res);
+  return ambiente.res;
+};
+
+test("status sem autenticacao retorna 401", async () => {
+  const ambiente = criarAmbienteStatus({ atorUid: "" });
+
+  const res = await executarStatus(ambiente);
+
+  assert.equal(res.statusCode, 401);
+});
+
+test("status ator sem autorizacao retorna 403", async () => {
+  const ambiente = criarAmbienteStatus({ atorUid: "ator-1" });
+
+  const res = await executarStatus(ambiente);
+
+  assert.equal(res.statusCode, 403);
+});
+
+test("status owner autorizado inativa usuario", async () => {
+  const ambiente = criarAmbienteStatus();
+
+  const res = await executarStatus(ambiente);
+  const usuario = ambiente.db.get(pathUsuarioEmpresa("membro-1"));
+  const ponteiro = ambiente.db.get(pathEmpresaUsuario("membro-auth"));
+  const controle = ambiente.db.get(pathEmpresa() + "/controles/usuarios");
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.operacao, "inativado");
+  assert.equal(res.body.vagasOcupadas, 1);
+  assert.equal(usuario.status, "inativo");
+  assert.equal(ponteiro.status, "inativo");
+  assert.equal(controle.quantidadeVagasOcupadas, 1);
+  assert.equal("token" in res.body, false);
+});
+
+test("status admin_master autorizado sem bypass do limite", async () => {
+  const ambiente = criarAmbienteStatus({
+    atorUid: "ator-1",
+    atorRole: "admin_master",
+    plano: "gratis",
+    usuarioAlvo: {
+      status: "inativo",
+    },
+  });
+
+  const res = await executarStatus(ambiente, { body: { status: "ativo" } });
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.codigo, "limite_usuarios_atingido");
+});
+
+test("status administrador_empresa ativo autorizado", async () => {
+  const ambiente = criarAmbienteStatus({
+    atorUid: "ator-1",
+    usuariosEmpresa: [{
+      id: "admin",
+      uidAuth: "ator-1",
+      email: "ator@erp.com",
+      status: "ativo",
+      role: "administrador_empresa",
+    }],
+  });
+
+  const res = await executarStatus(ambiente);
+
+  assert.equal(res.statusCode, 200);
+});
+
+test("status administrador inativo negado", async () => {
+  const ambiente = criarAmbienteStatus({
+    atorUid: "ator-1",
+    usuariosEmpresa: [{
+      id: "admin",
+      uidAuth: "ator-1",
+      email: "ator@erp.com",
+      status: "inativo",
+      role: "administrador_empresa",
+    }],
+  });
+
+  const res = await executarStatus(ambiente);
+
+  assert.equal(res.statusCode, 403);
+});
+
+test("status empresa inexistente retorna 404", async () => {
+  const ambiente = criarAmbienteStatus();
+  ambiente.db.store.delete(pathEmpresa());
+
+  const res = await executarStatus(ambiente);
+
+  assert.equal(res.statusCode, 404);
+});
+
+test("status ownerUid divergente retorna 403", async () => {
+  const ambiente = criarAmbienteStatus({
+    empresa: {
+      ownerUid: "outro-owner",
+    },
+  });
+
+  const res = await executarStatus(ambiente);
+
+  assert.equal(res.statusCode, 403);
+});
+
+test("status usuario inexistente retorna 404", async () => {
+  const ambiente = criarAmbienteStatus();
+  ambiente.db.store.delete(pathUsuarioEmpresa("membro-1"));
+
+  const res = await executarStatus(ambiente);
+
+  assert.equal(res.statusCode, 404);
+});
+
+test("status tentativa sobre owner e negada", async () => {
+  const ambiente = criarAmbienteStatus({
+    usuarioAlvo: {
+      id: "owner-1",
+      uidAuth: "owner-1",
+      email: "owner@erp.com",
+      dono: true,
+      role: "administrador_empresa",
+    },
+  });
+
+  const res = await executarStatus(ambiente);
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body.codigo, "usuario_owner");
+});
+
+test("status target com uidAuth ou role protegida e negado", async () => {
+  const porUidAuth = criarAmbienteStatus({
+    usuarioAlvo: {
+      uidAuth: "owner-1",
+      email: "outro@erp.com",
+      dono: false,
+      role: "visualizacao",
+    },
+  });
+  const porRole = criarAmbienteStatus({
+    usuarioAlvo: {
+      uidAuth: "admin-master-alvo",
+      email: "admin-master-alvo@erp.com",
+      dono: false,
+      role: "admin_master",
+    },
+  });
+
+  assert.equal((await executarStatus(porUidAuth)).statusCode, 403);
+  assert.equal((await executarStatus(porRole)).statusCode, 403);
+});
+
+test("status body com campo adicional e status desconhecido retornam 400", async () => {
+  const campoExtra = criarAmbienteStatus();
+  const statusInvalido = criarAmbienteStatus();
+
+  assert.equal((await executarStatus(campoExtra, { body: { plano: "premium" } })).statusCode, 400);
+  assert.equal((await executarStatus(statusInvalido, { body: { status: "pendente" } })).statusCode, 400);
+});
+
+test("status body ignora propriedade herdada e rejeita parametros longos", async () => {
+  const herdado = criarAmbienteStatus();
+  const body = Object.create({
+    status: "inativo",
+  });
+  const parametroLongo = criarAmbienteStatus();
+
+  assert.equal((await executarStatus(herdado, { rawBody: body })).statusCode, 400);
+  assert.equal(
+    (await executarStatus(parametroLongo, {
+      params: {
+        usuarioEmpresaId: "u".repeat(129),
+      },
+    })).statusCode,
+    400
+  );
+});
+
+test("status inativo para ativo com vaga reativa e atualiza ponteiros", async () => {
+  const ambiente = criarAmbienteStatus({
+    usuarioAlvo: {
+      status: "inativo",
+    },
+  });
+
+  const res = await executarStatus(ambiente, { body: { status: "ativo" } });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.operacao, "reativado");
+  assert.equal(res.body.vagasOcupadas, 2);
+  assert.equal(ambiente.db.get(pathUsuarioEmpresa("membro-1")).status, "ativo");
+  assert.equal(ambiente.db.get(pathUsuarioPorAuth("membro-auth")).status, "ativo");
+});
+
+test("status inativo para ativo sem vaga retorna 409", async () => {
+  const ambiente = criarAmbienteStatus({
+    plano: "gratis",
+    usuarioAlvo: {
+      status: "inativo",
+    },
+  });
+
+  const res = await executarStatus(ambiente, { body: { status: "ativo" } });
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.codigo, "limite_usuarios_atingido");
+});
+
+test("status pendente e removido nao podem ser ativados", async () => {
+  for (const status of ["pendente", "removido"]) {
+    const ambiente = criarAmbienteStatus({
+      usuarioAlvo: {
+        status,
+      },
+    });
+
+    const res = await executarStatus(ambiente, { body: { status: "ativo" } });
+
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.body.codigo, "estado_incompativel");
+  }
+});
+
+test("status operacoes idempotentes nao duplicam contador", async () => {
+  const ativo = criarAmbienteStatus();
+  const inativo = criarAmbienteStatus({
+    usuarioAlvo: {
+      status: "inativo",
+    },
+  });
+
+  const resAtivo = await executarStatus(ativo, { body: { status: "ativo" } });
+  const resInativo = await executarStatus(inativo, { body: { status: "inativo" } });
+
+  assert.equal(resAtivo.statusCode, 200);
+  assert.equal(resAtivo.body.operacao, "sem_alteracao");
+  assert.equal(resAtivo.body.vagasOcupadas, 2);
+  assert.equal(resInativo.statusCode, 200);
+  assert.equal(resInativo.body.operacao, "sem_alteracao");
+  assert.equal(resInativo.body.vagasOcupadas, 1);
+});
+
+test("status inativacao acima do limite e permitida", async () => {
+  const ambiente = criarAmbienteStatus({
+    plano: "gratis",
+    usuariosEmpresa: [{
+      id: "extra",
+      uidAuth: "extra",
+      email: "extra@erp.com",
+      status: "ativo",
+      role: "visualizacao",
+    }],
+  });
+
+  const res = await executarStatus(ambiente, { body: { status: "inativo" } });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.operacao, "inativado");
+});
+
+test("status sentinela e lida e escrita com leituras antes dos writes", async () => {
+  const ambiente = criarAmbienteStatus();
+  ambiente.db.set(pathEmpresa() + "/controles/usuarios", {
+    quantidadeVagasOcupadas: 2,
+    limiteAplicado: 3,
+  });
+
+  const res = await executarStatus(ambiente);
+  const tx = ambiente.db.transactions.at(-1);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(tx.reads[0], pathEmpresa() + "/controles/usuarios");
+  assert.equal(tx.writes.some((write) => write.path === pathEmpresa() + "/controles/usuarios"), true);
+});
+
+test("status delta nao vem do body e campos de identidade nao mudam", async () => {
+  const ambiente = criarAmbienteStatus();
+  const antes = ambiente.db.get(pathUsuarioEmpresa("membro-1"));
+
+  const res = await executarStatus(ambiente, {
+    body: {
+      status: "inativo",
+      deltaVagas: 99,
+    },
+  });
+
+  assert.equal(res.statusCode, 400);
+
+  const ambienteValido = criarAmbienteStatus();
+  await executarStatus(ambienteValido);
+  const depois = ambienteValido.db.get(pathUsuarioEmpresa("membro-1"));
+
+  assert.equal(depois.uidAuth, antes.uidAuth);
+  assert.equal(depois.email, antes.email);
+  assert.equal(depois.role, antes.role);
+  assert.equal(depois.criadoEm, antes.criadoEm);
+  assert.equal(depois.criadoPor, antes.criadoPor);
+});
+
+test("status ponteiros sao atualizados de forma coerente", async () => {
+  const ambiente = criarAmbienteStatus();
+
+  await executarStatus(ambiente);
+
+  assert.equal(ambiente.db.get(pathEmpresaUsuario("membro-auth")).status, "inativo");
+  assert.equal(ambiente.db.get(pathUsuarioPorAuth("membro-auth")).status, "inativo");
+});
+
+test("status ponteiro inconsistente falha com seguranca", async () => {
+  const ambiente = criarAmbienteStatus({
+    ponteiroEmpresa: {
+      ownerUid: "outro-owner",
+    },
+  });
+
+  const res = await executarStatus(ambiente);
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.codigo, "ponteiro_inconsistente");
+});
+
+test("status reativacao com ponteiro ausente falha com seguranca", async () => {
+  const ambiente = criarAmbienteStatus({
+    criarPonteiros: false,
+    usuarioAlvo: {
+      status: "inativo",
+    },
+  });
+
+  const res = await executarStatus(ambiente, { body: { status: "ativo" } });
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.codigo, "ponteiro_ausente");
+});
+
+test("status reativacao com somente um ponteiro existente falha com seguranca", async () => {
+  const ambiente = criarAmbienteStatus({
+    usuarioAlvo: {
+      status: "inativo",
+    },
+  });
+  ambiente.db.store.delete(pathUsuarioPorAuth("membro-auth"));
+
+  const res = await executarStatus(ambiente, { body: { status: "ativo" } });
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.codigo, "ponteiro_ausente");
+  assert.equal(ambiente.db.get(pathUsuarioEmpresa("membro-1")).status, "inativo");
+});
+
+test("status inativacao com somente um ponteiro existente nao cria ponteiro ausente", async () => {
+  const ambiente = criarAmbienteStatus();
+  ambiente.db.store.delete(pathUsuarioPorAuth("membro-auth"));
+
+  const res = await executarStatus(ambiente);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(ambiente.db.get(pathEmpresaUsuario("membro-auth")).status, "inativo");
+  assert.equal(ambiente.db.get(pathUsuarioPorAuth("membro-auth")), undefined);
+});
+
+test("status ativo para ativo exige ponteiros completos e coerentes", async () => {
+  const ausente = criarAmbienteStatus();
+  ausente.db.store.delete(pathEmpresaUsuario("membro-auth"));
+  const inconsistente = criarAmbienteStatus({
+    ponteiroAuth: {
+      empresaId: "outra-empresa",
+    },
+  });
+
+  const resAusente = await executarStatus(ausente, { body: { status: "ativo" } });
+  const resInconsistente = await executarStatus(inconsistente, { body: { status: "ativo" } });
+
+  assert.equal(resAusente.statusCode, 409);
+  assert.equal(resAusente.body.codigo, "ponteiro_ausente");
+  assert.equal(resInconsistente.statusCode, 409);
+  assert.equal(resInconsistente.body.codigo, "ponteiro_inconsistente");
+});
+
+test("status resposta nao expoe dados internos", async () => {
+  const ambiente = criarAmbienteStatus();
+
+  const res = await executarStatus(ambiente);
+
+  assert.deepEqual(Object.keys(res.body).sort(), [
+    "limiteUsuarios",
+    "ok",
+    "operacao",
+    "status",
+    "usuarioEmpresaId",
+    "vagasOcupadas",
+  ]);
 });

@@ -4,6 +4,7 @@ const admin = require("firebase-admin");
 const { getFirestore } = require("firebase-admin/firestore");
 
 const {
+  criarHandlerAtualizarStatusUsuarioEmpresa,
   criarHandlerCriarConviteUsuarioEmpresa,
 } = require("../usuariosEmpresaRoutes");
 
@@ -170,6 +171,19 @@ const criarExecutor = ({ barreiraSentinela = null } = {}) => {
   };
 };
 
+const criarExecutorStatus = ({ barreiraSentinela = null } = {}) => {
+  const { db: dbInstrumentado, metricas } = criarDbInstrumentado({ barreiraSentinela });
+  const handler = criarHandlerAtualizarStatusUsuarioEmpresa({
+    getDb: () => dbInstrumentado,
+    criarDataAtual: () => AGORA,
+  });
+
+  return {
+    handler,
+    metricas,
+  };
+};
+
 const executarConvite = async ({ handler, email, nome = "Usuario Emulator" }) => {
   const req = {
     user: {
@@ -192,7 +206,40 @@ const executarConvite = async ({ handler, email, nome = "Usuario Emulator" }) =>
   return res;
 };
 
+const executarStatus = async ({ handler, usuarioEmpresaId, status }) => {
+  const req = {
+    user: {
+      uid: OWNER_UID,
+      email: "owner@erp.com",
+    },
+    params: {
+      ownerUid: OWNER_UID,
+      empresaId: EMPRESA_ID,
+      usuarioEmpresaId,
+    },
+    body: {
+      status,
+    },
+  };
+  const res = criarRes();
+
+  await handler(req, res);
+  return res;
+};
+
 const semearEmpresaComUmaVaga = async ({ criarSentinela = true } = {}) => {
+  const dadosPonteiroAtivo = {
+    nome: "Empresa Emulator",
+    ownerUid: OWNER_UID,
+    empresaId: EMPRESA_ID,
+    usuarioEmpresaId: "ativo-existente",
+    email: "ativo@erp.com",
+    role: "visualizacao",
+    status: "ativo",
+    convitePendente: false,
+    atualizadoEm: AGORA,
+  };
+
   await inicializarDb().collection("users").doc(OWNER_UID).set({
     email: "owner@erp.com",
     role: "cliente",
@@ -212,6 +259,18 @@ const semearEmpresaComUmaVaga = async ({ criarSentinela = true } = {}) => {
     status: "ativo",
     role: "visualizacao",
   });
+  await inicializarDb()
+    .collection("users")
+    .doc("ativo-existente")
+    .collection("empresas")
+    .doc(EMPRESA_ID)
+    .set(dadosPonteiroAtivo);
+  await inicializarDb()
+    .collection("usuariosPorAuth")
+    .doc("ativo-existente")
+    .collection("empresas")
+    .doc(EMPRESA_ID)
+    .set(dadosPonteiroAtivo);
 
   if (criarSentinela) {
     await controleRef().set({
@@ -247,6 +306,80 @@ const semearPendenteValido = async ({ email = "pendente@erp.com", token = "token
     status: "pendente",
     expiraEm: new Date("2026-08-21T12:00:00.000Z"),
   });
+};
+
+const semearUsuarioInativo = async ({ id, uidAuth, email }) => {
+  const dadosPonteiro = {
+    nome: "Empresa Emulator",
+    ownerUid: OWNER_UID,
+    empresaId: EMPRESA_ID,
+    usuarioEmpresaId: id,
+    email,
+    role: "visualizacao",
+    status: "inativo",
+    convitePendente: false,
+    atualizadoEm: AGORA,
+  };
+
+  await usuariosEmpresaRef().doc(id).set({
+    nome: `Usuario ${id}`,
+    email,
+    uidAuth,
+    status: "inativo",
+    role: "visualizacao",
+    convitePendente: false,
+    dono: false,
+    atualizadoEm: AGORA,
+  });
+  await inicializarDb()
+    .collection("users")
+    .doc(uidAuth)
+    .collection("empresas")
+    .doc(EMPRESA_ID)
+    .set(dadosPonteiro);
+  await inicializarDb()
+    .collection("usuariosPorAuth")
+    .doc(uidAuth)
+    .collection("empresas")
+    .doc(EMPRESA_ID)
+    .set(dadosPonteiro);
+};
+
+const semearUsuarioAtivo = async ({ id, uidAuth, email }) => {
+  const dadosPonteiro = {
+    nome: "Empresa Emulator",
+    ownerUid: OWNER_UID,
+    empresaId: EMPRESA_ID,
+    usuarioEmpresaId: id,
+    email,
+    role: "visualizacao",
+    status: "ativo",
+    convitePendente: false,
+    atualizadoEm: AGORA,
+  };
+
+  await usuariosEmpresaRef().doc(id).set({
+    nome: `Usuario ${id}`,
+    email,
+    uidAuth,
+    status: "ativo",
+    role: "visualizacao",
+    convitePendente: false,
+    dono: false,
+    atualizadoEm: AGORA,
+  });
+  await inicializarDb()
+    .collection("users")
+    .doc(uidAuth)
+    .collection("empresas")
+    .doc(EMPRESA_ID)
+    .set(dadosPonteiro);
+  await inicializarDb()
+    .collection("usuariosPorAuth")
+    .doc(uidAuth)
+    .collection("empresas")
+    .doc(EMPRESA_ID)
+    .set(dadosPonteiro);
 };
 
 const carregarEstado = async () => {
@@ -407,6 +540,133 @@ test("empresa acima do limite permite delta zero e nega nova reserva", async () 
     estado.usuarios.filter((usuario) => usuario.email === "nova-acima@erp.com").length,
     0
   );
+});
+
+test("reativacao e novo convite disputando ultima vaga permitem somente uma operacao", async () => {
+  await limparEmulador();
+  await semearEmpresaComUmaVaga();
+  await semearUsuarioInativo({
+    id: "inativo-reativar",
+    uidAuth: "uid-reativar",
+    email: "reativar@erp.com",
+  });
+
+  const barreiraSentinela = criarBarreiraUmaVez(2);
+  const { envios, handler: conviteHandler } = criarExecutor({ barreiraSentinela });
+  const { handler: statusHandler } = criarExecutorStatus({ barreiraSentinela });
+  const resultados = await Promise.allSettled([
+    executarStatus({
+      handler: statusHandler,
+      usuarioEmpresaId: "inativo-reativar",
+      status: "ativo",
+    }),
+    executarConvite({
+      handler: conviteHandler,
+      email: "disputa-convite@erp.com",
+      nome: "Disputa Convite",
+    }),
+  ]);
+  const status = resultados.map((resultado) => resultado.value.statusCode).sort();
+  const estado = await carregarEstado();
+  const aprovadas = resultados.filter((resultado) => resultado.value.statusCode === 200).length;
+  const negadas = resultados.filter((resultado) => resultado.value.statusCode === 409).length;
+
+  assert.deepEqual(status, [200, 409]);
+  assert.equal(aprovadas, 1);
+  assert.equal(negadas, 1);
+  assert.equal(estado.controle.quantidadeVagasOcupadas, 3);
+  assert.equal(estado.controle.limiteAplicado, 3);
+  assert.ok(envios.length <= 1);
+});
+
+test("duas reativacoes disputando ultima vaga permitem somente uma", async () => {
+  await limparEmulador();
+  await semearEmpresaComUmaVaga();
+  await semearUsuarioInativo({
+    id: "inativo-a",
+    uidAuth: "uid-inativo-a",
+    email: "inativo-a@erp.com",
+  });
+  await semearUsuarioInativo({
+    id: "inativo-b",
+    uidAuth: "uid-inativo-b",
+    email: "inativo-b@erp.com",
+  });
+
+  const barreiraSentinela = criarBarreiraUmaVez(2);
+  const { handler } = criarExecutorStatus({ barreiraSentinela });
+  const resultados = await Promise.allSettled([
+    executarStatus({ handler, usuarioEmpresaId: "inativo-a", status: "ativo" }),
+    executarStatus({ handler, usuarioEmpresaId: "inativo-b", status: "ativo" }),
+  ]);
+  const status = resultados.map((resultado) => resultado.value.statusCode).sort();
+  const estado = await carregarEstado();
+  const reativados = estado.usuarios.filter(
+    (usuario) => ["inativo-a", "inativo-b"].includes(usuario.id) && usuario.status === "ativo"
+  );
+
+  assert.deepEqual(status, [200, 409]);
+  assert.equal(reativados.length, 1);
+  assert.equal(estado.controle.quantidadeVagasOcupadas, 3);
+});
+
+test("reativacao concorrendo com inativacao mantem sentinela coerente", async () => {
+  await limparEmulador();
+  await semearEmpresaComUmaVaga();
+  await semearUsuarioAtivo({
+    id: "ativo-inativar",
+    uidAuth: "uid-ativo-inativar",
+    email: "ativo-inativar@erp.com",
+  });
+  await semearUsuarioInativo({
+    id: "inativo-reativar",
+    uidAuth: "uid-inativo-reativar",
+    email: "inativo-reativar@erp.com",
+  });
+  await controleRef().set({
+    quantidadeVagasOcupadas: 3,
+    limiteAplicado: 3,
+    plano: "basico",
+    statusPlano: "active",
+    fonteLimite: "planoEspelho",
+    versao: 1,
+  });
+
+  const barreiraSentinela = criarBarreiraUmaVez(2);
+  const { handler } = criarExecutorStatus({ barreiraSentinela });
+  const resultados = await Promise.allSettled([
+    executarStatus({ handler, usuarioEmpresaId: "inativo-reativar", status: "ativo" }),
+    executarStatus({ handler, usuarioEmpresaId: "ativo-inativar", status: "inativo" }),
+  ]);
+  const estado = await carregarEstado();
+  const ativosNaoOwner = estado.usuarios.filter(
+    (usuario) => usuario.uidAuth !== OWNER_UID && usuario.status === "ativo"
+  ).length;
+
+  assert.equal(resultados.every((resultado) => resultado.status === "fulfilled"), true);
+  assert.ok(estado.controle.quantidadeVagasOcupadas >= 2);
+  assert.ok(estado.controle.quantidadeVagasOcupadas <= 3);
+  assert.equal(estado.controle.quantidadeVagasOcupadas, ativosNaoOwner + 1);
+});
+
+test("operacao idempotente concorrente nao duplica consumo de vaga", async () => {
+  await limparEmulador();
+  await semearEmpresaComUmaVaga();
+
+  const barreiraSentinela = criarBarreiraUmaVez(2);
+  const { handler } = criarExecutorStatus({ barreiraSentinela });
+  const resultados = await Promise.allSettled([
+    executarStatus({ handler, usuarioEmpresaId: "ativo-existente", status: "ativo" }),
+    executarStatus({ handler, usuarioEmpresaId: "ativo-existente", status: "ativo" }),
+  ]);
+  const estado = await carregarEstado();
+
+  assert.equal(resultados.every((resultado) => resultado.status === "fulfilled"), true);
+  assert.deepEqual(
+    resultados.map((resultado) => resultado.value.statusCode),
+    [200, 200]
+  );
+  assert.equal(estado.controle.quantidadeVagasOcupadas, 2);
 });
 
 test.after(async () => {
