@@ -22,10 +22,6 @@ service cloud.firestore {
       return /databases/$(database)/documents/users/$(ownerUid)/empresas/$(empresaId)/usuariosEmpresa/$(usuarioEmpresaId);
     }
 
-    function invitePath(token) {
-      return /databases/$(database)/documents/convitesEmpresa/$(token);
-    }
-
     function isOwner(uid) {
       return signedIn() && request.auth.uid == uid;
     }
@@ -383,38 +379,6 @@ service cloud.firestore {
       return isOwner(ownerUid) || isAdminMaster() || hasCompanyAdminMembership(ownerUid, empresaId);
     }
 
-    function isValidPendingInvite(token, ownerUid, empresaId) {
-      return signedIn() &&
-        token is string &&
-        exists(invitePath(token)) &&
-        get(invitePath(token)).data.status == "pendente" &&
-        get(invitePath(token)).data.ownerUid == ownerUid &&
-        get(invitePath(token)).data.empresaId == empresaId &&
-        get(invitePath(token)).data.email == request.auth.token.email &&
-        get(invitePath(token)).data.expiraEm is timestamp &&
-        get(invitePath(token)).data.expiraEm > request.time;
-    }
-
-    function isValidPendingInviteForUsuarioEmpresa(token, ownerUid, empresaId, usuarioId) {
-      return isValidPendingInvite(token, ownerUid, empresaId) &&
-        get(invitePath(token)).data.token == token &&
-        get(invitePath(token)).data.usuarioEmpresaId == usuarioId;
-    }
-
-    function isAcceptingUsuarioEmpresa(ownerUid, empresaId, usuarioId) {
-      return signedIn() &&
-        resource.data.status == "pendente" &&
-        resource.data.email == request.auth.token.email &&
-        resource.data.conviteToken is string &&
-        isValidPendingInviteForUsuarioEmpresa(resource.data.conviteToken, ownerUid, empresaId, usuarioId) &&
-        request.resource.data.uidAuth == request.auth.uid &&
-        request.resource.data.status == "ativo" &&
-        request.resource.data.convitePendente == false &&
-        request.resource.data.email == resource.data.email &&
-        request.resource.data.role == resource.data.role &&
-        request.resource.data.dono == resource.data.dono;
-    }
-
     function isCreatingInitialOwnerCompanyUser(ownerUid, usuarioId) {
       return isOwner(ownerUid) &&
         usuarioId == request.auth.uid &&
@@ -423,26 +387,6 @@ service cloud.firestore {
         request.resource.data.status == "ativo" &&
         request.resource.data.convitePendente == false &&
         request.resource.data.dono == true;
-    }
-
-    function isAcceptingConvite() {
-      return signedIn() &&
-        resource.data.status == "pendente" &&
-        resource.data.token is string &&
-        resource.data.email == request.auth.token.email &&
-        resource.data.expiraEm is timestamp &&
-        resource.data.expiraEm > request.time &&
-        request.resource.data.token == resource.data.token &&
-        request.resource.data.ownerUid == resource.data.ownerUid &&
-        request.resource.data.empresaId == resource.data.empresaId &&
-        request.resource.data.usuarioEmpresaId == resource.data.usuarioEmpresaId &&
-        request.resource.data.email == resource.data.email &&
-        request.resource.data.role == resource.data.role &&
-        request.resource.data.expiraEm == resource.data.expiraEm &&
-        request.resource.data.status == "aceito" &&
-        request.resource.data.uidAuth == request.auth.uid &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(["status", "aceitoEm", "uidAuth", "atualizadoEm"]);
     }
 
     function isCreatingOwnUserProfile(userId) {
@@ -533,17 +477,11 @@ service cloud.firestore {
               request.resource.data.role == "administrador_empresa" &&
               request.resource.data.status == "ativo" &&
               request.resource.data.convitePendente == false &&
+              request.resource.data.nome is string &&
+              request.resource.data.atualizadoEm is timestamp &&
               request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                 "nome",
-                "email",
-                "role",
-                "status",
-                "uidAuth",
-                "atualizadoEm",
-                "criadoPor",
-                "convitePendente",
-                "dono",
-                "criadoEm"
+                "atualizadoEm"
               ]);
           }
 
@@ -554,6 +492,7 @@ service cloud.firestore {
                 "role",
                 "atualizadoEm"
               ]) &&
+              request.resource.data.atualizadoEm is timestamp &&
               isValidCompanyUserRole(request.resource.data.role);
           }
 
@@ -563,86 +502,12 @@ service cloud.firestore {
               resource.data.uidAuth != request.auth.uid &&
               ["ativo", "inativo"].hasAny([resource.data.status]) &&
               ["ativo", "inativo"].hasAny([request.resource.data.status]) &&
+              request.resource.data.status != resource.data.status &&
               request.resource.data.convitePendente == false &&
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-                "status",
-                "convitePendente",
-                "atualizadoEm"
-              ]);
-          }
-
-          function isRenewingPendingCompanyInvite() {
-            return isCompanyAdmin(userId, empresaId) &&
-              isTargetCompanyUserManageable() &&
-              resource.data.status == "pendente" &&
-              resource.data.uidAuth == null &&
-              request.resource.data.status == "pendente" &&
-              request.resource.data.convitePendente == true &&
-              request.resource.data.conviteToken is string &&
-              request.resource.data.conviteAceitoEm == null &&
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-                "conviteToken",
-                "conviteCriadoEm",
-                "conviteExpiraEm",
-                "conviteAceitoEm",
-                "convitePendente",
-                "status",
-                "atualizadoEm"
-              ]);
-          }
-
-          function isReinvitingRemovedCompanyUser() {
-            return isCompanyAdmin(userId, empresaId) &&
-              isTargetCompanyUserManageable() &&
-              resource.data.status == "removido" &&
-              resource.data.uidAuth != request.auth.uid &&
-              request.resource.data.status == "pendente" &&
-              request.resource.data.convitePendente == true &&
-              request.resource.data.uidAuth == null &&
-              request.resource.data.dono == false &&
-              request.resource.data.nome is string &&
-              request.resource.data.email == resource.data.email &&
-              request.resource.data.conviteToken is string &&
-              request.resource.data.criadoEm is timestamp &&
               request.resource.data.atualizadoEm is timestamp &&
-              request.resource.data.conviteCriadoEm is timestamp &&
-              request.resource.data.conviteExpiraEm is timestamp &&
-              request.resource.data.conviteExpiraEm > request.time &&
-              request.resource.data.conviteAceitoEm == null &&
-              request.resource.data.reconviteEm is timestamp &&
-              request.resource.data.criadoEm == request.resource.data.conviteCriadoEm &&
-              request.resource.data.atualizadoEm == request.resource.data.conviteCriadoEm &&
-              request.resource.data.reconviteEm == request.resource.data.conviteCriadoEm &&
-              request.resource.data.reconvitePor == request.auth.uid &&
-              request.resource.data.criadoPor == request.auth.uid &&
-              isValidCompanyUserRole(request.resource.data.role) &&
               request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-                "nome",
-                "role",
-                "status",
-                "uidAuth",
-                "criadoEm",
-                "atualizadoEm",
-                "criadoPor",
-                "convitePendente",
-                "conviteToken",
-                "conviteCriadoEm",
-                "conviteExpiraEm",
-                "conviteAceitoEm",
-                "dono",
-                "reconviteEm",
-                "reconvitePor"
-              ]);
-          }
-
-          function isAcceptingUsuarioEmpresaSafe() {
-            return isAcceptingUsuarioEmpresa(userId, empresaId, usuarioId) &&
-              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-                "uidAuth",
                 "status",
                 "convitePendente",
-                "conviteAceitoEm",
-                "vinculadoPorConvite",
                 "atualizadoEm"
               ]);
           }
@@ -651,10 +516,7 @@ service cloud.firestore {
           allow create: if isCreatingInitialOwnerCompanyUserSafe();
           allow update: if isMaintainingOwnerCompanyUser() ||
             isUpdatingCompanyUserRole() ||
-            isUpdatingCompanyUserStatus() ||
-            isRenewingPendingCompanyInvite() ||
-            isReinvitingRemovedCompanyUser() ||
-            isAcceptingUsuarioEmpresaSafe();
+            isUpdatingCompanyUserStatus();
           allow delete: if false;
         }
 
@@ -817,29 +679,6 @@ service cloud.firestore {
           );
       }
 
-      function isCancelingPendingInvite() {
-        return isCompanyAdmin(resource.data.ownerUid, resource.data.empresaId) &&
-          resource.data.status == "pendente" &&
-          request.resource.data.status == "cancelado" &&
-          request.resource.data.token == resource.data.token &&
-          request.resource.data.ownerUid == resource.data.ownerUid &&
-          request.resource.data.empresaId == resource.data.empresaId &&
-          request.resource.data.usuarioEmpresaId == resource.data.usuarioEmpresaId &&
-          request.resource.data.email == resource.data.email &&
-          request.resource.data.role == resource.data.role &&
-          request.resource.data.canceladoEm is timestamp &&
-          (
-            !request.resource.data.keys().hasAny(["canceladoPor"]) ||
-            request.resource.data.canceladoPor == request.auth.uid
-          ) &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            "status",
-            "canceladoEm",
-            "canceladoPor",
-            "atualizadoEm"
-          ]);
-      }
-
       allow list: if false;
       allow get: if isReadablePendingConvite() ||
         (
@@ -850,8 +689,7 @@ service cloud.firestore {
           )
         );
       allow create: if false;
-      allow update: if isCancelingPendingInvite() ||
-        isAcceptingConvite();
+      allow update: if false;
       allow delete: if false;
     }
 
