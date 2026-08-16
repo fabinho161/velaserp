@@ -494,36 +494,6 @@ service cloud.firestore {
             ].hasAny([role]);
           }
 
-          function isCreatingPendingCompanyInvite() {
-            return isCompanyAdmin(userId, empresaId) &&
-              request.resource.data.keys().hasOnly([
-                "nome",
-                "email",
-                "role",
-                "status",
-                "uidAuth",
-                "criadoEm",
-                "atualizadoEm",
-                "criadoPor",
-                "convitePendente",
-                "conviteToken",
-                "conviteCriadoEm",
-                "conviteExpiraEm",
-                "conviteAceitoEm",
-                "dono",
-                "reconviteEm",
-                "reconvitePor"
-              ]) &&
-              request.resource.data.status == "pendente" &&
-              request.resource.data.convitePendente == true &&
-              request.resource.data.uidAuth == null &&
-              request.resource.data.dono == false &&
-              request.resource.data.conviteToken is string &&
-              request.resource.data.email is string &&
-              request.resource.data.criadoPor == request.auth.uid &&
-              isValidCompanyUserRole(request.resource.data.role);
-          }
-
           function isCreatingInitialOwnerCompanyUserSafe() {
             return isCreatingInitialOwnerCompanyUser(userId, usuarioId) &&
               request.resource.data.keys().hasOnly([
@@ -537,7 +507,12 @@ service cloud.firestore {
                 "convitePendente",
                 "dono",
                 "criadoEm"
-              ]);
+              ]) &&
+              request.resource.data.nome is string &&
+              request.resource.data.email is string &&
+              request.resource.data.criadoPor == request.auth.uid &&
+              request.resource.data.criadoEm is timestamp &&
+              request.resource.data.atualizadoEm is timestamp;
           }
 
           function isTargetCompanyUserManageable() {
@@ -673,8 +648,7 @@ service cloud.firestore {
           }
 
           allow read: if hasCompanyAccess(userId, empresaId);
-          allow create: if isCreatingPendingCompanyInvite() ||
-            isCreatingInitialOwnerCompanyUserSafe();
+          allow create: if isCreatingInitialOwnerCompanyUserSafe();
           allow update: if isMaintainingOwnerCompanyUser() ||
             isUpdatingCompanyUserRole() ||
             isUpdatingCompanyUserStatus() ||
@@ -831,17 +805,6 @@ service cloud.firestore {
     }
 
     match /convitesEmpresa/{token} {
-      function isValidConviteRole(role) {
-        return [
-          "administrador_empresa",
-          "financeiro",
-          "producao",
-          "comercial",
-          "estoque",
-          "visualizacao"
-        ].hasAny([role]);
-      }
-
       function isReadablePendingConvite() {
         return resource.data.status == "pendente" &&
           resource.data.token == token &&
@@ -852,71 +815,6 @@ service cloud.firestore {
             resource.data.email == request.auth.token.email ||
             isCompanyAdmin(resource.data.ownerUid, resource.data.empresaId)
           );
-      }
-
-      function isCreatingCompanyInvite() {
-        return signedIn() &&
-          request.resource.data.keys().hasOnly([
-            "token",
-            "ownerUid",
-            "empresaId",
-            "usuarioEmpresaId",
-            "nome",
-            "email",
-            "role",
-            "nomeEmpresa",
-            "status",
-            "criadoEm",
-            "expiraEm"
-          ]) &&
-          request.resource.data.token == token &&
-          request.resource.data.ownerUid is string &&
-          request.resource.data.empresaId is string &&
-          request.resource.data.usuarioEmpresaId is string &&
-          request.resource.data.nome is string &&
-          request.resource.data.email is string &&
-          request.resource.data.nomeEmpresa is string &&
-          request.resource.data.status == "pendente" &&
-          request.resource.data.criadoEm is timestamp &&
-          request.resource.data.expiraEm is timestamp &&
-          request.resource.data.expiraEm > request.time &&
-          isValidConviteRole(request.resource.data.role) &&
-          isCompanyAdmin(request.resource.data.ownerUid, request.resource.data.empresaId) &&
-          getAfter(companyUserPath(
-            request.resource.data.ownerUid,
-            request.resource.data.empresaId,
-            request.resource.data.usuarioEmpresaId
-          )).data.status == "pendente" &&
-          getAfter(companyUserPath(
-            request.resource.data.ownerUid,
-            request.resource.data.empresaId,
-            request.resource.data.usuarioEmpresaId
-          )).data.convitePendente == true &&
-          getAfter(companyUserPath(
-            request.resource.data.ownerUid,
-            request.resource.data.empresaId,
-            request.resource.data.usuarioEmpresaId
-          )).data.conviteToken == token &&
-          getAfter(companyUserPath(
-            request.resource.data.ownerUid,
-            request.resource.data.empresaId,
-            request.resource.data.usuarioEmpresaId
-          )).data.email == request.resource.data.email &&
-          getAfter(companyUserPath(
-            request.resource.data.ownerUid,
-            request.resource.data.empresaId,
-            request.resource.data.usuarioEmpresaId
-          )).data.role == request.resource.data.role &&
-          getAfter(companyUserPath(
-            request.resource.data.ownerUid,
-            request.resource.data.empresaId,
-            request.resource.data.usuarioEmpresaId
-          )).data.dono == false &&
-          getAfter(companyUserPath(
-            request.resource.data.ownerUid,
-            request.resource.data.empresaId,
-            request.resource.data.usuarioEmpresaId
-          )).data.uidAuth == null;
       }
 
       function isCancelingPendingInvite() {
@@ -951,7 +849,7 @@ service cloud.firestore {
             isCompanyAdmin(resource.data.ownerUid, resource.data.empresaId)
           )
         );
-      allow create: if isCreatingCompanyInvite();
+      allow create: if false;
       allow update: if isCancelingPendingInvite() ||
         isAcceptingConvite();
       allow delete: if false;
