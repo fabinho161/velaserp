@@ -7,9 +7,13 @@ const {
   criarHandlerAtualizarStatusUsuarioEmpresa,
   criarHandlerCriarConviteUsuarioEmpresa,
 } = require("../usuariosEmpresaRoutes");
+const conviteRoutes = require("../conviteRoutes");
+
+const {
+  criarHandlerRemoverUsuarioEmpresa,
+} = conviteRoutes;
 
 const PROJECT_ID = "demo-renovar-erp-limite-test";
-const APP_NAME = "usuarios-empresa-emulator-test";
 const OWNER_UID = "owner-emulator";
 const EMPRESA_ID = "empresa-emulator";
 const AGORA = new Date("2026-08-14T12:00:00.000Z");
@@ -32,7 +36,8 @@ const inicializarDb = () => {
   assertEmulatorIsolado();
 
   if (!app) {
-    app = admin.initializeApp({ projectId: PROJECT_ID }, APP_NAME);
+    app = admin.apps.find((firebaseApp) => firebaseApp.name === "[DEFAULT]") ||
+      admin.initializeApp({ projectId: PROJECT_ID });
     db = getFirestore(app);
   }
 
@@ -184,6 +189,28 @@ const criarExecutorStatus = ({ barreiraSentinela = null } = {}) => {
   };
 };
 
+const criarExecutorRemocao = ({ barreiraSentinela = null } = {}) => {
+  const { db: dbInstrumentado, metricas } = criarDbInstrumentado({ barreiraSentinela });
+  const handler = criarHandlerRemoverUsuarioEmpresa({
+    getDb: () => dbInstrumentado,
+    criarDataAtual: () => AGORA,
+  });
+
+  return {
+    handler,
+    metricas,
+  };
+};
+
+const getHandlerAceitarConviteRegistrado = () => {
+  const camada = conviteRoutes.stack.find((layer) => layer.route?.path === "/aceitar");
+  const handler = camada?.route?.stack?.at(-1)?.handle;
+
+  assert.equal(typeof handler, "function", "Handler de aceite deve estar registrado em /aceitar.");
+
+  return handler;
+};
+
 const executarConvite = async ({ handler, email, nome = "Usuario Emulator" }) => {
   const req = {
     user: {
@@ -224,6 +251,40 @@ const executarStatus = async ({ handler, usuarioEmpresaId, status }) => {
   const res = criarRes();
 
   await handler(req, res);
+  return res;
+};
+
+const executarRemocao = async ({ handler, usuarioEmpresaId }) => {
+  const req = {
+    user: {
+      uid: OWNER_UID,
+      email: "owner@erp.com",
+    },
+    body: {
+      ownerUid: OWNER_UID,
+      empresaId: EMPRESA_ID,
+      usuarioEmpresaId,
+    },
+  };
+  const res = criarRes();
+
+  await handler(req, res);
+  return res;
+};
+
+const executarAceite = async ({ token, uid = "aceite-auth", email = "aceite@erp.com" }) => {
+  const req = {
+    user: {
+      uid,
+      email,
+    },
+    body: {
+      token,
+    },
+  };
+  const res = criarRes();
+
+  await getHandlerAceitarConviteRegistrado()(req, res);
   return res;
 };
 
@@ -380,6 +441,31 @@ const semearUsuarioAtivo = async ({ id, uidAuth, email }) => {
     .collection("empresas")
     .doc(EMPRESA_ID)
     .set(dadosPonteiro);
+};
+
+const semearUsuarioPendenteAceite = async () => {
+  await usuariosEmpresaRef().doc("pendente-aceite").set({
+    nome: "Usuario Aceite",
+    email: "aceite@erp.com",
+    status: "pendente",
+    role: "visualizacao",
+    convitePendente: true,
+    conviteToken: "token-aceite",
+    conviteExpiraEm: new Date("2026-08-21T12:00:00.000Z"),
+    vagaReservada: true,
+    dono: false,
+  });
+  await inicializarDb().collection("convitesEmpresa").doc("token-aceite").set({
+    token: "token-aceite",
+    ownerUid: OWNER_UID,
+    empresaId: EMPRESA_ID,
+    usuarioEmpresaId: "pendente-aceite",
+    nome: "Usuario Aceite",
+    email: "aceite@erp.com",
+    role: "visualizacao",
+    status: "pendente",
+    expiraEm: new Date("2026-08-21T12:00:00.000Z"),
+  });
 };
 
 const carregarEstado = async () => {
@@ -666,6 +752,151 @@ test("operacao idempotente concorrente nao duplica consumo de vaga", async () =>
     resultados.map((resultado) => resultado.value.statusCode),
     [200, 200]
   );
+  assert.equal(estado.controle.quantidadeVagasOcupadas, 2);
+});
+
+test("remocao concorrendo com novo convite preserva limite e sentinela", async () => {
+  await limparEmulador();
+  await semearEmpresaComUmaVaga();
+  await semearUsuarioAtivo({
+    id: "ativo-remover",
+    uidAuth: "uid-ativo-remover",
+    email: "ativo-remover@erp.com",
+  });
+  await controleRef().set({
+    quantidadeVagasOcupadas: 3,
+    limiteAplicado: 3,
+    plano: "basico",
+    statusPlano: "active",
+    fonteLimite: "planoEspelho",
+    versao: 1,
+  });
+
+  const barreiraSentinela = criarBarreiraUmaVez(2);
+  const { envios, handler: conviteHandler } = criarExecutor({ barreiraSentinela });
+  const { handler: remocaoHandler } = criarExecutorRemocao({ barreiraSentinela });
+  const resultados = await Promise.allSettled([
+    executarRemocao({ handler: remocaoHandler, usuarioEmpresaId: "ativo-remover" }),
+    executarConvite({ handler: conviteHandler, email: "remocao-convite@erp.com" }),
+  ]);
+  const estado = await carregarEstado();
+
+  assert.equal(resultados.every((resultado) => resultado.status === "fulfilled"), true);
+  assert.ok(resultados.some((resultado) => resultado.value.statusCode === 200));
+  assert.ok([2, 3].includes(estado.controle.quantidadeVagasOcupadas));
+  assert.equal(estado.controle.quantidadeVagasOcupadas <= estado.controle.limiteAplicado, true);
+  assert.ok(envios.length <= 1);
+});
+
+test("remocao concorrendo com reativacao preserva contagem real", async () => {
+  await limparEmulador();
+  await semearEmpresaComUmaVaga();
+  await semearUsuarioAtivo({
+    id: "ativo-remover",
+    uidAuth: "uid-ativo-remover",
+    email: "ativo-remover@erp.com",
+  });
+  await semearUsuarioInativo({
+    id: "inativo-reativar",
+    uidAuth: "uid-inativo-reativar",
+    email: "inativo-reativar@erp.com",
+  });
+  await controleRef().set({
+    quantidadeVagasOcupadas: 3,
+    limiteAplicado: 3,
+    plano: "basico",
+    statusPlano: "active",
+    fonteLimite: "planoEspelho",
+    versao: 1,
+  });
+
+  const barreiraSentinela = criarBarreiraUmaVez(2);
+  const { handler: remocaoHandler } = criarExecutorRemocao({ barreiraSentinela });
+  const { handler: statusHandler } = criarExecutorStatus({ barreiraSentinela });
+  const resultados = await Promise.allSettled([
+    executarRemocao({ handler: remocaoHandler, usuarioEmpresaId: "ativo-remover" }),
+    executarStatus({ handler: statusHandler, usuarioEmpresaId: "inativo-reativar", status: "ativo" }),
+  ]);
+  const estado = await carregarEstado();
+  const ativosNaoOwner = estado.usuarios.filter(
+    (usuario) => usuario.uidAuth !== OWNER_UID && usuario.status === "ativo"
+  ).length;
+
+  assert.equal(resultados.every((resultado) => resultado.status === "fulfilled"), true);
+  assert.equal(estado.controle.quantidadeVagasOcupadas, ativosNaoOwner + 1);
+  assert.equal(estado.controle.quantidadeVagasOcupadas <= estado.controle.limiteAplicado, true);
+});
+
+test("remocao concorrendo com aceite nao deixa acesso ativo residual", async () => {
+  await limparEmulador();
+  await semearEmpresaComUmaVaga();
+  await semearUsuarioPendenteAceite();
+  await controleRef().set({
+    quantidadeVagasOcupadas: 3,
+    limiteAplicado: 3,
+    plano: "basico",
+    statusPlano: "active",
+    fonteLimite: "planoEspelho",
+    versao: 1,
+  });
+
+  const { handler: remocaoHandler } = criarExecutorRemocao();
+  const resultados = await Promise.allSettled([
+    executarRemocao({ handler: remocaoHandler, usuarioEmpresaId: "pendente-aceite" }),
+    executarAceite({ token: "token-aceite" }),
+  ]);
+  const estado = await carregarEstado();
+  const usuario = estado.usuarios.find((item) => item.id === "pendente-aceite");
+  const ponteiroEmpresa = await inicializarDb()
+    .collection("users")
+    .doc("aceite-auth")
+    .collection("empresas")
+    .doc(EMPRESA_ID)
+    .get();
+  const ponteiroAuth = await inicializarDb()
+    .collection("usuariosPorAuth")
+    .doc("aceite-auth")
+    .collection("empresas")
+    .doc(EMPRESA_ID)
+    .get();
+
+  assert.equal(resultados.every((resultado) => resultado.status === "fulfilled"), true);
+  assert.equal(resultados.some((resultado) => resultado.value.statusCode === 200), true);
+  assert.equal(usuario.status, "removido");
+  assert.notEqual(ponteiroEmpresa.data()?.status, "ativo");
+  assert.notEqual(ponteiroAuth.data()?.status, "ativo");
+  assert.equal(estado.controle.quantidadeVagasOcupadas, 2);
+});
+
+test("duas remocoes simultaneas do mesmo usuario sao idempotentes", async () => {
+  await limparEmulador();
+  await semearEmpresaComUmaVaga();
+  await semearUsuarioAtivo({
+    id: "ativo-remover",
+    uidAuth: "uid-ativo-remover",
+    email: "ativo-remover@erp.com",
+  });
+  await controleRef().set({
+    quantidadeVagasOcupadas: 3,
+    limiteAplicado: 3,
+    plano: "basico",
+    statusPlano: "active",
+    fonteLimite: "planoEspelho",
+    versao: 1,
+  });
+
+  const barreiraSentinela = criarBarreiraUmaVez(2);
+  const { handler } = criarExecutorRemocao({ barreiraSentinela });
+  const resultados = await Promise.allSettled([
+    executarRemocao({ handler, usuarioEmpresaId: "ativo-remover" }),
+    executarRemocao({ handler, usuarioEmpresaId: "ativo-remover" }),
+  ]);
+  const estado = await carregarEstado();
+  const usuario = estado.usuarios.find((item) => item.id === "ativo-remover");
+
+  assert.equal(resultados.every((resultado) => resultado.status === "fulfilled"), true);
+  assert.deepEqual(resultados.map((resultado) => resultado.value.statusCode), [200, 200]);
+  assert.equal(usuario.status, "removido");
   assert.equal(estado.controle.quantidadeVagasOcupadas, 2);
 });
 

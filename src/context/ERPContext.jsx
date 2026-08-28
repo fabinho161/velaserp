@@ -12,7 +12,6 @@ import {
   updateDoc,
   deleteDoc,
   onSnapshot,
-  writeBatch,
 } from "firebase/firestore";
 import {
   assinaturaGratisPadrao,
@@ -1334,38 +1333,8 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
   }, [enviarConviteEmailPorToken, showToast, usuariosEmpresa]);
 
   const excluirUsuarioEmpresa = useCallback(async (id) => {
-    const usuarioEmpresaRef = getUsuarioEmpresaDocRef(id);
-    const usuarioEmpresa = usuariosEmpresa.find((item) => item.id === id);
-
-    if (!usuarioEmpresaRef) return false;
-
-    try {
-      if (usuarioEmpresa?.conviteToken) {
-        const atualizadoEm = new Date();
-        const batch = writeBatch(db);
-
-        batch.set(
-          doc(db, "convitesEmpresa", usuarioEmpresa.conviteToken),
-          {
-            status: "cancelado",
-            canceladoEm: atualizadoEm,
-            atualizadoEm,
-          },
-          { merge: true }
-        );
-        batch.delete(usuarioEmpresaRef);
-        await batch.commit();
-      } else {
-        await deleteDoc(usuarioEmpresaRef);
-      }
-
-      return true;
-    } catch (error) {
-      console.error("Erro ao excluir usuÃ¡rio da empresa:", error);
-      showToast("Erro ao excluir usuário da empresa.", "error");
-      return false;
-    }
-  }, [getUsuarioEmpresaDocRef, showToast, usuariosEmpresa]);
+    return removerUsuarioEmpresa(id);
+  }, [removerUsuarioEmpresa]);
 
   const carregarConfiguracao = useCallback(async (chave) => {
     if (!user || !empresaId || !chave) return null;
