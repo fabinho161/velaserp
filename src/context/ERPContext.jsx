@@ -41,6 +41,7 @@ const COLECOES_POR_PERMISSAO = [
   ["perdasDoacoes", PERMISSOES_EMPRESA.estoque],
   ["clientesComerciais", PERMISSOES_EMPRESA.crm],
 ];
+const COLECOES_DADOS_DASHBOARD = new Set(["insumos", "producoes", "vendas", "despesas"]);
 
 const STATUS_USUARIO_EMPRESA_BLOQUEADO = new Set(["inativo", "removido"]);
 const PRIORIDADE_STATUS_USUARIO_EMPRESA = {
@@ -701,6 +702,19 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
 
     const perfilAtual = normalizarRoleEmpresa(usuarioAtual);
     const permissoesPorColecao = new Map(COLECOES_POR_PERMISSAO);
+    const statusUsuarioAtual = normalizarStatusUsuarioEmpresa(usuarioAtual.status);
+    const usuarioAtivo = !STATUS_USUARIO_EMPRESA_BLOQUEADO.has(statusUsuarioAtual);
+    const podeCarregarDashboard = usuarioAtivo &&
+      temPermissaoEmpresa(perfilAtual, PERMISSOES_EMPRESA.dashboard);
+    const podeOuvirColecao = (colecao) => {
+      const permissao = permissoesPorColecao.get(colecao);
+
+      return usuarioAtivo &&
+        (
+          (permissao && temPermissaoEmpresa(perfilAtual, permissao)) ||
+          (podeCarregarDashboard && COLECOES_DADOS_DASHBOARD.has(colecao))
+        );
+    };
     const settersPorColecao = {
       insumos: setInsumos,
       produtos: setProdutos,
@@ -712,30 +726,17 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     };
 
     Object.entries(settersPorColecao).forEach(([colecao, setState]) => {
-      const permissao = permissoesPorColecao.get(colecao);
-
-      if (
-        STATUS_USUARIO_EMPRESA_BLOQUEADO.has(
-          normalizarStatusUsuarioEmpresa(usuarioAtual.status)
-        ) ||
-        (permissao && !temPermissaoEmpresa(perfilAtual, permissao))
-      ) {
+      if (!podeOuvirColecao(colecao)) {
         setState([]);
       }
     });
 
-    if (
-      STATUS_USUARIO_EMPRESA_BLOQUEADO.has(
-        normalizarStatusUsuarioEmpresa(usuarioAtual.status)
-      )
-    ) {
+    if (!usuarioAtivo) {
       return;
     }
 
     const ouvirColecao = (colecao, setState) => {
-      const permissao = permissoesPorColecao.get(colecao);
-
-      if (permissao && !temPermissaoEmpresa(perfilAtual, permissao)) {
+      if (!podeOuvirColecao(colecao)) {
         return () => {};
       }
 

@@ -604,7 +604,14 @@ service cloud.firestore {
         }
 
         match /despesas/{documentId} {
-          allow read: if canReadModule(userId, empresaId, "despesas");
+          allow read: if hasCompanyRole(userId, empresaId, [
+            "administrador_empresa",
+            "financeiro",
+            "producao",
+            "comercial",
+            "estoque",
+            "visualizacao"
+          ]);
           allow create, update: if canWriteModule(userId, empresaId, "despesas");
           allow delete: if false;
         }
