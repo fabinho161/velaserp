@@ -24,12 +24,30 @@ const obterStatusFinanceiroVenda = (statusPagamento) => {
   return statusFinanceiro[status] || "Pendente";
 };
 
+const normalizarDataFinanceira = (valor) => {
+  if (!valor) return "";
+
+  if (typeof valor?.toDate === "function") {
+    return valor.toDate().toISOString().split("T")[0];
+  }
+
+  if (valor instanceof Date) {
+    return valor.toISOString().split("T")[0];
+  }
+
+  return String(valor);
+};
+
+const ordemServicoGeraReceita = (ordem = {}) =>
+  String(ordem.statusPagamento || "pendente").trim().toLowerCase() === "pago" &&
+  String(ordem.status || "").trim().toLowerCase() !== "cancelada";
+
 export default function Financeiro() {
   const navigate = useNavigate();
   // ================================
   // 🔹 CONTEXTO GLOBAL
   // ================================
-  const { vendas, despesas, addItem, updateItem, deleteItem } = useERP();
+  const { vendas, despesas, ordensServico = [], addItem, updateItem, deleteItem } = useERP();
   const { showToast } = useToast();
   const { confirmar } = useConfirmacao();
   const { podeUsarDRE } = usePlano();
@@ -75,7 +93,7 @@ export default function Financeiro() {
   // ================================
   // 🔹 ENTRADAS AUTOMÁTICAS DAS VENDAS
   // ================================
-  const entradas = (vendas || []).map((venda) => ({
+  const entradasVendas = (vendas || []).map((venda) => ({
     tipo: "Entrada",
     descricao: `${venda.numeroPedido || "Pedido"} - ${
       venda.cliente || "Cliente não informado"
@@ -85,6 +103,21 @@ export default function Financeiro() {
     data: venda.dataPagamento || venda.data || "",
     status: obterStatusFinanceiroVenda(venda.statusPagamento),
   }));
+
+  const entradasOrdensServico = (ordensServico || [])
+    .filter(ordemServicoGeraReceita)
+    .map((ordem) => ({
+      tipo: "Entrada",
+      descricao: `${ordem.numero || "OS"} - ${
+        ordem.clienteNome || "Cliente nao informado"
+      }`,
+      categoria: "Ordem de Servico",
+      valor: Number(ordem.totalGeral ?? 0),
+      data: normalizarDataFinanceira(ordem.dataPagamento || ordem.criadoEm || ""),
+      status: "Recebido",
+    }));
+
+  const entradas = [...entradasVendas, ...entradasOrdensServico];
 
   // ================================
   // 🔹 SAÍDAS CADASTRADAS
@@ -426,7 +459,7 @@ const margemLiquida =
           <h2 style={{ ...cardNumberStyle, color: "#16a34a" }}>
             {moedaBR(totalEntradas)}
           </h2>
-          <small>Vendas pagas filtradas</small>
+          <small>Vendas e OS pagas filtradas</small>
         </div>
 
         <div className="card" style={{ borderLeft: "5px solid #f59e0b" }}>

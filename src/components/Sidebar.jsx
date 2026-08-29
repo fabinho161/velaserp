@@ -9,6 +9,9 @@ import {
   Factory,
   Warehouse,
   ShoppingCart,
+  Car,
+  Wrench,
+  ClipboardList,
   Users,
   Wallet,
   Truck,
@@ -27,11 +30,20 @@ import saasLogo from "../assets/saas-logo.png";
 import { useERP } from "../context/useERP";
 import { usePlano } from "../hooks/usePlano";
 import { PERMISSOES_EMPRESA } from "../config/perfisEmpresa";
+import { segmentoPossuiModulo } from "../config/segmentosEmpresa.js";
 
 const NOME_SAAS = "Renovar ERP";
 
 export default function Sidebar() {
-  const { configuracoes, isAdminMaster, temPermissaoEmpresaAtual } = useERP();
+  const {
+    configuracoes,
+    empresaId,
+    empresaOwnerUid,
+    empresas = [],
+    isAdminMaster,
+    temPermissaoEmpresaAtual,
+    user,
+  } = useERP();
   const location = useLocation();
   const {
     podeUsarCRMComercial,
@@ -42,67 +54,82 @@ export default function Sidebar() {
 
   const podeVerMenu = (permissao, permitidoPorPlano = true) =>
     permitidoPorPlano && temPermissaoEmpresaAtual?.(permissao);
+  const empresaAtual = empresas.find((empresa) =>
+    empresa.id === empresaId &&
+    (empresa.ownerUid || user?.uid) === (empresaOwnerUid || user?.uid)
+  ) || null;
+  const itemPertenceAoSegmento = (item) =>
+    !item?.modulo || segmentoPossuiModulo(empresaAtual?.segmento, item.modulo);
+  const itensVisiveis = (items) => items.filter(Boolean).filter(itemPertenceAoSegmento);
   const estaEmAdminSaaS = location.pathname.startsWith("/admin");
 
   const menuSections = [
     {
       title: "Principal",
-      items: podeVerMenu(PERMISSOES_EMPRESA.dashboard)
-        ? [{ path: "/", label: "Dashboard", icon: LayoutDashboard }]
-        : [],
+      items: itensVisiveis(
+        podeVerMenu(PERMISSOES_EMPRESA.dashboard)
+          ? [{ path: "/", label: "Dashboard", icon: LayoutDashboard, modulo: "dashboard" }]
+          : []
+      ),
     },
     {
       title: "Operacao",
-      items: [
+      items: itensVisiveis([
         podeVerMenu(PERMISSOES_EMPRESA.insumos) &&
-          { path: "/insumos", label: "Insumos", icon: Package },
+          { path: "/insumos", label: "Insumos", icon: Package, modulo: "insumos" },
         podeVerMenu(PERMISSOES_EMPRESA.produtos) &&
-          { path: "/produtos", label: "Produtos", icon: Boxes },
+          { path: "/produtos", label: "Produtos", icon: Boxes, modulo: "produtos" },
         podeVerMenu(PERMISSOES_EMPRESA.producao) &&
-          { path: "/producao", label: "Producao", icon: Factory },
+          { path: "/producao", label: "Producao", icon: Factory, modulo: "producao" },
         podeVerMenu(PERMISSOES_EMPRESA.estoque) &&
-          { path: "/estoque", label: "Estoque", icon: Warehouse },
+          { path: "/estoque", label: "Estoque", icon: Warehouse, modulo: "estoque" },
+        podeVerMenu(PERMISSOES_EMPRESA.veiculos) &&
+          { path: "/veiculos", label: "Veiculos", icon: Car, modulo: "veiculos" },
+        podeVerMenu(PERMISSOES_EMPRESA.servicos) &&
+          { path: "/servicos", label: "Servicos", icon: Wrench, modulo: "servicos" },
+        podeVerMenu(PERMISSOES_EMPRESA.ordensServico) &&
+          { path: "/ordens-servico", label: "Ordens de Servico", icon: ClipboardList, modulo: "ordensServico" },
         podeVerMenu(PERMISSOES_EMPRESA.estoque) &&
-          { path: "/perdas-doacoes", label: "Perdas e Doacoes", icon: Warehouse },
-      ].filter(Boolean),
+          { path: "/perdas-doacoes", label: "Perdas e Doacoes", icon: Warehouse, modulo: "perdasDoacoes" },
+      ]),
     },
     {
       title: "Comercial",
-      items: [
+      items: itensVisiveis([
         ...(podeVerMenu(PERMISSOES_EMPRESA.vendas, podeUsarVendas)
-          ? [{ path: "/vendas", label: "Vendas", icon: ShoppingCart }]
+          ? [{ path: "/vendas", label: "Vendas", icon: ShoppingCart, modulo: "vendas" }]
           : []),
         ...(podeVerMenu(PERMISSOES_EMPRESA.crm, podeUsarCRMComercial)
-          ? [{ path: "/clientes", label: "CRM", icon: Users }]
+          ? [{ path: "/clientes", label: "CRM", icon: Users, modulo: "clientes" }]
           : []),
-      ],
+      ]),
     },
     {
       title: "Gestao",
-      items: [
+      items: itensVisiveis([
         ...(podeVerMenu(PERMISSOES_EMPRESA.financeiro)
-          ? [{ path: "/financeiro", label: "Financeiro", icon: Wallet }]
+          ? [{ path: "/financeiro", label: "Financeiro", icon: Wallet, modulo: "financeiro" }]
           : []),
         ...(podeVerMenu(PERMISSOES_EMPRESA.fornecedores)
-          ? [{ path: "/fornecedores", label: "Fornecedores", icon: Truck }]
+          ? [{ path: "/fornecedores", label: "Fornecedores", icon: Truck, modulo: "fornecedores" }]
           : []),
         ...(podeVerMenu(PERMISSOES_EMPRESA.relatorios, podeUsarRelatoriosAvancados)
-          ? [{ path: "/relatorios", label: "Relatorios", icon: FileText }]
+          ? [{ path: "/relatorios", label: "Relatorios", icon: FileText, modulo: "relatorios" }]
           : []),
-      ],
+      ]),
     },
     {
       title: "Conta",
-      items: [
+      items: itensVisiveis([
         podeVerMenu(PERMISSOES_EMPRESA.planos) &&
           { path: "/planos", label: "Planos", icon: CreditCard },
         podeVerMenu(PERMISSOES_EMPRESA.configuracoes) &&
-          { path: "/configuracoes", label: "Configuracoes", icon: Settings },
+          { path: "/configuracoes", label: "Configuracoes", icon: Settings, modulo: "configuracoes" },
         podeVerMenu(PERMISSOES_EMPRESA.parametros) &&
           { path: "/parametros-empresa", label: "Parametros Empresa", icon: Settings },
         podeVerMenu(PERMISSOES_EMPRESA.usuariosEmpresa) &&
           { path: "/usuarios-empresa", label: "Usuarios da Empresa", icon: Users },
-      ].filter(Boolean),
+      ]),
     },
     {
       title: "Ajuda",

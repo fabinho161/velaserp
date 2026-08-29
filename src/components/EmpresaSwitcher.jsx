@@ -2,14 +2,19 @@ import { useState } from "react";
 import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
 import { usePlano } from "../hooks/usePlano";
+import { SEGMENTOS_EMPRESA, SEGMENTO_EMPRESA_PADRAO } from "../config/segmentosEmpresa.js";
 
 export default function EmpresaSwitcher() {
   const { empresas, empresaId, trocarEmpresa, criarNovaEmpresa } = useERP();
   const { showToast } = useToast();
   const { podeCriarEmpresa } = usePlano();
   const [novaEmpresa, setNovaEmpresa] = useState("");
+  const [segmento, setSegmento] = useState(SEGMENTO_EMPRESA_PADRAO);
+  const [criando, setCriando] = useState(false);
 
   const criar = async () => {
+    if (criando) return;
+
     if (!novaEmpresa.trim()) {
       showToast("Digite o nome da empresa.", "warning");
       return;
@@ -20,8 +25,18 @@ export default function EmpresaSwitcher() {
       return;
     }
 
-    await criarNovaEmpresa(novaEmpresa.trim());
-    setNovaEmpresa("");
+    setCriando(true);
+
+    try {
+      const criada = await criarNovaEmpresa(novaEmpresa.trim(), segmento);
+
+      if (criada) {
+        setNovaEmpresa("");
+        setSegmento(SEGMENTO_EMPRESA_PADRAO);
+      }
+    } finally {
+      setCriando(false);
+    }
   };
 
   return (
@@ -43,11 +58,25 @@ export default function EmpresaSwitcher() {
         <input
           placeholder="Nova empresa"
           value={novaEmpresa}
-          disabled={!podeCriarEmpresa}
+          disabled={!podeCriarEmpresa || criando}
           onChange={(e) => setNovaEmpresa(e.target.value)}
         />
 
-        <button onClick={criar} disabled={!podeCriarEmpresa}>+</button>
+        <select
+          value={segmento}
+          disabled={!podeCriarEmpresa || criando}
+          onChange={(e) => setSegmento(e.target.value)}
+        >
+          {Object.values(SEGMENTOS_EMPRESA).map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.nome}
+            </option>
+          ))}
+        </select>
+
+        <button onClick={criar} disabled={!podeCriarEmpresa || criando}>
+          {criando ? "..." : "+"}
+        </button>
       </div>
     </div>
   );

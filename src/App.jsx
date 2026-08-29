@@ -7,6 +7,7 @@ import Sidebar from "./components/Sidebar";
 import AdminRoute from "./components/AdminRoute";
 import PlanoRoute from "./components/PlanoRoute";
 import EmpresaPermissionRoute from "./components/EmpresaPermissionRoute";
+import SegmentoRoute from "./components/SegmentoRoute";
 import { ERPProvider } from "./context/ERPContext";
 import Login from "./pages/Login";
 import { usePlano } from "./hooks/usePlano";
@@ -22,6 +23,9 @@ import Relatorios from "./pages/Relatorios";
 import Produtos from "./pages/Produtos";
 import Insumos from "./pages/Insumos";
 import Fornecedores from "./pages/Fornecedores";
+import Veiculos from "./pages/Veiculos";
+import Servicos from "./pages/Servicos";
+import OrdensServico from "./pages/OrdensServico";
 import ClientesCRM from "./pages/ClientesCRM";
 import Configuracoes from "./pages/Configuracoes";
 import AdminClientes from "./pages/AdminClientes";
@@ -50,110 +54,162 @@ function AuthenticatedApp() {
           <Route
             path="/"
             element={(
-              <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.dashboard}>
-                <Dashboard />
-              </EmpresaPermissionRoute>
+              <SegmentoRoute modulo="dashboard">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.dashboard}>
+                  <Dashboard />
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
             )}
           />
           <Route
             path="/producao"
             element={(
-              <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.producao}>
-                <Producao />
-              </EmpresaPermissionRoute>
+              <SegmentoRoute modulo="producao">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.producao}>
+                  <Producao />
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
             )}
           />
           <Route
             path="/estoque"
             element={(
-              <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.estoque}>
-                <Estoque />
-              </EmpresaPermissionRoute>
+              <SegmentoRoute modulo="estoque">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.estoque}>
+                  <Estoque />
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
             )}
           />
           <Route
             path="/perdas-doacoes"
             element={(
-              <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.estoque}>
-                <PerdasDoacoes />
-              </EmpresaPermissionRoute>
+              <SegmentoRoute modulo="perdasDoacoes">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.estoque}>
+                  <PerdasDoacoes />
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
             )}
           />
           <Route
             path="/vendas"
             element={(
-              <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.vendas}>
-                <PlanoRoute
-                  permitido={podeUsarVendas}
-                  titulo="Vendas indisponiveis no plano atual"
-                  descricao="O modulo de Vendas entra a partir do plano Basico, junto com a operacao comercial e o CRM basico."
-                  planoMinimo="Plano Basico"
-                >
-                  <Vendas />
-                </PlanoRoute>
-              </EmpresaPermissionRoute>
+              <SegmentoRoute modulo="vendas">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.vendas}>
+                  <PlanoRoute
+                    permitido={podeUsarVendas}
+                    titulo="Vendas indisponiveis no plano atual"
+                    descricao="O modulo de Vendas entra a partir do plano Basico, junto com a operacao comercial e o CRM basico."
+                    planoMinimo="Plano Basico"
+                  >
+                    <Vendas />
+                  </PlanoRoute>
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
             )}
           />
           <Route
             path="/clientes"
             element={(
-              <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.crm}>
-                <PlanoRoute
-                  permitido={podeUsarCRMComercial}
-                  titulo="CRM indisponivel no plano atual"
-                  descricao="A carteira de clientes entra a partir do plano Basico, com cadastro de clientes e historico simples."
-                  planoMinimo="Plano Basico"
-                >
-                  <ClientesCRM />
-                </PlanoRoute>
-              </EmpresaPermissionRoute>
+              <SegmentoRoute modulo="clientes">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.crm}>
+                  <PlanoRoute
+                    permitido={podeUsarCRMComercial}
+                    titulo="CRM indisponivel no plano atual"
+                    descricao="A carteira de clientes entra a partir do plano Basico, com cadastro de clientes e historico simples."
+                    planoMinimo="Plano Basico"
+                  >
+                    <ClientesCRM />
+                  </PlanoRoute>
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
             )}
           />
           <Route
             path="/financeiro"
             element={(
-              <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.financeiro}>
-                <Financeiro />
-              </EmpresaPermissionRoute>
+              <SegmentoRoute modulo="financeiro">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.financeiro}>
+                  <Financeiro />
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
             )}
           />
           <Route
             path="/fornecedores"
             element={(
-              <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.fornecedores}>
-                <Fornecedores />
-              </EmpresaPermissionRoute>
+              <SegmentoRoute modulo="fornecedores">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.fornecedores}>
+                  <Fornecedores />
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
+            )}
+          />
+          <Route
+            path="/veiculos"
+            element={(
+              <SegmentoRoute modulo="veiculos">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.veiculos}>
+                  <Veiculos />
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
+            )}
+          />
+          <Route
+            path="/servicos"
+            element={(
+              <SegmentoRoute modulo="servicos">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.servicos}>
+                  <Servicos />
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
+            )}
+          />
+          <Route
+            path="/ordens-servico"
+            element={(
+              <SegmentoRoute modulo="ordensServico">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.ordensServico}>
+                  <OrdensServico />
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
             )}
           />
           <Route
             path="/relatorios"
             element={(
-              <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.relatorios}>
-                <PlanoRoute
-                  permitido={podeUsarRelatoriosAvancados}
-                  titulo="Relatorios avancados indisponiveis"
-                  descricao="A central de relatorios avancados e recursos premium fica disponivel no plano Premium."
-                  planoMinimo="Plano Premium"
-                >
-                  <Relatorios />
-                </PlanoRoute>
-              </EmpresaPermissionRoute>
+              <SegmentoRoute modulo="relatorios">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.relatorios}>
+                  <PlanoRoute
+                    permitido={podeUsarRelatoriosAvancados}
+                    titulo="Relatorios avancados indisponiveis"
+                    descricao="A central de relatorios avancados e recursos premium fica disponivel no plano Premium."
+                    planoMinimo="Plano Premium"
+                  >
+                    <Relatorios />
+                  </PlanoRoute>
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
             )}
           />
           <Route
             path="/produtos"
             element={(
-              <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.produtos}>
-                <Produtos />
-              </EmpresaPermissionRoute>
+              <SegmentoRoute modulo="produtos">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.produtos}>
+                  <Produtos />
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
             )}
           />
           <Route
             path="/insumos"
             element={(
-              <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.insumos}>
-                <Insumos />
-              </EmpresaPermissionRoute>
+              <SegmentoRoute modulo="insumos">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.insumos}>
+                  <Insumos />
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
             )}
           />
           <Route
@@ -170,9 +226,11 @@ function AuthenticatedApp() {
           <Route
             path="/configuracoes"
             element={(
-              <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.configuracoes}>
-                <Configuracoes />
-              </EmpresaPermissionRoute>
+              <SegmentoRoute modulo="configuracoes">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.configuracoes}>
+                  <Configuracoes />
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
             )}
           />
           <Route

@@ -14,6 +14,13 @@ const {
 const router = express.Router();
 
 const LIMITE_NOME_EMPRESA = 120;
+const SEGMENTO_EMPRESA_PADRAO = "industria";
+const SEGMENTOS_EMPRESA_VALIDOS = new Set([
+  "comercio",
+  "industria",
+  "oficina",
+  "clientes",
+]);
 const LIMITES_EMPRESAS_POR_PLANO = {
   gratis: 1,
   basico: 2,
@@ -28,12 +35,27 @@ const criarErroHttp = (statusCode, message, extras = {}) => {
   return error;
 };
 
+const normalizarSegmentoEmpresa = (segmento) => {
+  if (segmento === undefined) return SEGMENTO_EMPRESA_PADRAO;
+  if (typeof segmento !== "string") {
+    throw criarErroHttp(400, "Segmento da empresa invalido.");
+  }
+
+  const segmentoTratado = segmento.trim().toLowerCase();
+
+  if (!SEGMENTOS_EMPRESA_VALIDOS.has(segmentoTratado)) {
+    throw criarErroHttp(400, "Segmento da empresa invalido.");
+  }
+
+  return segmentoTratado;
+};
+
 const validarPayloadCriacaoEmpresa = (body) => {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw criarErroHttp(400, "Requisicao invalida.");
   }
 
-  const camposPermitidos = new Set(["nome"]);
+  const camposPermitidos = new Set(["nome", "segmento"]);
   const camposInvalidos = Object.keys(body).filter(
     (campo) => !camposPermitidos.has(campo)
   );
@@ -61,6 +83,7 @@ const validarPayloadCriacaoEmpresa = (body) => {
 
   return {
     nome,
+    segmento: normalizarSegmentoEmpresa(body.segmento),
   };
 };
 
@@ -82,11 +105,12 @@ const montarPlanoEspelho = (assinaturaNormalizada) => ({
   sincronizadoEm: FieldValue.serverTimestamp(),
 });
 
-const montarEmpresa = ({ nome, ownerUid, assinaturaNormalizada, criadoEm }) => ({
+const montarEmpresa = ({ nome, ownerUid, assinaturaNormalizada, criadoEm, segmento }) => ({
   nome,
   ownerUid,
   criadoEm,
   planoEspelho: montarPlanoEspelho(assinaturaNormalizada),
+  segmento,
 });
 
 const montarUsuarioDonoEmpresa = ({ ownerUid, usuarioData, criadoEm }) => ({
@@ -107,7 +131,7 @@ router.post("/", authFirebase, async (req, res) => {
   const ownerUid = req.user.uid;
 
   try {
-    const { nome } = validarPayloadCriacaoEmpresa(req.body);
+    const { nome, segmento } = validarPayloadCriacaoEmpresa(req.body);
     const ownerRef = db.collection("users").doc(ownerUid);
     const assinaturaRef = ownerRef.collection("assinatura").doc("plano");
     const empresasRef = ownerRef.collection("empresas");
@@ -166,6 +190,7 @@ router.post("/", authFirebase, async (req, res) => {
         ownerUid,
         assinaturaNormalizada,
         criadoEm,
+        segmento,
       });
       const usuarioDono = montarUsuarioDonoEmpresa({
         ownerUid,
@@ -190,6 +215,7 @@ router.post("/", authFirebase, async (req, res) => {
         nome,
         ownerUid,
         criadoEm,
+        segmento,
         plano: assinaturaNormalizada.plano,
         limiteEmpresas,
         quantidadeAtual,
@@ -228,6 +254,7 @@ router.post("/", authFirebase, async (req, res) => {
         nome: resultado.nome,
         ownerUid: resultado.ownerUid,
         criadoEm: resultado.criadoEm.toISOString(),
+        segmento: resultado.segmento,
       },
       plano: resultado.plano,
       limiteEmpresas: resultado.limiteEmpresas,

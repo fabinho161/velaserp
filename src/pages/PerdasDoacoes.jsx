@@ -72,6 +72,7 @@ export default function PerdasDoacoes() {
     producoes = [],
     vendas = [],
     perdasDoacoes = [],
+    ordensServico = [],
     addItem,
     updateItem,
   } = useERP();
@@ -92,8 +93,9 @@ export default function PerdasDoacoes() {
         producoes,
         vendas,
         perdasDoacoes,
+        ordensServico,
       }),
-    [perdasDoacoes, producoes, produtos, vendas]
+    [ordensServico, perdasDoacoes, producoes, produtos, vendas]
   );
   const estoqueInsumos = useMemo(
     () =>

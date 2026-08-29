@@ -42,6 +42,7 @@ export default function Producao() {
   producoes,
   vendas = [],
   perdasDoacoes = [],
+  ordensServico = [],
   addItem,
   deleteItem,
 } = useERP();
@@ -154,6 +155,7 @@ export default function Producao() {
     producoes,
     vendas,
     perdasDoacoes,
+    ordensServico,
   });
   const calcularComponentesProduto = () => {
     if (!produtoSelecionado) return [];

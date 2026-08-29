@@ -35,6 +35,7 @@ export default function Relatorios() {
     producoes,
     vendas,
     perdasDoacoes,
+    ordensServico,
     despesas,
     empresas,
     empresaId,
@@ -296,6 +297,7 @@ export default function Relatorios() {
     producoes,
     vendas,
     perdasDoacoes,
+    ordensServico,
   });
   const insumosEstoqueCalculado = calcularEstoqueInsumos({
     insumos,

@@ -18,6 +18,11 @@ service cloud.firestore {
       return /databases/$(database)/documents/usuariosPorAuth/$(uid)/empresas/$(empresaId);
     }
 
+    function isCompanySegment(ownerUid, empresaId, segmento) {
+      return exists(userCompanyPath(ownerUid, empresaId)) &&
+        get(userCompanyPath(ownerUid, empresaId)).data.segmento == segmento;
+    }
+
     function companyUserPath(ownerUid, empresaId, usuarioEmpresaId) {
       return /databases/$(database)/documents/users/$(ownerUid)/empresas/$(empresaId)/usuariosEmpresa/$(usuarioEmpresaId);
     }
@@ -54,7 +59,7 @@ service cloud.firestore {
 
     function hasNoProtectedCompanyRootChanges() {
       return !request.resource.data.diff(resource.data).affectedKeys()
-        .hasAny(["ownerUid", "planoEspelho", "criadoEm"]);
+        .hasAny(["ownerUid", "planoEspelho", "criadoEm", "segmento"]);
     }
 
     function hasValidCompanyLink(linkPath, ownerUid, empresaId) {
@@ -174,11 +179,21 @@ service cloud.firestore {
           ])
         ) ||
         (
+          (modulo == "veiculos" || modulo == "servicos" || modulo == "ordensServico") &&
+          isCompanyRole(role, perfil, [
+            "financeiro",
+            "estoque"
+          ])
+        ) ||
+        (
           isCompanyRole(role, perfil, ["visualizacao"]) &&
           [
             "insumos",
             "produtos",
             "producao",
+            "veiculos",
+            "servicos",
+            "ordensServico",
             "vendas",
             "despesas",
             "perdasDoacoes",
@@ -203,6 +218,9 @@ service cloud.firestore {
             "produtos",
             "producao",
             "estoque",
+            "veiculos",
+            "servicos",
+            "ordensServico",
             "perdasDoacoes",
             "fornecedores"
           ].hasAny([modulo])
@@ -210,6 +228,9 @@ service cloud.firestore {
         (
           isCompanyRole(role, perfil, ["comercial"]) &&
           [
+            "veiculos",
+            "servicos",
+            "ordensServico",
             "vendas",
             "clientesComerciais"
           ].hasAny([modulo])
@@ -640,9 +661,34 @@ service cloud.firestore {
           allow delete: if false;
         }
 
+        match /veiculos/{veiculoId} {
+          allow read: if isCompanySegment(userId, empresaId, "oficina") &&
+            canReadModule(userId, empresaId, "veiculos");
+          allow create, update: if isCompanySegment(userId, empresaId, "oficina") &&
+            canWriteModule(userId, empresaId, "veiculos");
+          allow delete: if false;
+        }
+
+        match /servicos/{servicoId} {
+          allow read: if isCompanySegment(userId, empresaId, "oficina") &&
+            canReadModule(userId, empresaId, "servicos");
+          allow create, update: if isCompanySegment(userId, empresaId, "oficina") &&
+            canWriteModule(userId, empresaId, "servicos");
+          allow delete: if false;
+        }
+
+        match /ordensServico/{osId} {
+          allow read: if isCompanySegment(userId, empresaId, "oficina") &&
+            canReadModule(userId, empresaId, "ordensServico");
+          allow create, update: if isCompanySegment(userId, empresaId, "oficina") &&
+            canWriteModule(userId, empresaId, "ordensServico");
+          allow delete: if false;
+        }
+
         match /clientesComerciais/{documentId} {
           allow read: if hasCompanyRole(userId, empresaId, [
             "administrador_empresa",
+            "producao",
             "comercial"
           ]);
           allow create, update: if canWriteModule(userId, empresaId, "clientesComerciais");

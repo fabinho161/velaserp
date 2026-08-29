@@ -25,6 +25,7 @@ import {
   perfilEmpresaSomenteLeitura,
   temPermissaoEmpresa,
 } from "../config/perfisEmpresa";
+import { normalizarSegmentoEmpresa } from "../config/segmentosEmpresa.js";
 
 const assinaturaPadrao = assinaturaGratisPadrao;
 const API_URL =
@@ -40,6 +41,7 @@ const COLECOES_POR_PERMISSAO = [
   ["despesas", PERMISSOES_EMPRESA.financeiro],
   ["perdasDoacoes", PERMISSOES_EMPRESA.estoque],
   ["clientesComerciais", PERMISSOES_EMPRESA.crm],
+  ["ordensServico", PERMISSOES_EMPRESA.ordensServico],
 ];
 const COLECOES_DADOS_DASHBOARD = new Set([
   "insumos",
@@ -48,8 +50,8 @@ const COLECOES_DADOS_DASHBOARD = new Set([
   "vendas",
   "despesas",
 ]);
-
 const STATUS_USUARIO_EMPRESA_BLOQUEADO = new Set(["inativo", "removido"]);
+const PERFIL_PRODUCAO_EMPRESA = normalizarRoleEmpresa("producao");
 const PRIORIDADE_STATUS_USUARIO_EMPRESA = {
   ativo: 0,
   pendente: 1,
@@ -59,6 +61,11 @@ const PRIORIDADE_STATUS_USUARIO_EMPRESA = {
 
 const normalizarStatusUsuarioEmpresa = (status) =>
   String(status || "").trim().toLowerCase();
+
+const normalizarEmpresaComSegmento = (empresa = {}) => ({
+  ...empresa,
+  segmento: normalizarSegmentoEmpresa(empresa.segmento),
+});
 
 const ordenarUsuariosEmpresaPorAcesso = (a = {}, b = {}) => {
   const prioridadeA =
@@ -253,6 +260,7 @@ const mesclarEmpresaComDocumentoReal = ({
     nome: dadosEmpresaReal.nome || empresa.nome,
     ownerUid,
     empresaId,
+    segmento: normalizarSegmentoEmpresa(dadosEmpresaReal.segmento || empresa.segmento),
     planoEspelho: dadosEmpresaReal.planoEspelho,
   };
 };
@@ -303,9 +311,10 @@ export function ERPProvider({ children }) {
   const [despesas, setDespesas] = useState([]);
   const [perdasDoacoes, setPerdasDoacoes] = useState([]);
   const [clientesComerciais, setClientesComerciais] = useState([]);
+  const [ordensServico, setOrdensServico] = useState([]);
   const [configuracoes, setConfiguracoes] = useState({});
 
-  const criarEmpresaBackend = useCallback(async (nome) => {
+  const criarEmpresaBackend = useCallback(async (nome, segmento) => {
     const usuarioAuth = auth.currentUser;
 
     if (!usuarioAuth) {
@@ -313,13 +322,15 @@ export function ERPProvider({ children }) {
     }
 
     const idToken = await usuarioAuth.getIdToken(true);
+    const body = segmento ? { nome, segmento } : { nome };
+
     const response = await fetch(`${API_URL}/api/empresas`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${idToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ nome }),
+      body: JSON.stringify(body),
     });
     const data = await response.json().catch(() => ({}));
 
@@ -337,7 +348,7 @@ export function ERPProvider({ children }) {
       throw new Error("Resposta invalida ao criar empresa.");
     }
 
-    return data.empresa;
+    return normalizarEmpresaComSegmento(data.empresa);
   }, []);
 
   // ================================
@@ -359,6 +370,7 @@ export function ERPProvider({ children }) {
       setDespesas([]);
       setPerdasDoacoes([]);
       setClientesComerciais([]);
+      setOrdensServico([]);
       setConfiguracoes({});
 
       if (!usuario) {
@@ -466,24 +478,25 @@ export function ERPProvider({ children }) {
       setVendas([]);
       setDespesas([]);
       setClientesComerciais([]);
+      setOrdensServico([]);
       setConfiguracoes({});
     }, [empresas, user]);
 
 // ================================
 // 🔹 CRIAR NOVA EMPRESA
 // ================================
-const criarNovaEmpresa = async (nomeEmpresa) => {
-  if (!user) return;
+const criarNovaEmpresa = async (nomeEmpresa, segmento) => {
+  if (!user) return false;
 
   const nomeTratado = String(nomeEmpresa || "").trim();
 
   if (!nomeTratado) {
     showToast("Informe o nome da empresa.", "warning");
-    return;
+    return false;
   }
 
   try {
-    const empresaCriada = await criarEmpresaBackend(nomeTratado);
+    const empresaCriada = await criarEmpresaBackend(nomeTratado, segmento);
 
     setEmpresas([...empresas, empresaCriada]);
     setUsuariosEmpresaCarregando(true);
@@ -491,9 +504,11 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
     setEmpresaOwnerUid(empresaCriada.ownerUid || user.uid);
     localStorage.setItem(`renovarEmpresaAtiva_${user.uid}`, empresaCriada.id);
     showToast("Empresa criada com sucesso!", "success");
+    return true;
   } catch (error) {
     console.error("Erro ao criar empresa:", error);
     showToast(error.message || "Erro ao criar empresa.", "error");
+    return false;
   }
 };
 
@@ -539,21 +554,21 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
 
             snapshot.docs.forEach((docSnap) => {
               const dados = docSnap.data();
-              mapaEmpresas.set(docSnap.id, {
+              mapaEmpresas.set(docSnap.id, normalizarEmpresaComSegmento({
                 id: docSnap.id,
                 ...dados,
                 ownerUid: dados?.ownerUid || user.uid,
-              });
+              }));
             });
 
             vinculosSnapshot.docs.forEach((docSnap) => {
               const dados = docSnap.data();
 
-              mapaEmpresas.set(docSnap.id, {
+              mapaEmpresas.set(docSnap.id, normalizarEmpresaComSegmento({
                 id: docSnap.id,
                 ...dados,
                 ownerUid: dados?.ownerUid || user.uid,
-              });
+              }));
             });
 
             const lista = Array.from(mapaEmpresas.values());
@@ -714,10 +729,13 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
       temPermissaoEmpresa(perfilAtual, PERMISSOES_EMPRESA.dashboard);
     const podeOuvirColecao = (colecao) => {
       const permissao = permissoesPorColecao.get(colecao);
+      const podeOuvirClientesParaVeiculos =
+        colecao === "clientesComerciais" && perfilAtual === PERFIL_PRODUCAO_EMPRESA;
 
       return usuarioAtivo &&
         (
           (permissao && temPermissaoEmpresa(perfilAtual, permissao)) ||
+          podeOuvirClientesParaVeiculos ||
           (podeCarregarDashboard && COLECOES_DADOS_DASHBOARD.has(colecao))
         );
     };
@@ -729,6 +747,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
       despesas: setDespesas,
       perdasDoacoes: setPerdasDoacoes,
       clientesComerciais: setClientesComerciais,
+      ordensServico: setOrdensServico,
     };
 
     Object.entries(settersPorColecao).forEach(([colecao, setState]) => {
@@ -770,6 +789,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
       ouvirColecao("despesas", setDespesas),
       ouvirColecao("perdasDoacoes", setPerdasDoacoes),
       ouvirColecao("clientesComerciais", setClientesComerciais),
+      ouvirColecao("ordensServico", setOrdensServico),
       onSnapshot(
         getRef("configuracoes"),
         (snapshot) => {
@@ -1471,6 +1491,7 @@ const criarNovaEmpresa = async (nomeEmpresa) => {
         despesas,
         perdasDoacoes,
         clientesComerciais,
+        ordensServico,
         configuracoes,
 
         addItem,

@@ -66,6 +66,7 @@ export default function Vendas() {
     produtos: produtosContexto = [],
     vendas: vendasContexto = [],
     perdasDoacoes: perdasDoacoesContexto = [],
+    ordensServico: ordensServicoContexto = [],
     addItem,
     updateItem,
     deleteItem,
@@ -86,6 +87,9 @@ export default function Vendas() {
   const vendas = Array.isArray(vendasContexto) ? vendasContexto : [];
   const perdasDoacoes = Array.isArray(perdasDoacoesContexto)
     ? perdasDoacoesContexto
+    : [];
+  const ordensServico = Array.isArray(ordensServicoContexto)
+    ? ordensServicoContexto
     : [];
   const clientesComerciais = Array.isArray(clientesComerciaisContexto)
     ? clientesComerciaisContexto
@@ -262,6 +266,7 @@ export default function Vendas() {
     producoes,
     vendas,
     perdasDoacoes,
+    ordensServico,
     ignorarVendaIndex: editIndex,
   });
 

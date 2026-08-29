@@ -41,6 +41,7 @@ export default function Estoque() {
     producoes,
     vendas,
     perdasDoacoes,
+    ordensServico,
     configuracoes,
     carregarConfiguracao,
     salvarConfiguracao,
@@ -131,6 +132,7 @@ export default function Estoque() {
     producoes,
     vendas,
     perdasDoacoes,
+    ordensServico,
   });
   const insumosEstoque = calcularEstoqueInsumos({
     insumos,

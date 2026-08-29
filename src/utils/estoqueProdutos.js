@@ -114,6 +114,15 @@ const vendaMovimentaEstoque = (venda = {}) => {
   return expedicao !== "cancelado" && pagamento !== "cancelado";
 };
 
+const STATUS_OS_CONSOME_ESTOQUE = new Set([
+  "aprovada",
+  "em_execucao",
+  "concluida",
+]);
+
+const ordemServicoMovimentaEstoque = (ordem = {}) =>
+  STATUS_OS_CONSOME_ESTOQUE.has(String(ordem.status || "").trim().toLowerCase());
+
 const normalizarOrigemProduto = (valor = "") =>
   String(valor || "fabricado").trim().toLowerCase() === "revenda"
     ? "revenda"
@@ -124,8 +133,10 @@ export const calcularEstoqueProdutos = ({
   producoes = [],
   vendas = [],
   perdasDoacoes = [],
+  ordensServico = [],
   ignorarVendaIndex = null,
   ignorarVendaId = "",
+  ignorarOrdemServicoId = "",
 } = {}) => {
   const mapa = new Map();
   const aliases = new Map();
@@ -179,6 +190,7 @@ export const calcularEstoqueProdutos = ({
         vendido: 0,
         baixado: 0,
         consumidoEmProducao: 0,
+        consumidoEmOrdemServico: 0,
         custoTotal: 0,
         estoqueMinimo: Number(registro.estoqueMinimo || 0),
       });
@@ -205,6 +217,7 @@ export const calcularEstoqueProdutos = ({
         consumivelEmProducao:
           Boolean(registro.consumivelEmProducao) ||
           Boolean(itemExistente.consumivelEmProducao),
+        consumidoEmOrdemServico: Number(itemExistente.consumidoEmOrdemServico || 0),
         custoUnitarioAtual:
           Number(itemExistente.custoUnitarioAtual || 0) ||
           Number(
@@ -303,6 +316,30 @@ export const calcularEstoqueProdutos = ({
     });
   });
 
+  (ordensServico || []).forEach((ordem) => {
+    if (ignorarOrdemServicoId && ordem.id === ignorarOrdemServicoId) return;
+    if (!ordemServicoMovimentaEstoque(ordem)) return;
+
+    const pecas = Array.isArray(ordem.pecas) ? ordem.pecas : [];
+
+    pecas.forEach((peca) => {
+      const quantidade = Number(peca?.quantidade || 0);
+
+      if (!Number.isFinite(quantidade) || quantidade <= 0) return;
+
+      const produtoId = peca?.produtoId || "";
+      const aliasesPeca = obterAliasesItemVenda(peca, {});
+      const chave = produtoId && mapa.has(`produto:${produtoId}`)
+        ? `produto:${produtoId}`
+        : resolverChavePorAliases(aliasesPeca);
+      const item = chave
+        ? mapa.get(chave)
+        : garantirItem({ produto: peca?.produto || peca?.produtoNome });
+
+      item.consumidoEmOrdemServico += quantidade;
+    });
+  });
+
   (perdasDoacoes || []).forEach((baixa) => {
     if (String(baixa.status || "ativo").toLowerCase() === "cancelado") return;
     if (String(baixa.tipoItem || "produto").toLowerCase() !== "produto") return;
@@ -326,7 +363,8 @@ export const calcularEstoqueProdutos = ({
       comprado -
       item.vendido -
       item.baixado -
-      Number(item.consumidoEmProducao || 0);
+      Number(item.consumidoEmProducao || 0) -
+      Number(item.consumidoEmOrdemServico || 0);
     const saldo = Math.max(0, saldoReal);
     const custoMedio =
       item.produzido > 0
