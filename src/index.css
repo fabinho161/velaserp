@@ -232,21 +232,35 @@ body {
 }
 
 .empresa-nova {
-  display: flex;
-  gap: 7px;
+  display: grid;
+  gap: 8px;
 }
 
-.empresa-nova input {
+.empresa-nova-linha {
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+}
+
+.empresa-nova-linha input {
   flex: 1;
+  min-width: 0;
 }
 
 .empresa-nova button {
   width: 42px;
+  min-width: 42px;
+  min-height: 40px;
+  flex: 0 0 42px;
   border: none;
   border-radius: 10px;
   background: #2563eb;
   color: #fff;
   cursor: pointer;
+}
+
+.empresa-nova select {
+  min-width: 0;
 }
 
 /* ================================

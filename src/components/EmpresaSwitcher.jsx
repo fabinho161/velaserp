@@ -55,12 +55,18 @@ export default function EmpresaSwitcher() {
       </select>
 
       <div className="empresa-nova">
-        <input
-          placeholder="Nova empresa"
-          value={novaEmpresa}
-          disabled={!podeCriarEmpresa || criando}
-          onChange={(e) => setNovaEmpresa(e.target.value)}
-        />
+        <div className="empresa-nova-linha">
+          <input
+            placeholder="Nome da nova empresa"
+            value={novaEmpresa}
+            disabled={!podeCriarEmpresa || criando}
+            onChange={(e) => setNovaEmpresa(e.target.value)}
+          />
+
+          <button type="button" onClick={criar} disabled={!podeCriarEmpresa || criando}>
+            {criando ? "..." : "+"}
+          </button>
+        </div>
 
         <select
           value={segmento}
@@ -73,10 +79,6 @@ export default function EmpresaSwitcher() {
             </option>
           ))}
         </select>
-
-        <button onClick={criar} disabled={!podeCriarEmpresa || criando}>
-          {criando ? "..." : "+"}
-        </button>
       </div>
     </div>
   );
