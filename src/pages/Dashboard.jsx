@@ -24,6 +24,12 @@ import {
 import { useERP } from "../context/useERP";
 import { useTableSort } from "../hooks/useTableSort";
 import { extrairNumeroPedido } from "../utils/sortUtils";
+import {
+  calcularRankingLucroProdutos,
+  formatarDataPedidoBR,
+  obterDataPedido,
+  ordenarUltimosPedidos,
+} from "../utils/dashboardData.js";
 
 const MIN_CHART_WIDTH = 80;
 const MIN_CHART_HEIGHT = 180;
@@ -99,7 +105,7 @@ function ChartFrame({ children }) {
 }
 
 export default function Dashboard() {
-  const { vendas, producoes, insumos, despesas } = useERP();
+  const { vendas, producoes, insumos, despesas, produtos } = useERP();
   const ordenacaoPedidos = useTableSort({
     chave: "",
     direcao: "asc",
@@ -112,11 +118,7 @@ export default function Dashboard() {
       currency: "BRL",
     });
 
-  const formatarDataBR = (data) => {
-    if (!data) return "-";
-    const [ano, mes, dia] = data.split("-");
-    return `${dia}/${mes}/${ano}`;
-  };
+  const formatarDataBR = formatarDataPedidoBR;
 
   const faturamento = vendas.reduce((t, v) => t + Number(v.total || 0), 0);
   const lucro = vendas.reduce((t, v) => t + Number(v.lucro || 0), 0);
@@ -161,42 +163,7 @@ export default function Dashboard() {
     return dataA - dataB;
   });
 
-  const produtosVendidos = {};
-
-  vendas.forEach((venda) => {
-    const itensVenda =
-      venda.itens && Array.isArray(venda.itens)
-        ? venda.itens
-        : venda.produto
-        ? [
-            {
-              produto: venda.produto,
-              quantidade: venda.quantidade,
-              total: venda.total,
-              lucro: venda.lucro,
-            },
-          ]
-        : [];
-
-    itensVenda.forEach((item) => {
-      if (!produtosVendidos[item.produto]) {
-        produtosVendidos[item.produto] = {
-          produto: item.produto,
-          quantidade: 0,
-          faturamento: 0,
-          lucro: 0,
-        };
-      }
-
-      produtosVendidos[item.produto].quantidade += Number(item.quantidade || 0);
-      produtosVendidos[item.produto].faturamento += Number(item.total || 0);
-      produtosVendidos[item.produto].lucro += Number(item.lucro || 0);
-    });
-  });
-
-  const rankingProdutos = Object.values(produtosVendidos).sort(
-    (a, b) => b.lucro - a.lucro
-  );
+  const rankingProdutos = calcularRankingLucroProdutos({ vendas, produtos });
 
   const producaoPorProduto = Object.values(
     producoes.reduce((acc, producao) => {
@@ -240,14 +207,14 @@ export default function Dashboard() {
     0
   );
 
-  const ultimosPedidosBase = [...vendas].slice(-5).reverse();
+  const ultimosPedidosBase = ordenarUltimosPedidos(vendas, 5);
   const ultimosPedidos = ordenacaoPedidos.ordenar(
     ultimosPedidosBase,
     (pedido, chave) => {
       const valores = {
         numeroPedido: extrairNumeroPedido(pedido.numeroPedido),
         cliente: pedido.cliente || "",
-        data: pedido.data || "",
+        data: obterDataPedido(pedido)?.getTime() ?? Number.NEGATIVE_INFINITY,
         total: Number(pedido.total || 0),
         lucro: Number(pedido.lucro || 0),
         statusExpedicao: pedido.statusExpedicao || "Pendente",
@@ -495,7 +462,13 @@ export default function Dashboard() {
                 <tr key={pedido.id || index}>
                   <td>{pedido.numeroPedido || "-"}</td>
                   <td>{pedido.cliente}</td>
-                  <td>{formatarDataBR(pedido.data)}</td>
+                  <td>
+                    {formatarDataBR(
+                      pedido.data ||
+                        pedido.criadoEm ||
+                        pedido.createdAt
+                    )}
+                  </td>
                   <td>{moeda(pedido.total)}</td>
                   <td>{moeda(pedido.lucro)}</td>
                   <td>

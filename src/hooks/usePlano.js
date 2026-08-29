@@ -1,47 +1,12 @@
 import { useMemo } from "react";
 import { useERP } from "../context/useERP";
 import {
-  assinaturaGratisPadrao,
   getLimiteUsuariosEfetivo,
   getPlanoConfig,
   getPlanoNivel,
   normalizarLimiteUsuariosManual,
 } from "../config/planos";
-
-const PLANOS_CANONICOS = new Set(["gratis", "basico", "profissional", "premium"]);
-const STATUS_CANONICOS = new Set(["active", "inactive", "blocked"]);
-const assinaturaConvidadoFallback = {
-  ...assinaturaGratisPadrao,
-  plano: "gratis",
-  status: "inactive",
-  limiteUsuariosManual: null,
-};
-
-const normalizarTexto = (valor) => String(valor || "").trim().toLowerCase();
-
-const resolverAssinaturaNormalizada = (assinatura, fallback) => {
-  const dados = assinatura && typeof assinatura === "object" && !Array.isArray(assinatura)
-    ? assinatura
-    : {};
-  const planoInformado = normalizarTexto(dados.plano);
-  const statusInformado = normalizarTexto(dados.status);
-  const plano = PLANOS_CANONICOS.has(planoInformado)
-    ? planoInformado
-    : fallback.plano;
-  const status = STATUS_CANONICOS.has(statusInformado)
-    ? statusInformado
-    : fallback.status;
-
-  return {
-    ...fallback,
-    ...dados,
-    plano,
-    status,
-    limiteUsuariosManual: normalizarLimiteUsuariosManual(
-      dados.limiteUsuariosManual
-    ),
-  };
-};
+import { resolverPlanoEfetivo } from "../utils/planoEfetivo.js";
 
 export function usePlano() {
   const {
@@ -52,6 +17,7 @@ export function usePlano() {
     empresaId,
     empresaOwnerUid,
     usuarioEmpresaAtual,
+    usuariosEmpresaCarregando,
     empresas = [],
   } = useERP() || {};
 
@@ -63,22 +29,17 @@ export function usePlano() {
     const usuarioConvidadoEmpresa = Boolean(
       user?.uid &&
       empresaOwnerUid &&
-      empresaOwnerUid !== user.uid &&
-      usuarioEmpresaAtual?.uidAuth === user.uid
+      empresaOwnerUid !== user.uid
     );
-    const planoEspelhoCarregando = Boolean(
-      usuarioConvidadoEmpresa &&
-      !empresaAtual
-    );
-    const assinatura = usuarioConvidadoEmpresa
-      ? resolverAssinaturaNormalizada(
-          empresaAtual?.planoEspelho,
-          assinaturaConvidadoFallback
-        )
-      : resolverAssinaturaNormalizada(
-          assinaturaUsuario,
-          assinaturaGratisPadrao
-        );
+    const planoEfetivo = resolverPlanoEfetivo({
+      assinaturaUsuario,
+      empresaAtual,
+      usuarioConvidadoEmpresa,
+      usuarioEmpresaAtual,
+      perfilCarregando,
+      usuariosEmpresaCarregando,
+    });
+    const assinatura = planoEfetivo.assinatura;
 
     const planoAtual = assinatura.plano;
     const status = assinatura.status;
@@ -109,7 +70,7 @@ export function usePlano() {
       planoNivel,
       status,
       limites,
-      assinaturaCarregando: Boolean(perfilCarregando || planoEspelhoCarregando),
+      assinaturaCarregando: planoEfetivo.assinaturaCarregando,
       isGratis: planoAtual === "gratis",
       isBasico: planoAtual === "basico",
       isProfissional: planoAtual === "profissional",
@@ -152,5 +113,6 @@ export function usePlano() {
     perfilCarregando,
     user,
     usuarioEmpresaAtual,
+    usuariosEmpresaCarregando,
   ]);
 }

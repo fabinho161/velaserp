@@ -41,7 +41,13 @@ const COLECOES_POR_PERMISSAO = [
   ["perdasDoacoes", PERMISSOES_EMPRESA.estoque],
   ["clientesComerciais", PERMISSOES_EMPRESA.crm],
 ];
-const COLECOES_DADOS_DASHBOARD = new Set(["insumos", "producoes", "vendas", "despesas"]);
+const COLECOES_DADOS_DASHBOARD = new Set([
+  "insumos",
+  "produtos",
+  "producoes",
+  "vendas",
+  "despesas",
+]);
 
 const STATUS_USUARIO_EMPRESA_BLOQUEADO = new Set(["inativo", "removido"]);
 const PRIORIDADE_STATUS_USUARIO_EMPRESA = {
