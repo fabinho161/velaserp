@@ -100,6 +100,44 @@ const getQuantidadeControleValida = (controleData = {}) => {
   return Number.isInteger(quantidade) && quantidade >= 0 ? quantidade : null;
 };
 
+const validarEmpresaId = (empresaId) => {
+  const id = String(empresaId || "").trim();
+
+  if (!id || id.includes("/")) {
+    throw criarErroHttp(400, "Empresa invalida.");
+  }
+
+  return id;
+};
+
+const normalizarListaStrings = (lista) => {
+  if (!Array.isArray(lista)) return [];
+
+  return [...new Set(
+    lista
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+  )];
+};
+
+const getTombstoneExclusaoEmpresaRef = ({ ownerRef, empresaId }) =>
+  ownerRef.collection("controles").doc(`exclusaoEmpresa_${empresaId}`);
+
+const montarTombstoneExclusaoEmpresa = ({
+  ownerUid,
+  empresaId,
+  uidsVinculados,
+  conviteIds,
+}) => ({
+  ownerUid,
+  empresaId,
+  membrosUidAuth: normalizarListaStrings(uidsVinculados),
+  conviteIds: normalizarListaStrings(conviteIds),
+  status: "em_andamento",
+  iniciadoEm: FieldValue.serverTimestamp(),
+  atualizadoEm: FieldValue.serverTimestamp(),
+});
+
 const montarPlanoEspelho = (assinaturaNormalizada) => ({
   ...assinaturaNormalizada,
   sincronizadoEm: FieldValue.serverTimestamp(),
@@ -281,6 +319,167 @@ router.post("/", authFirebase, async (req, res) => {
       success: false,
       error: error.message || "Erro ao criar empresa.",
       ...(error.extras || {}),
+    });
+  }
+});
+
+router.delete("/:empresaId", authFirebase, async (req, res) => {
+  const db = getDb();
+  const ownerUid = req.user.uid;
+
+  try {
+    const empresaId = validarEmpresaId(req.params.empresaId);
+    const ownerRef = db.collection("users").doc(ownerUid);
+    const empresasRef = ownerRef.collection("empresas");
+    const empresaRef = empresasRef.doc(empresaId);
+    const usuariosEmpresaRef = empresaRef.collection("usuariosEmpresa");
+    const controleEmpresasRef = ownerRef.collection("controles").doc("empresas");
+    const tombstoneRef = getTombstoneExclusaoEmpresaRef({ ownerRef, empresaId });
+
+    if (typeof db.recursiveDelete !== "function") {
+      throw criarErroHttp(500, "Exclusao recursiva indisponivel no backend.");
+    }
+
+    const [empresaSnapshot, tombstoneSnapshot] = await Promise.all([
+      empresaRef.get(),
+      tombstoneRef.get(),
+    ]);
+
+    let uidsVinculados = [];
+    let conviteIds = [];
+    let retomadaPorTombstone = false;
+
+    if (empresaSnapshot.exists) {
+      const empresa = empresaSnapshot.data() || {};
+
+      if (empresa.ownerUid !== ownerUid) {
+        throw criarErroHttp(403, "Somente o proprietario real pode excluir esta empresa.");
+      }
+
+      const [usuariosEmpresaSnapshot, convitesSnapshot] = await Promise.all([
+        usuariosEmpresaRef.get(),
+        db
+          .collection("convitesEmpresa")
+          .where("ownerUid", "==", ownerUid)
+          .where("empresaId", "==", empresaId)
+          .get(),
+      ]);
+
+      const membros = new Set();
+
+      usuariosEmpresaSnapshot.docs.forEach((docSnap) => {
+        const uidAuth = String(docSnap.data()?.uidAuth || "").trim();
+
+        if (uidAuth && uidAuth !== ownerUid) {
+          membros.add(uidAuth);
+        }
+      });
+
+      uidsVinculados = [...membros];
+      conviteIds = convitesSnapshot.docs.map((docSnap) => docSnap.id);
+
+      await tombstoneRef.set(
+        montarTombstoneExclusaoEmpresa({
+          ownerUid,
+          empresaId,
+          uidsVinculados,
+          conviteIds,
+        }),
+        { merge: true }
+      );
+    } else {
+      if (!tombstoneSnapshot.exists) {
+        throw criarErroHttp(404, "Empresa nao encontrada.");
+      }
+
+      const tombstone = tombstoneSnapshot.data() || {};
+
+      if (tombstone.ownerUid !== ownerUid || tombstone.empresaId !== empresaId) {
+        throw criarErroHttp(403, "Exclusao em andamento invalida para este usuario.");
+      }
+
+      retomadaPorTombstone = true;
+      uidsVinculados = normalizarListaStrings(tombstone.membrosUidAuth);
+      conviteIds = normalizarListaStrings(tombstone.conviteIds);
+    }
+
+    await db.recursiveDelete(empresaRef);
+
+    const resultado = await db.runTransaction(async (transaction) => {
+      const empresasRestantesSnapshot = await transaction.get(empresasRef);
+
+      uidsVinculados.forEach((uidAuth) => {
+        transaction.delete(
+          db.collection("users").doc(uidAuth).collection("empresas").doc(empresaId)
+        );
+        transaction.delete(
+          db.collection("usuariosPorAuth").doc(uidAuth).collection("empresas").doc(empresaId)
+        );
+      });
+
+      conviteIds.forEach((conviteId) => {
+        transaction.delete(db.collection("convitesEmpresa").doc(conviteId));
+      });
+
+      transaction.set(
+        ownerRef,
+        {
+          bloquearCriacaoAutomaticaEmpresa: true,
+          atualizadoEm: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      transaction.set(
+        controleEmpresasRef,
+        {
+          quantidadeEmpresas: empresasRestantesSnapshot.size,
+          atualizadoEm: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      transaction.delete(tombstoneRef);
+
+      return {
+        quantidadeEmpresas: empresasRestantesSnapshot.size,
+        ponteirosRemovidos: uidsVinculados.length * 2,
+        convitesRemovidos: conviteIds.length,
+        retomadaPorTombstone,
+      };
+    });
+
+    logAuditoriaInfo("empresas.excluir: sucesso", {
+      ownerUid,
+      empresaId,
+      quantidadeEmpresas: resultado.quantidadeEmpresas,
+      ponteirosRemovidos: resultado.ponteirosRemovidos,
+      convitesRemovidos: resultado.convitesRemovidos,
+      retomadaPorTombstone: resultado.retomadaPorTombstone,
+    });
+
+    res.json({
+      ok: true,
+      success: true,
+      empresaId,
+      quantidadeEmpresas: resultado.quantidadeEmpresas,
+    });
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+
+    logAuditoriaError("empresas.excluir: falha", error, {
+      ownerUid,
+      statusCode,
+    });
+
+    if (statusCode >= 500) {
+      await registrarErroAuditoria(db, "empresas.excluir", error, {
+        ownerUid,
+      });
+    }
+
+    res.status(statusCode).json({
+      ok: false,
+      success: false,
+      error: error.message || "Erro ao excluir empresa.",
     });
   }
 });

@@ -54,8 +54,11 @@ export default function Configuracoes() {
   const {
     user,
     empresaId,
+    empresaOwnerUid,
+    empresas,
     configuracoes,
     salvarConfiguracao,
+    excluirEmpresa,
     temPermissaoEmpresaAtual,
   } = useERP();
   const { showToast } = useToast();
@@ -68,6 +71,15 @@ export default function Configuracoes() {
   const [fiscalForm, setFiscalForm] = useState(FISCAL_PADRAO);
   const [salvandoEmpresa, setSalvandoEmpresa] = useState(false);
   const [salvandoFiscal, setSalvandoFiscal] = useState(false);
+  const [modalExclusaoAberto, setModalExclusaoAberto] = useState(false);
+  const [confirmacaoExclusao, setConfirmacaoExclusao] = useState("");
+  const [excluindoEmpresa, setExcluindoEmpresa] = useState(false);
+  const empresaAtual = empresas.find((empresa) => empresa.id === empresaId);
+  const nomeEmpresaAtual = empresaAtual?.nome || form.nome || "";
+  const usuarioOwnerReal =
+    Boolean(user?.uid && empresaId && empresaOwnerUid === user.uid);
+  const confirmacaoExclusaoValida =
+    confirmacaoExclusao === nomeEmpresaAtual && Boolean(nomeEmpresaAtual);
 
   // carregar dados existentes
   useEffect(() => {
@@ -185,6 +197,35 @@ export default function Configuracoes() {
       showToast("Nao foi possivel salvar as configuracoes fiscais.", "error");
     } finally {
       setSalvandoFiscal(false);
+    }
+  };
+
+  const abrirModalExclusao = () => {
+    setConfirmacaoExclusao("");
+    setModalExclusaoAberto(true);
+  };
+
+  const fecharModalExclusao = () => {
+    if (excluindoEmpresa) return;
+
+    setModalExclusaoAberto(false);
+    setConfirmacaoExclusao("");
+  };
+
+  const confirmarExclusaoEmpresa = async () => {
+    if (!empresaId || !confirmacaoExclusaoValida || excluindoEmpresa) return;
+
+    setExcluindoEmpresa(true);
+
+    try {
+      const sucesso = await excluirEmpresa(empresaId);
+
+      if (sucesso) {
+        setModalExclusaoAberto(false);
+        setConfirmacaoExclusao("");
+      }
+    } finally {
+      setExcluindoEmpresa(false);
     }
   };
 
@@ -606,6 +647,76 @@ export default function Configuracoes() {
         {salvandoEmpresa ? "Salvando..." : "Salvar Configuracoes"}
       </button>
     </div>
+
+    {usuarioOwnerReal && (
+      <div
+        className="card config-section config-section-full"
+        style={{ border: "1px solid #fecaca", marginTop: "20px" }}
+      >
+        <h3>Zona de perigo</h3>
+        <p className="config-section-description">
+          Exclua permanentemente a empresa ativa e todos os dados vinculados a ela.
+        </p>
+
+        <button
+          type="button"
+          className="sales-button-danger"
+          onClick={abrirModalExclusao}
+          disabled={excluindoEmpresa}
+        >
+          Excluir empresa
+        </button>
+      </div>
+    )}
+
+    {modalExclusaoAberto && (
+      <div
+        className="modal-overlay"
+        role="dialog"
+        aria-modal="true"
+        onClick={fecharModalExclusao}
+      >
+        <div className="modal-card crm-delete-modal-card" onClick={(e) => e.stopPropagation()}>
+          <span className="badge badge-danger">Acao irreversivel</span>
+          <h3>Excluir empresa permanentemente</h3>
+
+          <div className="crm-delete-warning danger">
+            Esta acao removera permanentemente a empresa, usuarios e vinculos,
+            produtos, clientes, vendas, estoque, veiculos, servicos, ordens de
+            servico, configuracoes e demais dados vinculados.
+          </div>
+
+          <label>
+            Para confirmar, digite exatamente: <strong>{nomeEmpresaAtual}</strong>
+            <input
+              value={confirmacaoExclusao}
+              disabled={excluindoEmpresa}
+              onChange={(e) => setConfirmacaoExclusao(e.target.value)}
+              placeholder={nomeEmpresaAtual}
+            />
+          </label>
+
+          <div className="confirm-actions">
+            <button
+              type="button"
+              className="confirm-secondary"
+              onClick={fecharModalExclusao}
+              disabled={excluindoEmpresa}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="sales-button-danger"
+              onClick={confirmarExclusaoEmpresa}
+              disabled={!confirmacaoExclusaoValida || excluindoEmpresa}
+            >
+              {excluindoEmpresa ? "Excluindo..." : "Excluir permanentemente"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
   </div>
   
 );

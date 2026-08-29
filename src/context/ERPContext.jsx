@@ -512,12 +512,75 @@ const criarNovaEmpresa = async (nomeEmpresa, segmento) => {
   }
 };
 
+const excluirEmpresa = useCallback(async (id) => {
+  if (!user || !id) return false;
+
+  const usuarioAuth = auth.currentUser;
+
+  if (!usuarioAuth) {
+    showToast("Usuario autenticado nao encontrado.", "error");
+    return false;
+  }
+
+  try {
+    const idToken = await usuarioAuth.getIdToken(true);
+    const response = await fetch(`${API_URL}/api/empresas/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+      },
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok || data.ok === false || data.success === false) {
+      throw new Error(data.error || "Nao foi possivel excluir a empresa.");
+    }
+
+    const empresasRestantes = empresas.filter((empresa) => empresa.id !== id);
+
+    setEmpresas(empresasRestantes);
+    setUsuariosEmpresa([]);
+    setInsumos([]);
+    setProdutos([]);
+    setProducoes([]);
+    setVendas([]);
+    setDespesas([]);
+    setPerdasDoacoes([]);
+    setClientesComerciais([]);
+    setOrdensServico([]);
+    setConfiguracoes({});
+
+    if (empresaId === id) {
+      const proximaEmpresa = empresasRestantes[0] || null;
+
+      if (proximaEmpresa) {
+        setUsuariosEmpresaCarregando(true);
+        setEmpresaId(proximaEmpresa.id);
+        setEmpresaOwnerUid(proximaEmpresa.ownerUid || user.uid);
+        localStorage.setItem(`renovarEmpresaAtiva_${user.uid}`, proximaEmpresa.id);
+      } else {
+        setUsuariosEmpresaCarregando(false);
+        setEmpresaId(null);
+        setEmpresaOwnerUid(null);
+        localStorage.removeItem(`renovarEmpresaAtiva_${user.uid}`);
+      }
+    }
+
+    showToast("Empresa excluida com sucesso.", "success");
+    return true;
+  } catch (error) {
+    console.error("Erro ao excluir empresa:", error);
+    showToast(error.message || "Erro ao excluir empresa.", "error");
+    return false;
+  }
+}, [empresaId, empresas, showToast, user]);
+
 
   // ================================
   // 🔹 CRIAR / CARREGAR EMPRESA
   // ================================
     useEffect(() => {
-      if (!user) return;
+      if (!user || perfilCarregando) return;
 
       let cancelado = false;
 
@@ -529,6 +592,15 @@ const criarNovaEmpresa = async (nomeEmpresa, segmento) => {
           const snapshot = await getDocs(ref);
 
           if (snapshot.empty && vinculosSnapshot.empty) {
+            if (perfilUsuario?.bloquearCriacaoAutomaticaEmpresa === true) {
+              setEmpresas([]);
+              setEmpresaId(null);
+              setEmpresaOwnerUid(null);
+              setUsuariosEmpresaCarregando(false);
+              localStorage.removeItem(`renovarEmpresaAtiva_${user.uid}`);
+              return;
+            }
+
             if (criacaoInicialEmpresaRef.current.has(user.uid)) return;
 
             criacaoInicialEmpresaRef.current.add(user.uid);
@@ -609,7 +681,13 @@ const criarNovaEmpresa = async (nomeEmpresa, segmento) => {
       return () => {
         cancelado = true;
       };
-    }, [criarEmpresaBackend, showToast, user]);
+    }, [
+      criarEmpresaBackend,
+      perfilCarregando,
+      perfilUsuario?.bloquearCriacaoAutomaticaEmpresa,
+      showToast,
+      user,
+    ]);
 
     
     // ================================
@@ -1466,6 +1544,7 @@ const criarNovaEmpresa = async (nomeEmpresa, segmento) => {
         empresas,
         trocarEmpresa,
         criarNovaEmpresa,
+        excluirEmpresa,
         usuariosEmpresa,
         usuariosEmpresaCarregando,
         usuarioEmpresaAtual,
