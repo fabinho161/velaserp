@@ -1063,8 +1063,16 @@ export default function OrdensServico() {
       </section>
 
       {modalAberto && (
-        <div className="modal-overlay" role="dialog" aria-modal="true">
-          <div className="modal-card fornecedores-modal">
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={fecharModal}
+        >
+          <div
+            className="modal-card fornecedores-modal oficina-os-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="fornecedores-modal-header">
               <div>
                 <span className="badge badge-info">
@@ -1074,6 +1082,10 @@ export default function OrdensServico() {
                 <h3>{ordemEditando ? "Editar ordem de servico" : "Nova ordem de servico"}</h3>
                 <p>Dados principais do atendimento da oficina.</p>
               </div>
+            </div>
+
+            <div className="oficina-modal-section-title">
+              <h4>Dados do atendimento</h4>
             </div>
 
             <div className="fornecedores-form-grid">
@@ -1458,6 +1470,10 @@ export default function OrdensServico() {
                 </table>
               </div>
             )}
+
+            <div className="oficina-modal-section-title">
+              <h4>Totais / Pagamento</h4>
+            </div>
 
             <div className="resumo-pedido">
               <span>Total servicos: {moedaBR(totais.totalServicos)}</span>

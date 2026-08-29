@@ -20,6 +20,13 @@ const classeProdutoAcabado = (produto = {}) =>
 const classeSemiacabado = (produto = {}) =>
   normalizarClasseIndustrial(produto.classeIndustrial) === "semiacabado";
 
+const produtoEstaAtivoParaOficina = (produto = {}) => {
+  const status = String(produto.status || "ativo").trim().toLowerCase();
+  const statusInativo = ["inativo", "removido", "excluido", "excluído", "cancelado"];
+
+  return produto.ativo !== false && produto.vendavel !== false && !statusInativo.includes(status);
+};
+
 const lerEstoqueMinimoLocal = () => {
   try {
     const localRaw = localStorage.getItem(ESTOQUE_MINIMO_CONFIG);
@@ -36,6 +43,8 @@ export default function Estoque() {
   // ================================
   const {
     empresaId,
+    empresaOwnerUid,
+    empresas = [],
     insumos,
     produtos,
     producoes,
@@ -45,6 +54,7 @@ export default function Estoque() {
     configuracoes,
     carregarConfiguracao,
     salvarConfiguracao,
+    user,
   } = useERP();
 
   // ================================
@@ -63,6 +73,12 @@ export default function Estoque() {
   });
   const configEstoqueMinimo = configuracoes?.[ESTOQUE_MINIMO_CONFIG];
   const estoqueMinimo = configEstoqueMinimo?.valores || estoqueMinimoLocal;
+  const empresaAtual = (empresas || []).find(
+    (empresa) =>
+      empresa.id === empresaId &&
+      (empresa.ownerUid || user?.uid) === (empresaOwnerUid || user?.uid)
+  );
+  const isOficina = String(empresaAtual?.segmento || "").trim().toLowerCase() === "oficina";
 
   useEffect(() => {
     if (!empresaId || !carregarConfiguracao || !salvarConfiguracao) return;
@@ -152,6 +168,9 @@ export default function Estoque() {
     (total, produto) => total + Number(produto.valorEstoque || 0),
     0
   );
+  const produtosPorId = new Map(
+    (produtos || []).map((produto) => [produto.id || produto.produtoId, produto])
+  );
 
   const produtosBaixos = produtosEstoque.filter((produto) => {
     const minimo = Number(estoqueMinimo[produto.produto] || 0);
@@ -212,10 +231,15 @@ export default function Estoque() {
     (item, chave) => {
       const valores = {
         produto: item.produto.produto || "",
+        codigo: item.produto.codigo || "",
+        entrada:
+          Number(item.produto.produzido || 0) +
+          Number(item.produto.comprado || 0),
         produzido: Number(item.produto.produzido || 0),
         vendido: Number(item.produto.vendido || 0),
         baixado: Number(item.produto.baixado || 0),
         consumidoEmProducao: Number(item.produto.consumidoEmProducao || 0),
+        consumidoEmOrdemServico: Number(item.produto.consumidoEmOrdemServico || 0),
         saldo: Number(item.produto.saldo || 0),
         custoMedio: Number(item.produto.custoMedio || 0),
         valorEstoque: Number(item.produto.valorEstoque || 0),
@@ -234,6 +258,23 @@ export default function Estoque() {
   );
   const outrosProdutosEstoqueOrdenados = produtosEstoqueOrdenados.filter(
     ({ produto }) => !classeProdutoAcabado(produto) && !classeSemiacabado(produto)
+  );
+  const pecasEstoqueOrdenadas = produtosEstoqueOrdenados.filter(({ produto }) => {
+    const cadastro = produtosPorId.get(produto.produtoId);
+    return produto.produtoId && cadastro && produtoEstaAtivoParaOficina(cadastro);
+  });
+  const valorTotalPecas = pecasEstoqueOrdenadas.reduce(
+    (total, { produto }) => total + Number(produto.valorEstoque || 0),
+    0
+  );
+  const pecasComSaldo = pecasEstoqueOrdenadas.filter(
+    ({ produto }) => Number(produto.saldo || 0) > 0
+  );
+  const pecasBaixas = pecasEstoqueOrdenadas.filter(
+    ({ minimo, produto }) => Number(minimo || 0) > 0 && produto.saldo <= minimo
+  );
+  const pecasZeradas = pecasEstoqueOrdenadas.filter(
+    ({ produto }) => Number(produto.saldo || 0) <= 0
   );
 
   const renderCabecalhoOrdenavel = (label, chave, sort) => {
@@ -269,18 +310,38 @@ export default function Estoque() {
     setEditandoMinimo(null);
   };
 
-  const renderTabelaProdutosEstoque = (titulo, lista, mensagemVazia) => (
+  const renderTabelaProdutosEstoque = (
+    titulo,
+    lista,
+    mensagemVazia,
+    { oficina = false } = {}
+  ) => (
     <div className="card">
       <h3>{titulo}</h3>
 
       <table>
         <thead>
           <tr>
-            <th>{renderCabecalhoOrdenavel("Produto", "produto", ordenacaoProdutos)}</th>
-            <th>{renderCabecalhoOrdenavel("Produzido", "produzido", ordenacaoProdutos)}</th>
+            <th>{renderCabecalhoOrdenavel(oficina ? "Peca" : "Produto", "produto", ordenacaoProdutos)}</th>
+            {oficina && (
+              <th>{renderCabecalhoOrdenavel("Codigo", "codigo", ordenacaoProdutos)}</th>
+            )}
+            <th>
+              {renderCabecalhoOrdenavel(
+                oficina ? "Entrada" : "Produzido",
+                oficina ? "entrada" : "produzido",
+                ordenacaoProdutos
+              )}
+            </th>
             <th>{renderCabecalhoOrdenavel("Vendido", "vendido", ordenacaoProdutos)}</th>
             <th>{renderCabecalhoOrdenavel("Baixado", "baixado", ordenacaoProdutos)}</th>
-            <th>{renderCabecalhoOrdenavel("Consumido", "consumidoEmProducao", ordenacaoProdutos)}</th>
+            <th>
+              {renderCabecalhoOrdenavel(
+                oficina ? "Consumido em OS" : "Consumido",
+                oficina ? "consumidoEmOrdemServico" : "consumidoEmProducao",
+                ordenacaoProdutos
+              )}
+            </th>
             <th>{renderCabecalhoOrdenavel("Saldo", "saldo", ordenacaoProdutos)}</th>
             <th>{renderCabecalhoOrdenavel("Custo Médio", "custoMedio", ordenacaoProdutos)}</th>
             <th>{renderCabecalhoOrdenavel("Valor em Estoque", "valorEstoque", ordenacaoProdutos)}</th>
@@ -297,10 +358,19 @@ export default function Estoque() {
             return (
               <tr key={produto.produtoId || produto.produto || index}>
                 <td>{produto.produto}</td>
-                <td>{produto.produzido}</td>
+                {oficina && <td>{produto.codigo || "-"}</td>}
+                <td>
+                  {oficina
+                    ? Number(produto.produzido || 0) + Number(produto.comprado || 0)
+                    : produto.produzido}
+                </td>
                 <td>{produto.vendido}</td>
                 <td>{produto.baixado}</td>
-                <td>{produto.consumidoEmProducao || 0}</td>
+                <td>
+                  {oficina
+                    ? produto.consumidoEmOrdemServico || 0
+                    : produto.consumidoEmProducao || 0}
+                </td>
 
                 <td style={{ color: emAlerta ? "#dc2626" : "#16a34a" }}>
                   {produto.saldo}
@@ -365,7 +435,7 @@ export default function Estoque() {
 
           {lista.length === 0 && (
             <tr>
-              <td colSpan="11">{mensagemVazia}</td>
+              <td colSpan={oficina ? "12" : "11"}>{mensagemVazia}</td>
             </tr>
           )}
         </tbody>
@@ -391,6 +461,34 @@ export default function Estoque() {
           marginBottom: "25px",
         }}
       >
+        {isOficina ? (
+          <>
+            <div className="card" style={{ borderLeft: "5px solid #2563eb" }}>
+              <p style={{ color: "#64748b" }}>Valor em Pecas</p>
+              <h2 style={{ color: "#2563eb" }}>{moeda(valorTotalPecas)}</h2>
+              <small>Pecas fisicas em estoque</small>
+            </div>
+
+            <div className="card" style={{ borderLeft: "5px solid #16a34a" }}>
+              <p style={{ color: "#64748b" }}>Pecas em Estoque</p>
+              <h2 style={{ color: "#16a34a" }}>{pecasComSaldo.length}</h2>
+              <small>Itens com saldo positivo</small>
+            </div>
+
+            <div className="card" style={{ borderLeft: "5px solid #dc2626" }}>
+              <p style={{ color: "#64748b" }}>Pecas em Alerta</p>
+              <h2 style={{ color: "#dc2626" }}>{pecasBaixas.length}</h2>
+              <small>Abaixo do minimo</small>
+            </div>
+
+            <div className="card" style={{ borderLeft: "5px solid #f59e0b" }}>
+              <p style={{ color: "#64748b" }}>Pecas Zeradas</p>
+              <h2 style={{ color: "#f59e0b" }}>{pecasZeradas.length}</h2>
+              <small>Estoque igual ou abaixo de zero</small>
+            </div>
+          </>
+        ) : (
+          <>
         <div className="card" style={{ borderLeft: "5px solid #2563eb" }}>
           <p style={{ color: "#64748b" }}>Valor em Insumos</p>
           <h2 style={{ color: "#2563eb" }}>{moeda(valorTotalInsumos)}</h2>
@@ -414,6 +512,8 @@ export default function Estoque() {
           <h2 style={{ color: "#f59e0b" }}>{insumosZerados.length}</h2>
           <small>Estoque igual ou abaixo de zero</small>
         </div>
+          </>
+        )}
       </div>
 
       {/* ================================
@@ -422,11 +522,42 @@ export default function Estoque() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          gridTemplateColumns: isOficina ? "1fr" : "1fr 1fr",
           gap: "18px",
           marginBottom: "25px",
         }}
       >
+        {isOficina ? (
+          <div className="card">
+            <h3>Alertas de Pecas</h3>
+
+            {carregandoMinimo ? (
+              <p style={{ color: "#64748b", marginTop: "10px" }}>
+                Carregando estoque minimo...
+              </p>
+            ) : pecasBaixas.length > 0 ? (
+              pecasBaixas.map(({ produto, minimo }, index) => (
+                <div
+                  key={produto.produtoId || produto.produto || index}
+                  style={{
+                    background: "#fee2e2",
+                    color: "#991b1b",
+                    padding: "10px",
+                    borderRadius: "8px",
+                    marginTop: "10px",
+                  }}
+                >
+                  {produto.produto} - saldo: {produto.saldo} / minimo: {minimo}
+                </div>
+              ))
+            ) : (
+              <p style={{ color: "#16a34a", marginTop: "10px" }}>
+                Nenhuma peca abaixo do estoque minimo.
+              </p>
+            )}
+          </div>
+        ) : (
+          <>
         <div className="card">
           <h3>Alertas de Produtos</h3>
 
@@ -482,11 +613,22 @@ export default function Estoque() {
             </p>
           )}
         </div>
+          </>
+        )}
       </div>
 
       {/* ================================
           🔹 ESTOQUE DE INSUMOS
       ================================= */}
+      {isOficina ? (
+        renderTabelaProdutosEstoque(
+          "Estoque de Pecas",
+          pecasEstoqueOrdenadas,
+          "Nenhuma peca em estoque.",
+          { oficina: true }
+        )
+      ) : (
+        <>
       <div className="card">
         <h3>Estoque de Insumos</h3>
 
@@ -692,6 +834,8 @@ export default function Estoque() {
             outrosProdutosEstoqueOrdenados,
             "Nenhum outro produto em estoque."
           )}
+        </>
+      )}
         </>
       )}
     </div>

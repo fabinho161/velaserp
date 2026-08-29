@@ -415,8 +415,16 @@ export default function Servicos() {
       </section>
 
       {modalAberto && (
-        <div className="modal-overlay" role="dialog" aria-modal="true">
-          <div className="modal-card fornecedores-modal">
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={fecharModal}
+        >
+          <div
+            className="modal-card fornecedores-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="fornecedores-modal-header">
               <div>
                 <span className="badge badge-info">
