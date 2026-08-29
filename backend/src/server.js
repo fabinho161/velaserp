@@ -36,7 +36,7 @@ app.use(cors({
 
     callback(new Error("Origem nao permitida pelo CORS."));
   },
-  methods: ["GET", "POST", "PATCH", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
 app.use(express.json({ limit: "1mb" }));

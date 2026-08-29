@@ -23,10 +23,16 @@ const fecharServidor = (server) =>
     });
   });
 
-const enviarPreflight = async ({ server, origin, method, headers }) => {
+const enviarPreflight = async ({
+  server,
+  origin,
+  method,
+  headers,
+  path = "/api/empresas/owner/empresa/usuarios/usuario/status",
+}) => {
   const { port } = server.address();
 
-  return fetch(`http://127.0.0.1:${port}/api/empresas/owner/empresa/usuarios/usuario/status`, {
+  return fetch(`http://127.0.0.1:${port}${path}`, {
     method: "OPTIONS",
     headers: {
       Origin: origin,
@@ -50,6 +56,30 @@ test("preflight CORS permite PATCH com Authorization e Content-Type para origem 
     assert.equal(response.status, 204);
     assert.equal(response.headers.get("access-control-allow-origin"), "https://renovarerp.com.br");
     assert.match(response.headers.get("access-control-allow-methods") || "", /\bPATCH\b/);
+
+    const allowedHeaders = response.headers.get("access-control-allow-headers") || "";
+    assert.match(allowedHeaders, /Authorization/i);
+    assert.match(allowedHeaders, /Content-Type/i);
+  } finally {
+    await fecharServidor(server);
+  }
+});
+
+test("preflight CORS permite DELETE de empresa para origem autorizada", async () => {
+  const server = await iniciarServidor();
+
+  try {
+    const response = await enviarPreflight({
+      server,
+      origin: "https://renovarerp.com.br",
+      method: "DELETE",
+      headers: "authorization,content-type",
+      path: "/api/empresas/empresa-1",
+    });
+
+    assert.equal(response.status, 204);
+    assert.equal(response.headers.get("access-control-allow-origin"), "https://renovarerp.com.br");
+    assert.match(response.headers.get("access-control-allow-methods") || "", /\bDELETE\b/);
 
     const allowedHeaders = response.headers.get("access-control-allow-headers") || "";
     assert.match(allowedHeaders, /Authorization/i);
