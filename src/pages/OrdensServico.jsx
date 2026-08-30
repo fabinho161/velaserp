@@ -15,7 +15,10 @@ import { db } from "../firebase";
 import { calcularEstoqueProdutos } from "../utils/estoqueProdutos";
 import { useConfirmacao } from "../context/useConfirmacao";
 import { moedaBR } from "../utils/formatters";
-import { gerarOrdemServicoPDF } from "../utils/ordemServicoPdf";
+import {
+  baixarOrdemServicoPdf,
+  imprimirOrdemServicoPdf,
+} from "../utils/ordemServicoPdf";
 
 const STATUS_OS = [
   { valor: "aberta", label: "Aberta", classe: "badge-info" },
@@ -1020,13 +1023,25 @@ export default function OrdensServico() {
 
   const imprimirOrdem = async (ordem) => {
     try {
-      await gerarOrdemServicoPDF({
+      await imprimirOrdemServicoPdf({
         ordem,
         dadosEmpresa: dadosEmpresaPDF,
       });
     } catch (error) {
       console.error("Erro ao gerar PDF da ordem de servico:", error);
       showToast("Nao foi possivel gerar o PDF da ordem de servico.", "error");
+    }
+  };
+
+  const baixarPdfOrdem = async (ordem) => {
+    try {
+      await baixarOrdemServicoPdf({
+        ordem,
+        dadosEmpresa: dadosEmpresaPDF,
+      });
+    } catch (error) {
+      console.error("Erro ao baixar PDF da ordem de servico:", error);
+      showToast("Nao foi possivel baixar o PDF da ordem de servico.", "error");
     }
   };
 
@@ -1206,6 +1221,10 @@ export default function OrdensServico() {
                     {
                       label: "Imprimir OS",
                       onClick: () => imprimirOrdem(ordem),
+                    },
+                    {
+                      label: "Baixar PDF",
+                      onClick: () => baixarPdfOrdem(ordem),
                     },
                     {
                       label: "Enviar por WhatsApp",

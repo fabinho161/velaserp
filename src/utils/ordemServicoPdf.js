@@ -274,7 +274,7 @@ const desenharAssinaturas = async (doc, y, cabecalho) => {
   });
 };
 
-export const gerarOrdemServicoPDF = async ({ ordem, dadosEmpresa = {} }) => {
+export const criarPdfOrdemServico = async ({ ordem, dadosEmpresa = {} }) => {
   const doc = new jsPDF();
   const dataGeracao = new Date().toLocaleString("pt-BR");
   const cabecalho = (simples = false) =>
@@ -373,6 +373,16 @@ export const gerarOrdemServicoPDF = async ({ ordem, dadosEmpresa = {} }) => {
   desenharRodape(doc, dataGeracao);
 
   const arquivo = `Ordem-Servico-${limparNomeArquivo(ordem.numero || ordem.id)}.pdf`;
+
+  return {
+    arquivo,
+    doc,
+  };
+};
+
+export const imprimirOrdemServicoPdf = async ({ ordem, dadosEmpresa = {} }) => {
+  const { arquivo, doc } = await criarPdfOrdemServico({ ordem, dadosEmpresa });
+
   doc.autoPrint();
   const url = doc.output("bloburl");
   const janela = window.open(url, "_blank");
@@ -381,3 +391,11 @@ export const gerarOrdemServicoPDF = async ({ ordem, dadosEmpresa = {} }) => {
     doc.save(arquivo);
   }
 };
+
+export const baixarOrdemServicoPdf = async ({ ordem, dadosEmpresa = {} }) => {
+  const { arquivo, doc } = await criarPdfOrdemServico({ ordem, dadosEmpresa });
+
+  doc.save(arquivo);
+};
+
+export const gerarOrdemServicoPDF = imprimirOrdemServicoPdf;
