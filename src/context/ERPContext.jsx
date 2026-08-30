@@ -32,6 +32,21 @@ const API_URL =
   import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_URL ||
   "http://localhost:10000";
+const EVENTO_PRIMEIRA_EMPRESA_CRIADA = "renovarPrimeiraEmpresaCriada";
+const limparOnboardingPrimeiraEmpresa = async (usuario) => {
+  if (!usuario?.uid) return false;
+
+  await setDoc(
+    doc(db, "users", usuario.uid),
+    {
+      onboardingEmpresaPendente: false,
+      atualizadoEm: new Date(),
+    },
+    { merge: true }
+  );
+
+  return true;
+};
 
 const COLECOES_POR_PERMISSAO = [
   ["insumos", PERMISSOES_EMPRESA.insumos],
@@ -503,6 +518,7 @@ const criarNovaEmpresa = async (nomeEmpresa, segmento) => {
     setEmpresaId(empresaCriada.id);
     setEmpresaOwnerUid(empresaCriada.ownerUid || user.uid);
     localStorage.setItem(`renovarEmpresaAtiva_${user.uid}`, empresaCriada.id);
+    await limparOnboardingPrimeiraEmpresa(user);
     showToast("Empresa criada com sucesso!", "success");
     return true;
   } catch (error) {
@@ -580,7 +596,7 @@ const excluirEmpresa = useCallback(async (id) => {
   // 🔹 CRIAR / CARREGAR EMPRESA
   // ================================
     useEffect(() => {
-      if (!user || perfilCarregando) return;
+      if (!user || perfilCarregando || !perfilUsuario) return;
 
       let cancelado = false;
 
@@ -592,7 +608,11 @@ const excluirEmpresa = useCallback(async (id) => {
           const snapshot = await getDocs(ref);
 
           if (snapshot.empty && vinculosSnapshot.empty) {
-            if (perfilUsuario?.bloquearCriacaoAutomaticaEmpresa === true) {
+            const bloquearCriacaoAutomatica =
+              perfilUsuario?.bloquearCriacaoAutomaticaEmpresa === true ||
+              perfilUsuario?.onboardingEmpresaPendente === true;
+
+            if (bloquearCriacaoAutomatica) {
               setEmpresas([]);
               setEmpresaId(null);
               setEmpresaOwnerUid(null);
@@ -645,6 +665,10 @@ const excluirEmpresa = useCallback(async (id) => {
 
             const lista = Array.from(mapaEmpresas.values());
 
+            if (perfilUsuario?.onboardingEmpresaPendente === true) {
+              await limparOnboardingPrimeiraEmpresa(user);
+            }
+
             await Promise.all(
               lista.map((empresa) =>
                 garantirUsuarioDonoEmpresa({
@@ -676,15 +700,24 @@ const excluirEmpresa = useCallback(async (id) => {
         }
       };
 
+      const recarregarAposOnboarding = () => {
+        carregarEmpresas();
+      };
+
+      window.addEventListener(EVENTO_PRIMEIRA_EMPRESA_CRIADA, recarregarAposOnboarding);
       carregarEmpresas();
 
       return () => {
         cancelado = true;
+        window.removeEventListener(
+          EVENTO_PRIMEIRA_EMPRESA_CRIADA,
+          recarregarAposOnboarding
+        );
       };
     }, [
       criarEmpresaBackend,
       perfilCarregando,
-      perfilUsuario?.bloquearCriacaoAutomaticaEmpresa,
+      perfilUsuario,
       showToast,
       user,
     ]);
