@@ -322,7 +322,7 @@ export default function Estoque() {
       <table>
         <thead>
           <tr>
-            <th>{renderCabecalhoOrdenavel(oficina ? "Peca" : "Produto", "produto", ordenacaoProdutos)}</th>
+            <th>{renderCabecalhoOrdenavel(oficina ? "Peça" : "Produto", "produto", ordenacaoProdutos)}</th>
             {oficina && (
               <th>{renderCabecalhoOrdenavel("Codigo", "codigo", ordenacaoProdutos)}</th>
             )}
@@ -464,25 +464,25 @@ export default function Estoque() {
         {isOficina ? (
           <>
             <div className="card" style={{ borderLeft: "5px solid #2563eb" }}>
-              <p style={{ color: "#64748b" }}>Valor em Pecas</p>
+              <p style={{ color: "#64748b" }}>Valor em Peças</p>
               <h2 style={{ color: "#2563eb" }}>{moeda(valorTotalPecas)}</h2>
-              <small>Pecas fisicas em estoque</small>
+              <small>Peças fisicas em estoque</small>
             </div>
 
             <div className="card" style={{ borderLeft: "5px solid #16a34a" }}>
-              <p style={{ color: "#64748b" }}>Pecas em Estoque</p>
+              <p style={{ color: "#64748b" }}>Peças em Estoque</p>
               <h2 style={{ color: "#16a34a" }}>{pecasComSaldo.length}</h2>
               <small>Itens com saldo positivo</small>
             </div>
 
             <div className="card" style={{ borderLeft: "5px solid #dc2626" }}>
-              <p style={{ color: "#64748b" }}>Pecas em Alerta</p>
+              <p style={{ color: "#64748b" }}>Peças em Alerta</p>
               <h2 style={{ color: "#dc2626" }}>{pecasBaixas.length}</h2>
               <small>Abaixo do minimo</small>
             </div>
 
             <div className="card" style={{ borderLeft: "5px solid #f59e0b" }}>
-              <p style={{ color: "#64748b" }}>Pecas Zeradas</p>
+              <p style={{ color: "#64748b" }}>Peças Zeradas</p>
               <h2 style={{ color: "#f59e0b" }}>{pecasZeradas.length}</h2>
               <small>Estoque igual ou abaixo de zero</small>
             </div>
@@ -529,7 +529,7 @@ export default function Estoque() {
       >
         {isOficina ? (
           <div className="card">
-            <h3>Alertas de Pecas</h3>
+            <h3>Alertas de Peças</h3>
 
             {carregandoMinimo ? (
               <p style={{ color: "#64748b", marginTop: "10px" }}>
@@ -552,7 +552,7 @@ export default function Estoque() {
               ))
             ) : (
               <p style={{ color: "#16a34a", marginTop: "10px" }}>
-                Nenhuma peca abaixo do estoque minimo.
+                Nenhuma peça abaixo do estoque minimo.
               </p>
             )}
           </div>
@@ -622,9 +622,9 @@ export default function Estoque() {
       ================================= */}
       {isOficina ? (
         renderTabelaProdutosEstoque(
-          "Estoque de Pecas",
+          "Estoque de Peças",
           pecasEstoqueOrdenadas,
-          "Nenhuma peca em estoque.",
+          "Nenhuma peça em estoque.",
           { oficina: true }
         )
       ) : (

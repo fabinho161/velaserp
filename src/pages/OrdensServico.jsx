@@ -920,7 +920,7 @@ export default function OrdensServico() {
     });
 
     if (pecaInvalida) {
-      showToast("Revise as pecas da ordem.", "warning");
+      showToast("Revise as peças da ordem.", "warning");
       return;
     }
 
@@ -1540,7 +1540,7 @@ export default function OrdensServico() {
                   <Package size={20} />
                 </span>
                 <div>
-                  <h3>Pecas</h3>
+                  <h3>Peças</h3>
                   <p>Produtos salvos como snapshot e consumidos pelo estoque derivado.</p>
                 </div>
               </div>
@@ -1598,7 +1598,7 @@ export default function OrdensServico() {
               <div className="fornecedores-form-wide">
                 <button type="button" className="confirm-secondary" onClick={adicionarPeca}>
                   <Plus size={16} />
-                  Adicionar peca
+                  Adicionar peça
                 </button>
               </div>
             </div>
@@ -1608,7 +1608,7 @@ export default function OrdensServico() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Peca</th>
+                      <th>Peça</th>
                       <th>Qtd.</th>
                       <th>Valor unit.</th>
                       <th>Subtotal</th>
@@ -1669,7 +1669,7 @@ export default function OrdensServico() {
 
             <div className="resumo-pedido">
               <span>Total servicos: {moedaBR(totais.totalServicos)}</span>
-              <span>Total pecas: {moedaBR(totais.totalPecas)}</span>
+              <span>Total peças: {moedaBR(totais.totalPecas)}</span>
               <strong>Total geral: {moedaBR(totais.totalGeral)}</strong>
             </div>
 

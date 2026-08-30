@@ -90,7 +90,7 @@ export default function Sidebar() {
         podeVerMenu(PERMISSOES_EMPRESA.ordensServico) &&
           { path: "/ordens-servico", label: "Ordens de Servico", icon: ClipboardList, modulo: "ordensServico" },
         podeVerMenu(PERMISSOES_EMPRESA.vendas) &&
-          { path: "/venda-pecas", label: "Venda de Pecas", icon: ShoppingCart, modulo: "vendaPecas" },
+          { path: "/venda-pecas", label: "Venda de Peças", icon: ShoppingCart, modulo: "vendaPecas" },
         podeVerMenu(PERMISSOES_EMPRESA.estoque) &&
           { path: "/perdas-doacoes", label: "Perdas e Doacoes", icon: Warehouse, modulo: "perdasDoacoes" },
       ]),

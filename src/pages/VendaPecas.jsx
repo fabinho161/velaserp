@@ -389,7 +389,7 @@ export default function VendaPecas() {
 
   const adicionarItem = () => {
     if (!produtoSelecionado) {
-      showToast("Selecione uma peca valida.", "warning");
+      showToast("Selecione uma peça valida.", "warning");
       return;
     }
 
@@ -471,7 +471,7 @@ export default function VendaPecas() {
       const produtoId = String(item.produtoId || "").trim();
       const nomeProduto = textoProdutoSeguro(
         item.produtoNome || item.produto,
-        "peca"
+        "peça"
       );
       const quantidade = Number(item.quantidade || 0);
 
@@ -521,7 +521,7 @@ export default function VendaPecas() {
     }
 
     if (itens.length === 0) {
-      showToast("Adicione pelo menos uma peca.", "warning");
+      showToast("Adicione pelo menos uma peça.", "warning");
       return;
     }
 
@@ -585,7 +585,7 @@ export default function VendaPecas() {
   const cancelarVenda = async (venda) => {
     if (!venda?.id || vendaFoiCancelada(venda)) return;
 
-    const confirmado = await confirmar("Deseja cancelar esta venda de pecas?");
+    const confirmado = await confirmar("Deseja cancelar esta venda de peças?");
     if (!confirmado) return;
 
     await updateItem("vendas", venda.id, {
@@ -608,11 +608,11 @@ export default function VendaPecas() {
 
   return (
     <div className="sales-page">
-      <h1 className="page-title">Venda de Pecas</h1>
+      <h1 className="page-title">Venda de Peças</h1>
 
       <div className="sales-summary-grid">
         <div className="sales-metric-card sales-metric-green">
-          <p>Vendas de pecas</p>
+          <p>Vendas de peças</p>
           <h2>{vendasPecas.length}</h2>
           <small>Registros da oficina</small>
         </div>
@@ -637,7 +637,7 @@ export default function VendaPecas() {
       </div>
 
       <div className="card sales-section-card">
-        <h3>{vendaEditandoId ? "Editar Venda de Pecas" : "Nova Venda de Pecas"}</h3>
+        <h3>{vendaEditandoId ? "Editar Venda de Peças" : "Nova Venda de Peças"}</h3>
 
         <div className="sales-form-grid">
           <label>
@@ -693,11 +693,11 @@ export default function VendaPecas() {
       </div>
 
       <div className="card sales-section-card">
-        <h3>Adicionar Peca</h3>
+        <h3>Adicionar Peça</h3>
 
         <div className="sales-item-grid">
           <label>
-            <span>Peca</span>
+            <span>Peça</span>
             <select
               value={itemAtual.produtoId}
               onChange={(e) =>
@@ -708,7 +708,7 @@ export default function VendaPecas() {
                 })
               }
             >
-              <option value="">Selecione a peca</option>
+              <option value="">Selecione a peça</option>
               {produtosDisponiveis.map((produto) => (
                 <option key={produto.produtoId} value={produto.produtoId}>
                   {produto.produto} - estoque: {numeroBR(produto.saldo, 2)}
@@ -779,13 +779,13 @@ export default function VendaPecas() {
       </div>
 
       <div className="card sales-section-card">
-        <h3>Pecas da Venda</h3>
+        <h3>Peças da Venda</h3>
 
         <div className="sales-table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Peca</th>
+                <th>Peça</th>
                 <th>Qtd</th>
                 <th>Unitario</th>
                 <th>Bruto</th>
@@ -809,10 +809,10 @@ export default function VendaPecas() {
                   <td>{moedaBR(item.lucro)}</td>
                   <td>
                     <ActionMenu
-                      label="Abrir acoes da peca"
+                      label="Abrir acoes da peça"
                       items={[
                         {
-                          label: "Remover peca",
+                          label: "Remover peça",
                           danger: true,
                           onClick: () => removerItem(index),
                         },
@@ -824,7 +824,7 @@ export default function VendaPecas() {
 
               {itens.length === 0 && (
                 <tr>
-                  <td colSpan="9">Nenhuma peca adicionada.</td>
+                  <td colSpan="9">Nenhuma peça adicionada.</td>
                 </tr>
               )}
             </tbody>
@@ -875,10 +875,10 @@ export default function VendaPecas() {
       </div>
 
       <div className="card sales-section-card">
-        <h3>Historico de Venda de Pecas</h3>
+        <h3>Historico de Venda de Peças</h3>
 
         <input
-          placeholder="Buscar por numero, cliente ou peca"
+          placeholder="Buscar por numero, cliente ou peça"
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
         />
@@ -938,7 +938,7 @@ export default function VendaPecas() {
 
               {vendasFiltradas.length === 0 && (
                 <tr>
-                  <td colSpan="8">Nenhuma venda de pecas encontrada.</td>
+                  <td colSpan="8">Nenhuma venda de peças encontrada.</td>
                 </tr>
               )}
             </tbody>

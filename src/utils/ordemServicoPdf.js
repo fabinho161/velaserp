@@ -247,7 +247,7 @@ const desenharTotais = async (doc, ordem, y, cabecalho) => {
   doc.setTextColor(...PDF_COLORS.slate);
   doc.text("Total de Servicos", x + 4, yAjustado + 7);
   doc.text(moedaBR(ordem.totalServicos || 0), x + largura - 4, yAjustado + 7, { align: "right" });
-  doc.text("Total de Pecas", x + 4, yAjustado + 15);
+  doc.text("Total de Peças", x + 4, yAjustado + 15);
   doc.text(moedaBR(ordem.totalPecas || 0), x + largura - 4, yAjustado + 15, { align: "right" });
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...PDF_COLORS.navy);
@@ -355,15 +355,15 @@ export const gerarOrdemServicoPDF = async ({ ordem, dadosEmpresa = {} }) => {
   });
 
   y = await tabelaPDF(doc, {
-    titulo: "PECAS",
-    head: [["Peca", "Qtd.", "Valor unitario", "Subtotal"]],
+    titulo: "PEÇAS",
+    head: [["Peça", "Qtd.", "Valor unitario", "Subtotal"]],
     body: (Array.isArray(ordem.pecas) ? ordem.pecas : []).map((peca) => [
       textoPDF(peca.produtoNome || peca.produto),
       numeroSeguro(peca.quantidade).toLocaleString("pt-BR"),
       moedaBR(peca.valorUnitario || 0),
       moedaBR(peca.subtotal || 0),
     ]),
-    mensagemVazia: "Nenhuma peca informada.",
+    mensagemVazia: "Nenhuma peça informada.",
     startY: y,
     cabecalho,
   });
