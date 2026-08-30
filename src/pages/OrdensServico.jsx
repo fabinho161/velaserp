@@ -738,12 +738,19 @@ export default function OrdensServico() {
       return;
     }
 
-    limparFormulario();
+    if (ordemEditando) {
+      limparFormulario();
+    }
+
     setModalAberto(true);
   };
 
   const abrirEdicaoOrdem = (ordem) => {
     if (!podeEscreverOrdens) return;
+    if (ordemEditando?.id && ordemEditando.id === ordem.id) {
+      setModalAberto(true);
+      return;
+    }
 
     setOrdemEditando(ordem);
     setForm({
