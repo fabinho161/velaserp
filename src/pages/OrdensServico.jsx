@@ -4,7 +4,6 @@ import {
   doc,
   onSnapshot,
   serverTimestamp,
-  setDoc,
   updateDoc,
 } from "firebase/firestore";
 import { ClipboardList, Filter, Package, Plus, Search, Wrench } from "lucide-react";
@@ -54,6 +53,10 @@ const PERFIS_ESCRITA_OS = new Set([
   "comercial",
   "producao",
 ]);
+const API_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_URL ||
+  "http://localhost:10000";
 
 const osInicial = {
   clienteId: "",
@@ -852,6 +855,35 @@ export default function OrdensServico() {
     };
   };
 
+  const criarOrdemServicoBackend = async (payload) => {
+    const idToken = await user.getIdToken();
+    const ordem = { ...payload };
+
+    delete ordem.atualizadoEm;
+    delete ordem.criadoEm;
+    delete ordem.id;
+    delete ordem.numero;
+
+    const response = await fetch(`${API_URL}/api/ordens-servico`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        empresaId,
+        ordem,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data.error || "Nao foi possivel criar a ordem de servico.");
+    }
+
+    return data;
+  };
+
   const salvarOrdem = async () => {
     if (!ordensServicoRef || !user || !empresaId) {
       showToast("Empresa ainda nao carregou. Aguarde e tente novamente.", "warning");
@@ -957,13 +989,7 @@ export default function OrdensServico() {
         await updateDoc(doc(ordensServicoRef, ordemEditando.id), payload);
         showToast("Ordem de servico atualizada com sucesso.", "success");
       } else {
-        const novaOrdemRef = doc(ordensServicoRef);
-        await setDoc(novaOrdemRef, {
-          ...payload,
-          numero: `OS-${novaOrdemRef.id}`,
-          status: "aberta",
-          criadoEm: serverTimestamp(),
-        });
+        await criarOrdemServicoBackend(payload);
         showToast("Ordem de servico criada com sucesso.", "success");
       }
 

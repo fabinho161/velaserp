@@ -2,7 +2,18 @@ import { useState } from "react";
 import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
 import { usePlano } from "../hooks/usePlano";
-import { SEGMENTOS_EMPRESA, SEGMENTO_EMPRESA_PADRAO } from "../config/segmentosEmpresa.js";
+import {
+  SEGMENTOS_EMPRESA,
+  SEGMENTO_EMPRESA_PADRAO,
+  normalizarSegmentoEmpresa,
+} from "../config/segmentosEmpresa.js";
+
+const LABELS_SEGMENTO = {
+  comercio: "Comércio",
+  industria: "Indústria",
+  oficina: "Oficina",
+  clientes: "Prestação de Serviços",
+};
 
 export default function EmpresaSwitcher() {
   const { empresas, empresaId, trocarEmpresa, criarNovaEmpresa } = useERP();
@@ -10,7 +21,11 @@ export default function EmpresaSwitcher() {
   const { podeCriarEmpresa } = usePlano();
   const [novaEmpresa, setNovaEmpresa] = useState("");
   const [segmento, setSegmento] = useState(SEGMENTO_EMPRESA_PADRAO);
+  const [exibirNovaEmpresa, setExibirNovaEmpresa] = useState(false);
   const [criando, setCriando] = useState(false);
+  const empresaAtual = empresas.find((empresa) => empresa.id === empresaId);
+  const segmentoAtual = normalizarSegmentoEmpresa(empresaAtual?.segmento);
+  const labelSegmentoAtual = LABELS_SEGMENTO[segmentoAtual] || LABELS_SEGMENTO.industria;
 
   const criar = async () => {
     if (criando) return;
@@ -33,6 +48,7 @@ export default function EmpresaSwitcher() {
       if (criada) {
         setNovaEmpresa("");
         setSegmento(SEGMENTO_EMPRESA_PADRAO);
+        setExibirNovaEmpresa(false);
       }
     } finally {
       setCriando(false);
@@ -54,32 +70,52 @@ export default function EmpresaSwitcher() {
         ))}
       </select>
 
-      <div className="empresa-nova">
-        <div className="empresa-nova-linha">
-          <input
-            placeholder="Nome da nova empresa"
-            value={novaEmpresa}
-            disabled={!podeCriarEmpresa || criando}
-            onChange={(e) => setNovaEmpresa(e.target.value)}
-          />
-
-          <button type="button" onClick={criar} disabled={!podeCriarEmpresa || criando}>
-            {criando ? "..." : "+"}
-          </button>
+      {empresaAtual && (
+        <div className="empresa-segmento-atual">
+          <span>Segmento atual</span>
+          <strong>{labelSegmentoAtual}</strong>
         </div>
+      )}
 
-        <select
-          value={segmento}
-          disabled={!podeCriarEmpresa || criando}
-          onChange={(e) => setSegmento(e.target.value)}
+      {!exibirNovaEmpresa ? (
+        <button
+          type="button"
+          className="empresa-nova-toggle"
+          onClick={() => setExibirNovaEmpresa(true)}
+          disabled={!podeCriarEmpresa}
         >
-          {Object.values(SEGMENTOS_EMPRESA).map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.nome}
-            </option>
-          ))}
-        </select>
-      </div>
+          + Nova empresa
+        </button>
+      ) : (
+        <div className="empresa-nova">
+          <label>Nome da nova empresa</label>
+          <div className="empresa-nova-linha">
+            <input
+              placeholder="Nome da nova empresa"
+              value={novaEmpresa}
+              disabled={!podeCriarEmpresa || criando}
+              onChange={(e) => setNovaEmpresa(e.target.value)}
+            />
+
+            <button type="button" onClick={criar} disabled={!podeCriarEmpresa || criando}>
+              {criando ? "..." : "Criar"}
+            </button>
+          </div>
+
+          <label>Tipo do negócio</label>
+          <select
+            value={segmento}
+            disabled={!podeCriarEmpresa || criando}
+            onChange={(e) => setSegmento(e.target.value)}
+          >
+            {Object.values(SEGMENTOS_EMPRESA).map((item) => (
+              <option key={item.id} value={item.id}>
+                {LABELS_SEGMENTO[item.id] || item.nome}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
     </div>
   );
 }

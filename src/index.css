@@ -223,12 +223,39 @@ body {
 .empresa-switcher select,
 .empresa-switcher input {
   width: 100%;
+  min-width: 0;
   margin-bottom: 8px;
   padding: 9px 10px;
   border-radius: 10px;
   border: 1px solid rgba(148, 163, 184, 0.22);
   background: #020617;
   color: #fff;
+}
+
+.empresa-segmento-atual {
+  display: grid;
+  gap: 2px;
+  margin: 8px 0 10px;
+  color: #cbd5e1;
+}
+
+.empresa-segmento-atual span {
+  font-size: 11px;
+}
+
+.empresa-segmento-atual strong {
+  font-size: 13px;
+  color: #fff;
+}
+
+.empresa-nova-toggle {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  background: rgba(37, 99, 235, 0.16);
+  color: #dbeafe;
+  cursor: pointer;
 }
 
 .empresa-nova {
@@ -248,10 +275,10 @@ body {
 }
 
 .empresa-nova button {
-  width: 42px;
-  min-width: 42px;
+  min-width: 58px;
   min-height: 40px;
-  flex: 0 0 42px;
+  flex: 0 0 auto;
+  padding: 0 12px;
   border: none;
   border-radius: 10px;
   background: #2563eb;

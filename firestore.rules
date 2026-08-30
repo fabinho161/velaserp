@@ -303,15 +303,6 @@ service cloud.firestore {
         );
     }
 
-    function canCreateOrdemServico(ownerUid, empresaId) {
-      return isCompanySegment(ownerUid, empresaId, "oficina") &&
-        canWriteModule(ownerUid, empresaId, "ordensServico") &&
-        (
-          !request.resource.data.keys().hasAny(["status"]) ||
-          request.resource.data.status != "encerrada"
-        );
-    }
-
     function isValidClosingOrdemServico() {
       return resource.data.status == "concluida" &&
         request.resource.data.status == "encerrada" &&
@@ -717,9 +708,14 @@ service cloud.firestore {
         match /ordensServico/{osId} {
           allow read: if isCompanySegment(userId, empresaId, "oficina") &&
             canReadModule(userId, empresaId, "ordensServico");
-          allow create: if canCreateOrdemServico(userId, empresaId);
-          allow update: if canUpdateOrdemServico(userId, empresaId);
+          allow create: if false;
+          allow update: if canUpdateOrdemServico(userId, empresaId) &&
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(["numero"]);
           allow delete: if false;
+        }
+
+        match /controles/ordensServico {
+          allow read, write: if false;
         }
 
         match /clientesComerciais/{documentId} {
