@@ -6,6 +6,7 @@ import { useTableSort } from "../hooks/useTableSort";
 import ActionMenu from "../components/ActionMenu";
 import { moedaBR, numeroBR } from "../utils/formatters";
 import { useParametros } from "../hooks/useParametros";
+import { normalizarSegmentoEmpresa } from "../config/segmentosEmpresa";
 
 const FISCAL_PRODUTO_PADRAO = {
   ncm: "",
@@ -50,6 +51,70 @@ const CLASSES_INDUSTRIAIS = [
   { valor: "outro", label: "Outro" },
 ];
 
+const TEXTOS_PRODUTOS_POR_SEGMENTO = {
+  industria: {
+    titulo: "Produtos / Ficha Tecnica",
+    subtitulo:
+      "Cadastre produtos, defina consumo de insumos e acompanhe custos, margem e preco de venda por ficha tecnica.",
+    tituloFormularioNovo: "Novo Produto",
+    tituloFormularioEdicao: "Editar Produto",
+    tituloResultado: "Resultado da Ficha Tecnica",
+    tituloLista: "Produtos Cadastrados",
+    resumoItens: "Itens com ficha tecnica",
+    ajudaRevenda:
+      "Use Revenda para produtos comprados prontos. Eles nao exigem ficha tecnica nem producao industrial.",
+    ajudaSimples:
+      "Use este tipo quando a ficha tecnica representa o consumo total de 1 produto final, como uma caixa, kit ou pacote.",
+    ajudaUnidade: "Use este tipo quando a ficha tecnica representa o consumo de 1 unidade.",
+    botaoSalvar: "Salvar Produto",
+    botaoAtualizar: "Atualizar Produto",
+  },
+  comercio: {
+    titulo: "Produtos",
+    subtitulo:
+      "Cadastre produtos, acompanhe custos, margem e preco de venda para a operacao comercial.",
+    tituloFormularioNovo: "Novo Produto",
+    tituloFormularioEdicao: "Editar Produto",
+    tituloResultado: "Resultado do Produto",
+    tituloLista: "Produtos Cadastrados",
+    resumoItens: "Itens cadastrados",
+    ajudaRevenda: "Use este cadastro para produtos comprados prontos e vendidos pela empresa.",
+    ajudaSimples: "Use este tipo para caixas, kits ou pacotes vendidos como unidade final.",
+    ajudaUnidade: "Use este tipo para produtos vendidos por unidade.",
+    botaoSalvar: "Salvar Produto",
+    botaoAtualizar: "Atualizar Produto",
+  },
+  oficina: {
+    titulo: "Produtos / Pecas",
+    subtitulo:
+      "Cadastre produtos e pecas, acompanhe custos, margem e preco de venda para a oficina.",
+    tituloFormularioNovo: "Novo Produto / Peca",
+    tituloFormularioEdicao: "Editar Produto / Peca",
+    tituloResultado: "Resultado do Produto / Peca",
+    tituloLista: "Produtos / Pecas Cadastrados",
+    resumoItens: "Itens e pecas cadastrados",
+    ajudaRevenda: "Use este cadastro para pecas e produtos comprados prontos.",
+    ajudaSimples: "Use este tipo para kits ou pacotes vendidos como unidade final.",
+    ajudaUnidade: "Use este tipo para pecas e produtos vendidos por unidade.",
+    botaoSalvar: "Salvar Produto / Peca",
+    botaoAtualizar: "Atualizar Produto / Peca",
+  },
+  clientes: {
+    titulo: "Produtos",
+    subtitulo: "Cadastre produtos e acompanhe custos, margem e preco de venda.",
+    tituloFormularioNovo: "Novo Produto",
+    tituloFormularioEdicao: "Editar Produto",
+    tituloResultado: "Resultado do Produto",
+    tituloLista: "Produtos Cadastrados",
+    resumoItens: "Itens cadastrados",
+    ajudaRevenda: "Use este cadastro para produtos comprados prontos.",
+    ajudaSimples: "Use este tipo para kits ou pacotes vendidos como unidade final.",
+    ajudaUnidade: "Use este tipo para produtos vendidos por unidade.",
+    botaoSalvar: "Salvar Produto",
+    botaoAtualizar: "Atualizar Produto",
+  },
+};
+
 const normalizarClasseIndustrial = (valor) =>
   CLASSES_INDUSTRIAIS.some((classe) => classe.valor === valor)
     ? valor
@@ -90,11 +155,33 @@ const normalizarFiscalProduto = (fiscal = {}) => ({
   observacoesFiscais: fiscal.observacoesFiscais || "",
 });
 
+const criarFormularioProdutoInicial = (tipoProduto = "", segmento = "industria") => ({
+  codigo: "",
+  nome: "",
+  tipoProduto,
+  tipo: "Geral",
+  pesoUnidade: "",
+  conteudoPorProduto: "",
+  qtdPorMaco: "",
+  qtdProducao: "",
+  precoVenda: "",
+  custoUnitario: "",
+  origemProduto: segmento === "industria" ? ORIGEM_PRODUTO_PADRAO : "revenda",
+  dataCadastro: "",
+  consumos: {},
+  componentesProduto: {},
+  fiscal: FISCAL_PRODUTO_PADRAO,
+  classeIndustrial: CLASSE_INDUSTRIAL_PADRAO,
+  vendavel: true,
+  consumivelEmProducao: false,
+});
+
 export default function Produtos() {
   // ================================
   // 🔹 CONTEXTO GLOBAL DO ERP
   // ================================
-  const { insumos, produtos, addItem, updateItem, deleteItem } = useERP();
+  const { empresaId, empresas = [], insumos, produtos, addItem, updateItem, deleteItem } =
+    useERP();
   const { showToast } = useToast();
   const { confirmar } = useConfirmacao();
   const { tiposProduto = [] } = useParametros();
@@ -102,30 +189,19 @@ export default function Produtos() {
   const tiposProdutoAtivos = tiposProduto.filter(
     (tipo) => tipo.ativo
   );
+  const empresaAtiva = empresas.find((empresa) => empresa.id === empresaId);
+  const segmentoEmpresa = normalizarSegmentoEmpresa(empresaAtiva?.segmento);
+  const produtoIndustrial = segmentoEmpresa === "industria";
+  const textosProdutos =
+    TEXTOS_PRODUTOS_POR_SEGMENTO[segmentoEmpresa] ||
+    TEXTOS_PRODUTOS_POR_SEGMENTO.industria;
 
   // ================================
   // 🔹 FORMULÁRIO DO PRODUTO
   // ================================
-  const [form, setForm] = useState({
-    codigo: "",
-    nome: "",
-    tipoProduto: tiposProdutoAtivos[0]?.id || "",
-    tipo: "Geral",
-    pesoUnidade: "",
-    conteudoPorProduto: "",
-    qtdPorMaco: "",
-    qtdProducao: "",
-    precoVenda: "",
-    custoUnitario: "",
-    origemProduto: ORIGEM_PRODUTO_PADRAO,
-    dataCadastro: "",
-    consumos: {},
-    componentesProduto: {},
-    fiscal: FISCAL_PRODUTO_PADRAO,
-    classeIndustrial: CLASSE_INDUSTRIAL_PADRAO,
-    vendavel: true,
-    consumivelEmProducao: false,
-  });
+  const [form, setForm] = useState(() =>
+    criarFormularioProdutoInicial(tiposProdutoAtivos[0]?.id || "", segmentoEmpresa)
+  );
 
   // ================================
   // 🔹 CONTROLE DE EDIÇÃO
@@ -168,6 +244,10 @@ export default function Produtos() {
   // 🔹 CALCULAR CUSTO UNITÁRIO DO PRODUTO
   // ================================
   const calcularCustoUnitario = () => {
+    if (!produtoIndustrial) {
+      return Number(form.custoUnitario || 0);
+    }
+
     if (normalizarOrigemProduto(form.origemProduto) === "revenda") {
       return Number(form.custoUnitario || 0);
     }
@@ -195,7 +275,8 @@ export default function Produtos() {
   // 🔹 RESULTADOS CALCULADOS
   // ================================
   const custoUnitario = calcularCustoUnitario();
-  const produtoRevenda = normalizarOrigemProduto(form.origemProduto) === "revenda";
+  const produtoRevenda =
+    !produtoIndustrial || normalizarOrigemProduto(form.origemProduto) === "revenda";
 
   const tipoProduto = form.tipoProduto || tiposProdutoAtivos[0]?.id || "";
 
@@ -319,26 +400,9 @@ export default function Produtos() {
   // 🔹 LIMPAR FORMULÁRIO
   // ================================
   const limparFormulario = () => {
-    setForm({
-      codigo: "",
-      nome: "",
-      tipoProduto: tiposProdutoAtivos[0]?.id || "",
-      tipo: "Geral",
-      pesoUnidade: "",
-      conteudoPorProduto: "",
-      qtdPorMaco: "",
-      qtdProducao: "",
-      precoVenda: "",
-      custoUnitario: "",
-      origemProduto: ORIGEM_PRODUTO_PADRAO,
-      dataCadastro: "",
-      consumos: {},
-      componentesProduto: {},
-      fiscal: FISCAL_PRODUTO_PADRAO,
-      classeIndustrial: CLASSE_INDUSTRIAL_PADRAO,
-      vendavel: true,
-      consumivelEmProducao: false,
-    });
+    setForm(
+      criarFormularioProdutoInicial(tiposProdutoAtivos[0]?.id || "", segmentoEmpresa)
+    );
 
     setEditIndex(null);
   };
@@ -392,6 +456,7 @@ export default function Produtos() {
     };
   }, {});
 
+  const devePersistirFichaTecnica = produtoIndustrial && !produtoRevenda;
   const produtoCalculado = {
     ...form,
     tipoProduto,
@@ -400,9 +465,15 @@ export default function Produtos() {
     conteudoPorProduto: conteudoPorProduto || 1,
     qtdProducao,
     precoVenda,
-    origemProduto: normalizarOrigemProduto(form.origemProduto),
-    consumos: produtoRevenda ? {} : consumosNormalizados,
-    componentesProduto: produtoRevenda ? {} : componentesProdutoNormalizados,
+    origemProduto: produtoIndustrial
+      ? normalizarOrigemProduto(form.origemProduto)
+      : editIndex === null
+      ? "revenda"
+      : normalizarOrigemProduto(form.origemProduto),
+    consumos: devePersistirFichaTecnica ? consumosNormalizados : form.consumos || {},
+    componentesProduto: devePersistirFichaTecnica
+      ? componentesProdutoNormalizados
+      : form.componentesProduto || {},
     dataCadastro: form.dataCadastro || new Date().toISOString().split("T")[0],
     custoUnitario,
     custoProducao,
@@ -411,7 +482,9 @@ export default function Produtos() {
     valorUnitario,
     qtdMaco,
     fiscal: normalizarFiscalProduto(form.fiscal),
-    classeIndustrial: normalizarClasseIndustrial(form.classeIndustrial),
+    classeIndustrial: produtoIndustrial
+      ? normalizarClasseIndustrial(form.classeIndustrial)
+      : form.classeIndustrial || CLASSE_INDUSTRIAL_PADRAO,
     vendavel: Boolean(form.vendavel),
     consumivelEmProducao: Boolean(form.consumivelEmProducao),
   };
@@ -481,10 +554,9 @@ export default function Produtos() {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Produtos / Ficha Técnica</h1>
+          <h1 className="page-title">{textosProdutos.titulo}</h1>
           <p className="page-subtitle">
-            Cadastre produtos, defina consumo de insumos e acompanhe custos,
-            margem e preço de venda por ficha técnica.
+            {textosProdutos.subtitulo}
           </p>
         </div>
       </div>
@@ -496,7 +568,7 @@ export default function Produtos() {
         <div className="card metric-card" style={{ "--metric-color": "#2563eb" }}>
           <p>Produtos cadastrados</p>
           <h2>{totalProdutos}</h2>
-          <small>Itens com ficha técnica</small>
+          <small>{textosProdutos.resumoItens}</small>
         </div>
 
         <div className="card metric-card" style={{ "--metric-color": "#16a34a" }}>
@@ -526,7 +598,11 @@ export default function Produtos() {
           🔹 DADOS DO PRODUTO
       ================================= */}
       <div className="card section-card">
-        <h3>{editIndex !== null ? "Editar Produto" : "Novo Produto"}</h3>
+        <h3>
+          {editIndex !== null
+            ? textosProdutos.tituloFormularioEdicao
+            : textosProdutos.tituloFormularioNovo}
+        </h3>
 
         <div className="form-grid">
           <label>
@@ -575,24 +651,26 @@ export default function Produtos() {
             />
           </label>
 
-          <label>
-            Origem do produto
-            <select
-              value={form.origemProduto}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  origemProduto: normalizarOrigemProduto(e.target.value),
-                })
-              }
-            >
-              {ORIGENS_OPERACIONAIS_PRODUTO.map((origem) => (
-                <option key={origem.valor} value={origem.valor}>
-                  {origem.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          {produtoIndustrial && (
+            <label>
+              Origem do produto
+              <select
+                value={form.origemProduto}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    origemProduto: normalizarOrigemProduto(e.target.value),
+                  })
+                }
+              >
+                {ORIGENS_OPERACIONAIS_PRODUTO.map((origem) => (
+                  <option key={origem.valor} value={origem.valor}>
+                    {origem.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <label>
             Data de cadastro
@@ -679,14 +757,31 @@ export default function Produtos() {
               onChange={(e) => setForm({ ...form, precoVenda: e.target.value })}
             />
           </label>
+
+          <label className="industrial-toggle-card">
+            <input
+              type="checkbox"
+              checked={Boolean(form.vendavel)}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  vendavel: e.target.checked,
+                })
+              }
+            />
+            <span className="industrial-toggle-copy">
+              <strong>Pode ser vendido?</strong>
+              <small>Item disponivel para venda e uso comercial</small>
+            </span>
+          </label>
         </div>
 
         <div className="product-type-help">
           {produtoRevenda
-            ? "Use Revenda para produtos comprados prontos. Eles não exigem ficha técnica nem produção industrial."
+            ? textosProdutos.ajudaRevenda
             : produtoSimples
-            ? "Use este tipo quando a ficha técnica representa o consumo total de 1 produto final, como uma caixa, kit ou pacote."
-            : "Use este tipo quando a ficha técnica representa o consumo de 1 unidade."}
+            ? textosProdutos.ajudaSimples
+            : textosProdutos.ajudaUnidade}
         </div>
 
         {editIndex !== null && (
@@ -696,6 +791,7 @@ export default function Produtos() {
 
       <br />
 
+      {produtoIndustrial && (
       <div className="card section-card product-industrial-card">
         <h3>Classificação Industrial</h3>
         <p className="section-description">
@@ -726,23 +822,6 @@ export default function Produtos() {
           <label className="industrial-toggle-card">
             <input
               type="checkbox"
-              checked={Boolean(form.vendavel)}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  vendavel: e.target.checked,
-                })
-              }
-            />
-            <span className="industrial-toggle-copy">
-              <strong>Pode ser vendido?</strong>
-              <small>Item disponível para uso comercial</small>
-            </span>
-          </label>
-
-          <label className="industrial-toggle-card">
-            <input
-              type="checkbox"
               checked={Boolean(form.consumivelEmProducao)}
               onChange={(e) =>
                 setForm({
@@ -758,8 +837,9 @@ export default function Produtos() {
           </label>
         </div>
       </div>
+      )}
 
-      <br />
+      {produtoIndustrial && <br />}
 
       <div className="card section-card">
         <h3>Dados Fiscais do Produto</h3>
@@ -887,7 +967,7 @@ export default function Produtos() {
       {/* ================================
           🔹 CONSUMO DE INSUMOS
       ================================= */}
-      {!produtoRevenda && (
+      {produtoIndustrial && !produtoRevenda && (
         <>
       <div className="card section-card">
         <h3>
@@ -1008,7 +1088,13 @@ export default function Produtos() {
           🔹 RESULTADO DA FICHA TÉCNICA
       ================================= */}
       <div className="card section-card">
-        <h3>{produtoRevenda ? "Resultado do Produto de Revenda" : "Resultado da Ficha Técnica"}</h3>
+        <h3>
+          {produtoIndustrial
+            ? produtoRevenda
+              ? "Resultado do Produto de Revenda"
+              : textosProdutos.tituloResultado
+            : textosProdutos.tituloResultado}
+        </h3>
 
         <div className="info-grid">
           <div className="info-tile">
@@ -1081,7 +1167,7 @@ export default function Produtos() {
 
         <div className="action-row">
           <button onClick={salvarProduto}>
-            {editIndex !== null ? "Atualizar Produto" : "Salvar Produto"}
+            {editIndex !== null ? textosProdutos.botaoAtualizar : textosProdutos.botaoSalvar}
           </button>
 
           {editIndex !== null && (
@@ -1096,7 +1182,7 @@ export default function Produtos() {
           🔹 PRODUTOS CADASTRADOS
       ================================= */}
       <div className="card section-card">
-        <h3>Produtos Cadastrados</h3>
+        <h3>{textosProdutos.tituloLista}</h3>
 
         <div className="table-wrapper">
         <table>
@@ -1105,13 +1191,19 @@ export default function Produtos() {
               <th>{renderCabecalhoOrdenavel("Data", "dataCadastro", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Código", "codigo", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Produto", "nome", ordenacaoProdutos)}</th>
-              <th>{renderCabecalhoOrdenavel("Origem", "origemProduto", ordenacaoProdutos)}</th>
-              <th>{renderCabecalhoOrdenavel("Classe", "classeIndustrial", ordenacaoProdutos)}</th>
+              {produtoIndustrial && (
+                <th>{renderCabecalhoOrdenavel("Origem", "origemProduto", ordenacaoProdutos)}</th>
+              )}
+              {produtoIndustrial && (
+                <th>{renderCabecalhoOrdenavel("Classe", "classeIndustrial", ordenacaoProdutos)}</th>
+              )}
               <th>{renderCabecalhoOrdenavel("Tipo produto", "tipoProduto", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Categoria", "tipo", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Conteúdo", "conteudoPorProduto", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Custo Unit.", "custoUnitario", ordenacaoProdutos)}</th>
-              <th>{renderCabecalhoOrdenavel("Custo Produção", "custoProducao", ordenacaoProdutos)}</th>
+              {produtoIndustrial && (
+                <th>{renderCabecalhoOrdenavel("Custo Produção", "custoProducao", ordenacaoProdutos)}</th>
+              )}
               <th>{renderCabecalhoOrdenavel("Venda", "precoVenda", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Lucro", "lucro", ordenacaoProdutos)}</th>
               <th>{renderCabecalhoOrdenavel("Margem", "margem", ordenacaoProdutos)}</th>
@@ -1125,22 +1217,26 @@ export default function Produtos() {
                 <td>{formatarDataBR(produto.dataCadastro)}</td>
                 <td>{produto.codigo}</td>
                 <td>{produto.nome}</td>
-                <td>
-                  <span
-                    className={
-                      normalizarOrigemProduto(produto.origemProduto) === "revenda"
-                        ? "badge badge-warning"
-                        : "badge badge-info"
-                    }
-                  >
-                    {getOrigemProdutoLabel(produto.origemProduto)}
-                  </span>
-                </td>
-                <td>
-                  <span className="badge badge-info">
-                    {getClasseIndustrialLabel(produto.classeIndustrial)}
-                  </span>
-                </td>
+                {produtoIndustrial && (
+                  <td>
+                    <span
+                      className={
+                        normalizarOrigemProduto(produto.origemProduto) === "revenda"
+                          ? "badge badge-warning"
+                          : "badge badge-info"
+                      }
+                    >
+                      {getOrigemProdutoLabel(produto.origemProduto)}
+                    </span>
+                  </td>
+                )}
+                {produtoIndustrial && (
+                  <td>
+                    <span className="badge badge-info">
+                      {getClasseIndustrialLabel(produto.classeIndustrial)}
+                    </span>
+                  </td>
+                )}
                 <td>
                   {produto.tipoProduto === "simples"
                     ? "Caixa / Kit / Pacote"
@@ -1154,7 +1250,9 @@ export default function Produtos() {
                   )}
                 </td>
                 <td>R$ {numeroBR(produto.custoUnitario || 0, 2)}</td>
-                <td>R$ {numeroBR(produto.custoProducao || 0, 2)}</td>
+                {produtoIndustrial && (
+                  <td>R$ {numeroBR(produto.custoProducao || 0, 2)}</td>
+                )}
                 <td>R$ {numeroBR(produto.precoVenda || 0, 2)}</td>
                 <td>R$ {numeroBR(produto.lucro || 0, 2)}</td>
 
@@ -1191,7 +1289,7 @@ export default function Produtos() {
 
             {produtos.length === 0 && (
               <tr>
-                <td colSpan="14">Nenhum produto cadastrado.</td>
+                <td colSpan={produtoIndustrial ? 14 : 11}>Nenhum produto cadastrado.</td>
               </tr>
             )}
           </tbody>

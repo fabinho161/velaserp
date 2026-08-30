@@ -46,6 +46,7 @@ export const SEGMENTOS_EMPRESA = {
       "veiculos",
       "servicos",
       "ordensServico",
+      "vendaPecas",
       "produtos",
       "estoque",
       "financeiro",

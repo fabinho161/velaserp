@@ -186,11 +186,20 @@ export default function Veiculos() {
     setModalAberto(true);
   };
 
-  const fecharModal = () => {
-    if (salvando) return;
+  const resetarModal = () => {
     setModalAberto(false);
     setVeiculoEditando(null);
     setForm(veiculoInicial);
+  };
+
+  const fecharModalSemDescartar = () => {
+    if (salvando) return;
+    setModalAberto(false);
+  };
+
+  const cancelarModal = () => {
+    if (salvando) return;
+    resetarModal();
   };
 
   const atualizarCampo = (campo, valor) => {
@@ -279,7 +288,7 @@ export default function Veiculos() {
         showToast("Veiculo cadastrado com sucesso.", "success");
       }
 
-      fecharModal();
+      resetarModal();
     } catch (error) {
       console.error("Erro ao salvar veiculo:", error);
       showToast("Nao foi possivel salvar o veiculo.", "error");
@@ -471,7 +480,7 @@ export default function Veiculos() {
           className="modal-overlay"
           role="dialog"
           aria-modal="true"
-          onClick={fecharModal}
+          onClick={fecharModalSemDescartar}
         >
           <div
             className="modal-card fornecedores-modal"
@@ -595,7 +604,7 @@ export default function Veiculos() {
             </div>
 
             <div className="modal-actions">
-              <button type="button" className="confirm-secondary" onClick={fecharModal}>
+              <button type="button" className="confirm-secondary" onClick={cancelarModal}>
                 Cancelar
               </button>
               <button type="button" onClick={salvarVeiculo} disabled={salvando}>

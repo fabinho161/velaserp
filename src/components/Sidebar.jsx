@@ -89,6 +89,8 @@ export default function Sidebar() {
           { path: "/servicos", label: "Servicos", icon: Wrench, modulo: "servicos" },
         podeVerMenu(PERMISSOES_EMPRESA.ordensServico) &&
           { path: "/ordens-servico", label: "Ordens de Servico", icon: ClipboardList, modulo: "ordensServico" },
+        podeVerMenu(PERMISSOES_EMPRESA.vendas) &&
+          { path: "/venda-pecas", label: "Venda de Pecas", icon: ShoppingCart, modulo: "vendaPecas" },
         podeVerMenu(PERMISSOES_EMPRESA.estoque) &&
           { path: "/perdas-doacoes", label: "Perdas e Doacoes", icon: Warehouse, modulo: "perdasDoacoes" },
       ]),

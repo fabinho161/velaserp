@@ -10,7 +10,13 @@ import { useTableSort } from "../hooks/useTableSort";
 import { moedaBR, inteiroBR, dataBR, numeroBR } from "../utils/formatters";
 import { useParametros } from "../hooks/useParametros";
 
-const obterStatusFinanceiroVenda = (statusPagamento) => {
+const vendaCanceladaPorExpedicao = (venda = {}) =>
+  String(venda.statusExpedicao || "").trim().toLowerCase() === "cancelado";
+
+const obterStatusFinanceiroVenda = (venda = {}) => {
+  if (vendaCanceladaPorExpedicao(venda)) return "Cancelado";
+
+  const statusPagamento = venda.statusPagamento;
   const status = String(statusPagamento || "pendente").trim().toLowerCase();
 
   const statusFinanceiro = {
@@ -40,7 +46,7 @@ const normalizarDataFinanceira = (valor) => {
 
 const ordemServicoGeraReceita = (ordem = {}) =>
   String(ordem.statusPagamento || "pendente").trim().toLowerCase() === "pago" &&
-  String(ordem.status || "").trim().toLowerCase() !== "cancelada";
+  String(ordem.status || "").trim().toLowerCase() === "encerrada";
 
 export default function Financeiro() {
   const navigate = useNavigate();
@@ -101,7 +107,7 @@ export default function Financeiro() {
     categoria: "Venda",
     valor: Number(venda.total ?? 0),
     data: venda.dataPagamento || venda.data || "",
-    status: obterStatusFinanceiroVenda(venda.statusPagamento),
+    status: obterStatusFinanceiroVenda(venda),
   }));
 
   const entradasOrdensServico = (ordensServico || [])
@@ -113,7 +119,9 @@ export default function Financeiro() {
       }`,
       categoria: "Ordem de Servico",
       valor: Number(ordem.totalGeral ?? 0),
-      data: normalizarDataFinanceira(ordem.dataPagamento || ordem.criadoEm || ""),
+      data: normalizarDataFinanceira(
+        ordem.dataPagamento || ordem.encerradoEm || ordem.criadoEm || ""
+      ),
       status: "Recebido",
     }));
 

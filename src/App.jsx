@@ -18,6 +18,7 @@ import Producao from "./pages/Producao";
 import Estoque from "./pages/Estoque";
 import PerdasDoacoes from "./pages/PerdasDoacoes";
 import Vendas from "./pages/Vendas";
+import VendaPecas from "./pages/VendaPecas";
 import Financeiro from "./pages/Financeiro";
 import Relatorios from "./pages/Relatorios";
 import Produtos from "./pages/Produtos";
@@ -104,6 +105,16 @@ function AuthenticatedApp() {
                   >
                     <Vendas />
                   </PlanoRoute>
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
+            )}
+          />
+          <Route
+            path="/venda-pecas"
+            element={(
+              <SegmentoRoute modulo="vendaPecas">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.vendas}>
+                  <VendaPecas />
                 </EmpresaPermissionRoute>
               </SegmentoRoute>
             )}

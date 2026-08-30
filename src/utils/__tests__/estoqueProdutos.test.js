@@ -116,6 +116,28 @@ test("OS concluida consome pecas", () => {
   assert.equal(produto.saldo, 8);
 });
 
+test("OS encerrada consome pecas", () => {
+  const produto = calcularProduto({
+    ordensServico: [ordemServico("encerrada")],
+  });
+
+  assert.equal(produto.consumidoEmOrdemServico, 2);
+  assert.equal(produto.saldo, 8);
+});
+
+test("OS concluida e encerrada mantem o mesmo consumo", () => {
+  const concluida = calcularProduto({
+    ordensServico: [ordemServico("concluida", [pecaPadrao(4)])],
+  });
+  const encerrada = calcularProduto({
+    ordensServico: [ordemServico("encerrada", [pecaPadrao(4)])],
+  });
+
+  assert.equal(concluida.consumidoEmOrdemServico, 4);
+  assert.equal(encerrada.consumidoEmOrdemServico, 4);
+  assert.equal(encerrada.saldo, concluida.saldo);
+});
+
 test("OS cancelada e status desconhecido nao consomem pecas", () => {
   const produto = calcularProduto({
     ordensServico: [

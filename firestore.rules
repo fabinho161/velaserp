@@ -303,6 +303,43 @@ service cloud.firestore {
         );
     }
 
+    function canCreateOrdemServico(ownerUid, empresaId) {
+      return isCompanySegment(ownerUid, empresaId, "oficina") &&
+        canWriteModule(ownerUid, empresaId, "ordensServico") &&
+        (
+          !request.resource.data.keys().hasAny(["status"]) ||
+          request.resource.data.status != "encerrada"
+        );
+    }
+
+    function isValidClosingOrdemServico() {
+      return resource.data.status == "concluida" &&
+        request.resource.data.status == "encerrada" &&
+        request.resource.data.statusPagamento == "pago" &&
+        request.resource.data.encerradoEm == request.time &&
+        request.resource.data.encerradoPor == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status",
+          "encerradoEm",
+          "encerradoPor",
+          "atualizadoEm",
+        ]);
+    }
+
+    function canUpdateOrdemServico(ownerUid, empresaId) {
+      return isCompanySegment(ownerUid, empresaId, "oficina") &&
+        canWriteModule(ownerUid, empresaId, "ordensServico") &&
+        (
+          !resource.data.keys().hasAny(["status"]) ||
+          resource.data.status != "encerrada"
+        ) &&
+        (
+          !request.resource.data.keys().hasAny(["status"]) ||
+          request.resource.data.status != "encerrada" ||
+          isValidClosingOrdemServico()
+        );
+    }
+
     function canWriteCompanyConfiguration(ownerUid, empresaId, documentId) {
       return isCompanyAdministratorCanonical(ownerUid, empresaId) ||
         (
@@ -680,8 +717,8 @@ service cloud.firestore {
         match /ordensServico/{osId} {
           allow read: if isCompanySegment(userId, empresaId, "oficina") &&
             canReadModule(userId, empresaId, "ordensServico");
-          allow create, update: if isCompanySegment(userId, empresaId, "oficina") &&
-            canWriteModule(userId, empresaId, "ordensServico");
+          allow create: if canCreateOrdemServico(userId, empresaId);
+          allow update: if canUpdateOrdemServico(userId, empresaId);
           allow delete: if false;
         }
 

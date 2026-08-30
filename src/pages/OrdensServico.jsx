@@ -13,7 +13,9 @@ import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
 import { db } from "../firebase";
 import { calcularEstoqueProdutos } from "../utils/estoqueProdutos";
+import { useConfirmacao } from "../context/useConfirmacao";
 import { moedaBR } from "../utils/formatters";
+import { gerarOrdemServicoPDF } from "../utils/ordemServicoPdf";
 
 const STATUS_OS = [
   { valor: "aberta", label: "Aberta", classe: "badge-info" },
@@ -21,10 +23,12 @@ const STATUS_OS = [
   { valor: "aprovada", label: "Aprovada", classe: "badge-purple" },
   { valor: "em_execucao", label: "Em execucao", classe: "badge-info" },
   { valor: "concluida", label: "Concluida", classe: "badge-success" },
+  { valor: "encerrada", label: "Encerrada", classe: "badge-purple" },
   { valor: "cancelada", label: "Cancelada", classe: "badge-danger" },
 ];
 
 const STATUS_VALIDOS = new Set(STATUS_OS.map((status) => status.valor));
+const STATUS_EDICAO_OS = STATUS_OS.filter((status) => status.valor !== "encerrada");
 const STATUS_PAGAMENTO_OS = [
   { valor: "pendente", label: "Pendente" },
   { valor: "pago", label: "Pago" },
@@ -65,6 +69,8 @@ const osInicial = {
   statusPagamento: "pendente",
   formaPagamento: "",
   dataPagamento: null,
+  encerradoEm: null,
+  encerradoPor: "",
 };
 
 const servicoFormularioInicial = {
@@ -99,6 +105,30 @@ const numeroSeguro = (valor) => {
 
 const obterStatusOSConfig = (status) =>
   STATUS_OS.find((item) => item.valor === normalizarStatusOS(status)) || STATUS_OS[0];
+
+const obterStatusPagamentoLabel = (status) =>
+  STATUS_PAGAMENTO_OS.find(
+    (item) => item.valor === normalizarStatusPagamentoOS(status)
+  )?.label || "Pendente";
+
+const obterFormaPagamentoLabel = (formaPagamento) =>
+  FORMAS_PAGAMENTO_OS.find(
+    (item) => item.valor === String(formaPagamento || "").trim().toLowerCase()
+  )?.label || "Nao informado";
+
+const normalizarTelefoneWhatsApp = (telefone) => {
+  const digitos = String(telefone || "").replace(/\D/g, "");
+
+  if (digitos.length === 10 || digitos.length === 11) {
+    return `55${digitos}`;
+  }
+
+  if (digitos.startsWith("55") && (digitos.length === 12 || digitos.length === 13)) {
+    return digitos;
+  }
+
+  return "";
+};
 
 const formatarData = (valor) => {
   if (!valor) return "-";
@@ -194,6 +224,8 @@ export default function OrdensServico() {
     clientesComerciais = [],
     empresaId,
     empresaOwnerUid,
+    empresas = [],
+    configuracoes,
     isAdminMaster,
     ordensServico = [],
     perfilEmpresaAtual,
@@ -204,6 +236,7 @@ export default function OrdensServico() {
     user,
   } = useERP();
   const { showToast } = useToast();
+  const { confirmar } = useConfirmacao();
 
   const [veiculos, setVeiculos] = useState([]);
   const [servicosCatalogo, setServicosCatalogo] = useState([]);
@@ -223,6 +256,23 @@ export default function OrdensServico() {
   const ownerUid = empresaOwnerUid || user?.uid || null;
   const podeEscreverOrdens =
     isAdminMaster || PERFIS_ESCRITA_OS.has(perfilEmpresaAtual);
+  const empresaAtiva = useMemo(
+    () => empresas.find((empresa) => empresa.id === empresaId) || null,
+    [empresaId, empresas]
+  );
+  const dadosEmpresaPDF = useMemo(() => {
+    const empresaConfig = configuracoes?.empresa || {};
+
+    return {
+      nome: empresaConfig.nome || empresaAtiva?.nome || "Renovar ERP",
+      cnpj: empresaConfig.cnpj || empresaAtiva?.cnpj || "",
+      cidade: empresaConfig.cidade || empresaAtiva?.cidade || "",
+      telefone: empresaConfig.telefone || empresaAtiva?.telefone || "",
+      email: empresaConfig.email || empresaAtiva?.email || "",
+      logoBase64: empresaConfig.logoBase64 || empresaAtiva?.logoBase64 || "",
+      logoUrl: empresaConfig.logoUrl || empresaAtiva?.logoUrl || "",
+    };
+  }, [configuracoes, empresaAtiva]);
 
   const ordensServicoRef = useMemo(() => {
     if (!user || !empresaId || !ownerUid) return null;
@@ -713,6 +763,8 @@ export default function OrdensServico() {
       statusPagamento: normalizarStatusPagamentoOS(ordem.statusPagamento),
       formaPagamento: ordem.formaPagamento || "",
       dataPagamento: ordem.dataPagamento || null,
+      encerradoEm: ordem.encerradoEm || null,
+      encerradoPor: ordem.encerradoPor || "",
     });
     setServicosOS(
       Array.isArray(ordem.servicos)
@@ -729,11 +781,19 @@ export default function OrdensServico() {
     setModalAberto(true);
   };
 
-  const fecharModal = () => {
-    if (salvando) return;
-
+  const resetarModal = () => {
     setModalAberto(false);
     limparFormulario();
+  };
+
+  const fecharModalSemDescartar = () => {
+    if (salvando) return;
+    setModalAberto(false);
+  };
+
+  const cancelarModal = () => {
+    if (salvando) return;
+    resetarModal();
   };
 
   const montarPayload = () => {
@@ -750,6 +810,7 @@ export default function OrdensServico() {
       0
     );
     const statusPagamento = normalizarStatusPagamentoOS(form.statusPagamento);
+    const status = normalizarStatusOS(form.status);
 
     return {
       clienteId: form.clienteId,
@@ -770,11 +831,13 @@ export default function OrdensServico() {
       totalServicos,
       totalPecas,
       totalGeral: totalServicos + totalPecas,
-      status: normalizarStatusOS(form.status),
+      status,
       statusPagamento,
       formaPagamento: normalizarTexto(form.formaPagamento),
       dataPagamento:
         statusPagamento === "pago" ? form.dataPagamento || obterDataPagamentoAtual() : null,
+      encerradoEm: status === "encerrada" ? form.encerradoEm || null : null,
+      encerradoPor: status === "encerrada" ? normalizarTexto(form.encerradoPor) : "",
       atualizadoEm: serverTimestamp(),
     };
   };
@@ -787,6 +850,16 @@ export default function OrdensServico() {
 
     if (!podeEscreverOrdens) {
       showToast("Voce nao tem permissao para salvar ordens de servico.", "warning");
+      return;
+    }
+
+    if (normalizarStatusOS(ordemEditando?.status) === "encerrada") {
+      showToast("OS encerrada fica disponivel somente para leitura.", "warning");
+      return;
+    }
+
+    if (normalizarStatusOS(form.status) === "encerrada") {
+      showToast("Use a acao Encerrar OS para finalizar a ordem.", "warning");
       return;
     }
 
@@ -884,13 +957,112 @@ export default function OrdensServico() {
         showToast("Ordem de servico criada com sucesso.", "success");
       }
 
-      fecharModal();
+      resetarModal();
     } catch (error) {
       console.error("Erro ao salvar ordem de servico:", error);
       showToast("Nao foi possivel salvar a ordem de servico.", "error");
     } finally {
       setSalvando(false);
     }
+  };
+
+  const encerrarOrdem = async (ordem) => {
+    if (!ordensServicoRef || !user || !empresaId) {
+      showToast("Empresa ainda nao carregou. Aguarde e tente novamente.", "warning");
+      return;
+    }
+
+    if (!podeEscreverOrdens) {
+      showToast("Voce nao tem permissao para encerrar ordens de servico.", "warning");
+      return;
+    }
+
+    if (salvando) return;
+
+    const statusAtual = normalizarStatusOS(ordem.status);
+    const pagamentoAtual = normalizarStatusPagamentoOS(ordem.statusPagamento);
+
+    if (statusAtual !== "concluida" || pagamentoAtual !== "pago") {
+      showToast(
+        "Para encerrar a OS, o servico deve estar concluido e o pagamento marcado como pago.",
+        "warning"
+      );
+      return;
+    }
+
+    const confirmado = await confirmar("Deseja encerrar esta ordem de servico?");
+    if (!confirmado) return;
+
+    setSalvando(true);
+
+    try {
+      await updateDoc(doc(ordensServicoRef, ordem.id), {
+        status: "encerrada",
+        encerradoEm: serverTimestamp(),
+        encerradoPor: user.uid,
+        atualizadoEm: serverTimestamp(),
+      });
+      showToast("Ordem de servico encerrada com sucesso.", "success");
+    } catch (error) {
+      console.error("Erro ao encerrar ordem de servico:", error);
+      showToast("Nao foi possivel encerrar a ordem de servico.", "error");
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const imprimirOrdem = async (ordem) => {
+    try {
+      await gerarOrdemServicoPDF({
+        ordem,
+        dadosEmpresa: dadosEmpresaPDF,
+      });
+    } catch (error) {
+      console.error("Erro ao gerar PDF da ordem de servico:", error);
+      showToast("Nao foi possivel gerar o PDF da ordem de servico.", "error");
+    }
+  };
+
+  const enviarOrdemWhatsApp = (ordem) => {
+    const telefone = normalizarTelefoneWhatsApp(ordem.clienteTelefone);
+
+    if (!telefone) {
+      showToast("Informe um telefone valido no cliente da OS para enviar pelo WhatsApp.", "warning");
+      return;
+    }
+
+    const numero = ordem.numero || `OS-${ordem.id}`;
+    const veiculo =
+      [
+        ordem.veiculoPlaca,
+        [ordem.veiculoMarca, ordem.veiculoModelo].filter(Boolean).join(" "),
+      ]
+        .filter(Boolean)
+        .join(" - ") || "Veiculo nao informado";
+    const status = obterStatusOSConfig(ordem.status).label;
+    const statusPagamento = normalizarStatusPagamentoOS(ordem.statusPagamento);
+    const pagamento = [
+      `Pagamento: ${obterStatusPagamentoLabel(statusPagamento)}`,
+      statusPagamento === "pago"
+        ? `Forma: ${obterFormaPagamentoLabel(ordem.formaPagamento)}`
+        : "",
+    ].filter(Boolean);
+    const empresaNome = dadosEmpresaPDF.nome || "Equipe da oficina";
+    const mensagem = [
+      `Ola, ${ordem.clienteNome || "tudo bem"}.\n`,
+      `Segue um resumo da sua Ordem de Servico ${numero}.`,
+      "",
+      `Veiculo: ${veiculo}`,
+      `Status: ${status}`,
+      `Total: ${moedaBR(ordem.totalGeral || 0)}`,
+      ...pagamento,
+      "",
+      "Qualquer duvida, estamos a disposicao.",
+      empresaNome,
+    ].join("\n");
+    const url = `https://wa.me/${telefone}?text=${encodeURIComponent(mensagem)}`;
+
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -1008,6 +1180,31 @@ export default function OrdensServico() {
               <tbody>
                 {ordensFiltradas.map((ordem) => {
                   const status = obterStatusOSConfig(ordem.status);
+                  const statusValor = normalizarStatusOS(ordem.status);
+                  const ordemEncerrada = statusValor === "encerrada";
+                  const ordemCancelada = statusValor === "cancelada";
+                  const acoesOrdem = [
+                    podeEscreverOrdens && !ordemEncerrada
+                      ? {
+                          label: "Editar OS",
+                          onClick: () => abrirEdicaoOrdem(ordem),
+                        }
+                      : null,
+                    podeEscreverOrdens && !ordemEncerrada && !ordemCancelada
+                      ? {
+                          label: "Encerrar OS",
+                          onClick: () => encerrarOrdem(ordem),
+                        }
+                      : null,
+                    {
+                      label: "Imprimir OS",
+                      onClick: () => imprimirOrdem(ordem),
+                    },
+                    {
+                      label: "Enviar por WhatsApp",
+                      onClick: () => enviarOrdemWhatsApp(ordem),
+                    },
+                  ].filter(Boolean);
 
                   return (
                     <tr key={ordem.id}>
@@ -1033,15 +1230,10 @@ export default function OrdensServico() {
                         </span>
                       </td>
                       <td>
-                        {podeEscreverOrdens ? (
+                        {acoesOrdem.length > 0 ? (
                           <ActionMenu
                             label="Abrir acoes da ordem de servico"
-                            items={[
-                              {
-                                label: "Editar OS",
-                                onClick: () => abrirEdicaoOrdem(ordem),
-                              },
-                            ]}
+                            items={acoesOrdem}
                           />
                         ) : (
                           "-"
@@ -1067,7 +1259,7 @@ export default function OrdensServico() {
           className="modal-overlay"
           role="dialog"
           aria-modal="true"
-          onClick={fecharModal}
+          onClick={fecharModalSemDescartar}
         >
           <div
             className="modal-card fornecedores-modal oficina-os-modal"
@@ -1140,7 +1332,7 @@ export default function OrdensServico() {
                   disabled={!ordemEditando}
                   onChange={(event) => atualizarCampo("status", event.target.value)}
                 >
-                  {STATUS_OS.map((status) => (
+                  {STATUS_EDICAO_OS.map((status) => (
                     <option key={status.valor} value={status.valor}>
                       {status.label}
                     </option>
@@ -1482,7 +1674,7 @@ export default function OrdensServico() {
             </div>
 
             <div className="modal-actions">
-              <button type="button" className="confirm-secondary" onClick={fecharModal}>
+              <button type="button" className="confirm-secondary" onClick={cancelarModal}>
                 Cancelar
               </button>
               <button type="button" onClick={salvarOrdem} disabled={salvando}>

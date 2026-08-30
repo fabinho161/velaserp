@@ -154,11 +154,20 @@ export default function Servicos() {
     setModalAberto(true);
   };
 
-  const fecharModal = () => {
-    if (salvando) return;
+  const resetarModal = () => {
     setModalAberto(false);
     setServicoEditando(null);
     setForm(servicoInicial);
+  };
+
+  const fecharModalSemDescartar = () => {
+    if (salvando) return;
+    setModalAberto(false);
+  };
+
+  const cancelarModal = () => {
+    if (salvando) return;
+    resetarModal();
   };
 
   const atualizarCampo = (campo, valor) => {
@@ -233,7 +242,7 @@ export default function Servicos() {
         showToast("Servico cadastrado com sucesso.", "success");
       }
 
-      fecharModal();
+      resetarModal();
     } catch (error) {
       console.error("Erro ao salvar servico:", error);
       showToast("Nao foi possivel salvar o servico.", "error");
@@ -419,7 +428,7 @@ export default function Servicos() {
           className="modal-overlay"
           role="dialog"
           aria-modal="true"
-          onClick={fecharModal}
+          onClick={fecharModalSemDescartar}
         >
           <div
             className="modal-card fornecedores-modal"
@@ -495,7 +504,7 @@ export default function Servicos() {
             </div>
 
             <div className="modal-actions">
-              <button type="button" className="confirm-secondary" onClick={fecharModal}>
+              <button type="button" className="confirm-secondary" onClick={cancelarModal}>
                 Cancelar
               </button>
               <button type="button" onClick={salvarServico} disabled={salvando}>

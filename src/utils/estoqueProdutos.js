@@ -118,6 +118,7 @@ const STATUS_OS_CONSOME_ESTOQUE = new Set([
   "aprovada",
   "em_execucao",
   "concluida",
+  "encerrada",
 ]);
 
 const ordemServicoMovimentaEstoque = (ordem = {}) =>
