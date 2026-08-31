@@ -104,6 +104,10 @@ function ChartFrame({ children }) {
   );
 }
 
+const vendaEstaValidaFinanceiramente = (venda = {}) =>
+  String(venda.statusPagamento || "").trim().toLowerCase() !== "cancelado" &&
+  String(venda.statusExpedicao || "").trim().toLowerCase() !== "cancelado";
+
 export default function Dashboard() {
   const { vendas, producoes, insumos, despesas, produtos } = useERP();
   const ordenacaoPedidos = useTableSort({
@@ -120,24 +124,30 @@ export default function Dashboard() {
 
   const formatarDataBR = formatarDataPedidoBR;
 
-  const faturamento = vendas.reduce((t, v) => t + Number(v.total || 0), 0);
-  const lucro = vendas.reduce((t, v) => t + Number(v.lucro || 0), 0);
-  const totalPedidos = vendas.length;
+  const vendasValidas = vendas.filter(vendaEstaValidaFinanceiramente);
+  const faturamento = vendasValidas.reduce((t, v) => t + Number(v.total || 0), 0);
+  const lucro = vendasValidas.reduce((t, v) => t + Number(v.lucro || 0), 0);
+  const totalPedidos = vendasValidas.length;
   const ticketMedio = totalPedidos > 0 ? faturamento / totalPedidos : 0;
+  const despesasAtivas = despesas.filter(
+    (despesa) =>
+      despesa.excluida !== true &&
+      String(despesa.status || "Pago").trim().toLowerCase() !== "cancelado"
+  );
 
-  const despesasTotal = despesas.reduce(
+  const despesasTotal = despesasAtivas.reduce(
     (t, d) => t + Number(d.valor || 0),
     0
   );
 
   const saldo = faturamento - despesasTotal;
 
-  const pedidosPendentes = vendas.filter(
+  const pedidosPendentes = vendasValidas.filter(
     (v) => v.statusExpedicao !== "Entregue"
   ).length;
 
   const faturamentoPorDia = Object.values(
-    vendas.reduce((acc, venda) => {
+    vendasValidas.reduce((acc, venda) => {
       const data = venda.data || "Sem data";
 
       if (!acc[data]) {
@@ -163,7 +173,7 @@ export default function Dashboard() {
     return dataA - dataB;
   });
 
-  const rankingProdutos = calcularRankingLucroProdutos({ vendas, produtos });
+  const rankingProdutos = calcularRankingLucroProdutos({ vendas: vendasValidas, produtos });
 
   const producaoPorProduto = Object.values(
     producoes.reduce((acc, producao) => {
@@ -207,7 +217,7 @@ export default function Dashboard() {
     0
   );
 
-  const ultimosPedidosBase = ordenarUltimosPedidos(vendas, 5);
+  const ultimosPedidosBase = ordenarUltimosPedidos(vendasValidas, 5);
   const ultimosPedidos = ordenacaoPedidos.ordenar(
     ultimosPedidosBase,
     (pedido, chave) => {

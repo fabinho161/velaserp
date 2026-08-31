@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import ActionMenu from "../components/ActionMenu";
@@ -9,9 +10,14 @@ import { usePlano } from "../hooks/usePlano";
 import { useTableSort } from "../hooks/useTableSort";
 import { moedaBR, inteiroBR, dataBR, numeroBR } from "../utils/formatters";
 import { useParametros } from "../hooks/useParametros";
+import { db } from "../firebase";
 
 const vendaCanceladaPorExpedicao = (venda = {}) =>
   String(venda.statusExpedicao || "").trim().toLowerCase() === "cancelado";
+
+const vendaEstaValidaFinanceiramente = (venda = {}) =>
+  String(venda.statusPagamento || "").trim().toLowerCase() !== "cancelado" &&
+  String(venda.statusExpedicao || "").trim().toLowerCase() !== "cancelado";
 
 const obterStatusFinanceiroVenda = (venda = {}) => {
   if (vendaCanceladaPorExpedicao(venda)) return "Cancelado";
@@ -48,12 +54,25 @@ const ordemServicoGeraReceita = (ordem = {}) =>
   String(ordem.statusPagamento || "pendente").trim().toLowerCase() === "pago" &&
   String(ordem.status || "").trim().toLowerCase() === "encerrada";
 
+const despesaEstaAtiva = (despesa = {}) =>
+  despesa.excluida !== true &&
+  String(despesa.status || "Pago").trim().toLowerCase() !== "cancelado";
+
 export default function Financeiro() {
   const navigate = useNavigate();
   // ================================
   // 🔹 CONTEXTO GLOBAL
   // ================================
-  const { vendas, despesas, ordensServico = [], addItem, updateItem, deleteItem } = useERP();
+  const {
+    user,
+    empresaId,
+    empresaOwnerUid,
+    vendas,
+    despesas,
+    ordensServico = [],
+    addItem,
+    updateItem,
+  } = useERP();
   const { showToast } = useToast();
   const { confirmar } = useConfirmacao();
   const { podeUsarDRE } = usePlano();
@@ -70,6 +89,8 @@ export default function Financeiro() {
     chave: "data",
     direcao: "desc",
   });
+  const vendasValidas = (vendas || []).filter(vendaEstaValidaFinanceiramente);
+  const despesasAtivas = (despesas || []).filter(despesaEstaAtiva);
   
 
   // ================================
@@ -99,7 +120,7 @@ export default function Financeiro() {
   // ================================
   // 🔹 ENTRADAS AUTOMÁTICAS DAS VENDAS
   // ================================
-  const entradasVendas = (vendas || []).map((venda) => ({
+  const entradasVendas = vendasValidas.map((venda) => ({
     tipo: "Entrada",
     descricao: `${venda.numeroPedido || "Pedido"} - ${
       venda.cliente || "Cliente não informado"
@@ -130,7 +151,7 @@ export default function Financeiro() {
   // ================================
   // 🔹 SAÍDAS CADASTRADAS
   // ================================
-  const saidas = (despesas || []).map((despesa) => ({
+  const saidas = despesasAtivas.map((despesa) => ({
     tipo: "Saída",
     descricao: despesa.descricao || "Despesa sem descrição",
     categoria: despesa.categoria || "Outros",
@@ -182,21 +203,21 @@ export default function Financeiro() {
     .reduce((total, item) => total + Number(item.valor ?? 0), 0);
 
   const saldo = totalEntradas - totalSaidas;
-  const totalVendas = (vendas || []).length;
+  const totalVendas = vendasValidas.length;
 
   const ticketMedio =
     totalVendas > 0
-      ? (vendas || []).reduce(
+      ? vendasValidas.reduce(
           (total, venda) => total + Number(venda.total ?? 0),
           0
         ) / totalVendas
       : 0;
 
-  const despesasPendentes = (despesas || []).filter(
+  const despesasPendentes = despesasAtivas.filter(
     (despesa) => despesa.status === "Pendente"
   ).length;
 
-  const totalDespesasPendentes = (despesas || [])
+  const totalDespesasPendentes = despesasAtivas
     .filter((despesa) => despesa.status === "Pendente")
     .reduce((total, despesa) => total + Number(despesa.valor ?? 0), 0);
 
@@ -228,7 +249,7 @@ export default function Financeiro() {
 // ================================
 // 🔹 DRE - DEMONSTRATIVO DE RESULTADO
 // ================================
-const vendasFiltradas = (vendas || []).filter((venda) => {
+const vendasFiltradas = vendasValidas.filter((venda) => {
   const dataVenda = venda.data || "";
 
   if (filtro.inicio && dataVenda < filtro.inicio) return false;
@@ -237,7 +258,7 @@ const vendasFiltradas = (vendas || []).filter((venda) => {
   return true;
 });
 
-const despesasFiltradas = (despesas || []).filter((despesa) => {
+const despesasFiltradas = despesasAtivas.filter((despesa) => {
   const dataDespesa = despesa.data || "";
 
   if (filtro.inicio && dataDespesa < filtro.inicio) return false;
@@ -296,7 +317,7 @@ const margemLiquida =
 }, {});
 
   const despesasOrdenadas = ordenacaoDespesas.ordenar(
-    (despesas || []).map((despesa, index) => ({
+    despesasAtivas.map((despesa, index) => ({
       despesa,
       index,
     })),
@@ -366,10 +387,10 @@ const margemLiquida =
     };
 
     if (editIndex !== null) {
-      const despesa = despesas[editIndex];
+      const despesa = despesasAtivas[editIndex];
 
       if (!despesa?.id) {
-        showToast("Não foi possível encontrar o ID da despesa para atualizar.", "error");
+        showToast("Não foi possível salvar. Tente novamente.", "error");
         return;
       }
 
@@ -385,7 +406,7 @@ const margemLiquida =
   // 🔹 EDITAR DESPESA
   // ================================
   const editarDespesa = (index) => {
-    const despesa = despesas[index];
+    const despesa = despesasAtivas[index];
 
     setForm({
       descricao: despesa.descricao || "",
@@ -402,17 +423,43 @@ const margemLiquida =
   // 🔹 EXCLUIR DESPESA
   // ================================
   const excluirDespesa = async (index) => {
-    const confirmado = await confirmar("Deseja excluir esta despesa?");
+    const confirmado = await confirmar(
+      "Excluir esta despesa? A despesa sera removida dos lancamentos e dos calculos financeiros, mas o historico sera preservado."
+    );
     if (!confirmado) return;
 
-    const despesa = despesas[index];
+    const despesa = despesasAtivas[index];
 
-    if (!despesa?.id) {
-      showToast("Não foi possível encontrar o ID da despesa para excluir.", "error");
+    if (!despesa?.id || !user?.uid || !empresaId || !empresaOwnerUid) {
+      showToast("Não foi possível concluir a operação.", "error");
       return;
     }
 
-    await deleteItem("despesas", despesa.id);
+    try {
+      await updateDoc(
+        doc(
+          db,
+          "users",
+          empresaOwnerUid,
+          "empresas",
+          empresaId,
+          "despesas",
+          despesa.id
+        ),
+        {
+          excluida: true,
+          excluidaEm: serverTimestamp(),
+          excluidaPor: user.uid,
+          status: "cancelado",
+          atualizadoEm: serverTimestamp(),
+        }
+      );
+      showToast("Despesa excluída da listagem.", "success");
+    } catch (error) {
+      console.error("Erro ao excluir despesa:", error);
+      showToast("Não foi possível concluir a operação.", "error");
+      return;
+    }
 
     if (editIndex === index) {
       limparFormulario();
@@ -936,7 +983,7 @@ const margemLiquida =
               </tr>
             ))}
 
-            {(!despesas || despesas.length === 0) && (
+            {despesasAtivas.length === 0 && (
               <tr>
                 <td colSpan="6">Nenhuma despesa cadastrada.</td>
               </tr>

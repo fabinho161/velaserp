@@ -102,6 +102,10 @@ export default function Relatorios() {
     );
   };
 
+  const vendaEstaValidaFinanceiramente = (venda = {}) =>
+    String(venda.statusPagamento || "").trim().toLowerCase() !== "cancelado" &&
+    String(venda.statusExpedicao || "").trim().toLowerCase() !== "cancelado";
+
   const criarChaveCliente = ({ id = "", nome = "" }) => {
     if (id) return `id:${id}`;
     const nomeNormalizado = normalizarTexto(nome);
@@ -244,10 +248,16 @@ export default function Relatorios() {
   // ================================
   // 🔹 DADOS FILTRADOS
   // ================================
-  const vendasFiltradas = filtrarPorPeriodo(vendas).filter(
+  const vendasValidas = (vendas || []).filter(vendaEstaValidaFinanceiramente);
+  const vendasFiltradas = filtrarPorPeriodo(vendasValidas).filter(
     vendaPertenceAoClienteSelecionado
   );
-  const despesasFiltradas = filtrarPorPeriodo(despesas);
+  const despesasAtivas = (despesas || []).filter(
+    (despesa) =>
+      despesa.excluida !== true &&
+      String(despesa.status || "Pago").trim().toLowerCase() !== "cancelado"
+  );
+  const despesasFiltradas = filtrarPorPeriodo(despesasAtivas);
   const producoesFiltradas = filtrarPorPeriodo(producoes);
 
   // ================================
