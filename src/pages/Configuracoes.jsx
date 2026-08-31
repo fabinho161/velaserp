@@ -155,10 +155,10 @@ export default function Configuracoes() {
         "empresa",
         podePersonalizarSistema ? form : dadosBasicos
       );
-      showToast("Configuracoes salvas com sucesso!", "success");
+      showToast("Alterações salvas com sucesso.", "success");
     } catch (error) {
       console.error("Erro ao salvar configuracoes da empresa:", error);
-      showToast("Nao foi possivel salvar as configuracoes.", "error");
+      showToast("Não foi possível salvar. Tente novamente.", "error");
     } finally {
       setSalvandoEmpresa(false);
     }
@@ -191,10 +191,10 @@ export default function Configuracoes() {
     try {
       setSalvandoFiscal(true);
       await salvarConfiguracao("fiscal", dadosFiscais);
-      showToast("Configuracoes fiscais salvas com sucesso!", "success");
+      showToast("Alterações salvas com sucesso.", "success");
     } catch (error) {
       console.error("Erro ao salvar configuracoes fiscais:", error);
-      showToast("Nao foi possivel salvar as configuracoes fiscais.", "error");
+      showToast("Não foi possível salvar. Tente novamente.", "error");
     } finally {
       setSalvandoFiscal(false);
     }

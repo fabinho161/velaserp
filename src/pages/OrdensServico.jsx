@@ -117,6 +117,14 @@ const obterStatusPagamentoLabel = (status) =>
     (item) => item.valor === normalizarStatusPagamentoOS(status)
   )?.label || "Pendente";
 
+const OS_CANCELAVEIS = new Set([
+  "aberta",
+  "aguardando_aprovacao",
+  "aprovada",
+  "em_execucao",
+  "concluida",
+]);
+
 const obterFormaPagamentoLabel = (formaPagamento) =>
   FORMAS_PAGAMENTO_OS.find(
     (item) => item.valor === String(formaPagamento || "").trim().toLowerCase()
@@ -464,10 +472,15 @@ export default function OrdensServico() {
     return Math.max(0, saldoEstoque - quantidadeNaOS);
   };
 
+  const ordensVisiveis = useMemo(
+    () => ordensServico.filter((ordem) => ordem.excluida !== true),
+    [ordensServico]
+  );
+
   const ordensFiltradas = useMemo(() => {
     const termo = normalizarBusca(busca);
 
-    return ordensServico.filter((ordem) => {
+    return ordensVisiveis.filter((ordem) => {
       const status = normalizarStatusOS(ordem.status);
       const confereStatus = filtroStatus === "todos" || status === filtroStatus;
       const texto = [
@@ -482,7 +495,7 @@ export default function OrdensServico() {
 
       return confereStatus && (!termo || texto.includes(termo));
     });
-  }, [busca, filtroStatus, ordensServico]);
+  }, [busca, filtroStatus, ordensVisiveis]);
 
   const totais = useMemo(() => {
     const totalServicos = servicosOS.reduce(
@@ -987,16 +1000,16 @@ export default function OrdensServico() {
 
       if (ordemEditando?.id) {
         await updateDoc(doc(ordensServicoRef, ordemEditando.id), payload);
-        showToast("Ordem de servico atualizada com sucesso.", "success");
+        showToast("Alterações salvas com sucesso.", "success");
       } else {
         await criarOrdemServicoBackend(payload);
-        showToast("Ordem de servico criada com sucesso.", "success");
+        showToast("Cadastro realizado com sucesso.", "success");
       }
 
       resetarModal();
     } catch (error) {
       console.error("Erro ao salvar ordem de servico:", error);
-      showToast("Nao foi possivel salvar a ordem de servico.", "error");
+      showToast("Não foi possível salvar. Tente novamente.", "error");
     } finally {
       setSalvando(false);
     }
@@ -1026,7 +1039,7 @@ export default function OrdensServico() {
       return;
     }
 
-    const confirmado = await confirmar("Deseja encerrar esta ordem de servico?");
+    const confirmado = await confirmar("Encerrar esta Ordem de Serviço?");
     if (!confirmado) return;
 
     setSalvando(true);
@@ -1038,10 +1051,96 @@ export default function OrdensServico() {
         encerradoPor: user.uid,
         atualizadoEm: serverTimestamp(),
       });
-      showToast("Ordem de servico encerrada com sucesso.", "success");
+      showToast("Alterações salvas com sucesso.", "success");
     } catch (error) {
       console.error("Erro ao encerrar ordem de servico:", error);
-      showToast("Nao foi possivel encerrar a ordem de servico.", "error");
+      showToast("Não foi possível concluir a operação.", "error");
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const cancelarOrdem = async (ordem) => {
+    if (!ordensServicoRef || !user || !empresaId) {
+      showToast("Empresa ainda nao carregou. Aguarde e tente novamente.", "warning");
+      return;
+    }
+
+    if (!podeEscreverOrdens) {
+      showToast("Voce nao tem permissao para cancelar ordens de servico.", "warning");
+      return;
+    }
+
+    if (salvando) return;
+
+    const statusAtual = normalizarStatusOS(ordem.status);
+
+    if (!OS_CANCELAVEIS.has(statusAtual)) {
+      showToast("Esta OS nao pode ser cancelada neste status.", "warning");
+      return;
+    }
+
+    const confirmado = await confirmar(
+      "Cancelar esta Ordem de Serviço? Ela permanecerá no histórico, as peças deixarão de consumir estoque e não será considerada como receita."
+    );
+    if (!confirmado) return;
+
+    setSalvando(true);
+
+    try {
+      await updateDoc(doc(ordensServicoRef, ordem.id), {
+        status: "cancelada",
+        atualizadoEm: serverTimestamp(),
+      });
+      showToast("Ordem de serviço cancelada.", "success");
+    } catch (error) {
+      console.error("Erro ao cancelar ordem de servico:", error);
+      showToast("Não foi possível concluir a operação.", "error");
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const excluirOrdem = async (ordem) => {
+    if (!ordensServicoRef || !user || !empresaId) {
+      showToast("Empresa ainda nao carregou. Aguarde e tente novamente.", "warning");
+      return;
+    }
+
+    if (!podeEscreverOrdens) {
+      showToast("Voce nao tem permissao para excluir ordens de servico.", "warning");
+      return;
+    }
+
+    if (salvando) return;
+
+    const statusAtual = normalizarStatusOS(ordem.status);
+
+    if (statusAtual === "encerrada") {
+      showToast("OS encerrada fica preservada no historico e nao pode ser excluida.", "warning");
+      return;
+    }
+
+    const numeroOS = ordem.numero || `OS-${ordem.id}`;
+    const confirmado = await confirmar(
+      `Excluir a OS ${numeroOS} da listagem? Esta OS será removida da operação normal, mas seu histórico e número permanecerão preservados.`
+    );
+    if (!confirmado) return;
+
+    setSalvando(true);
+
+    try {
+      await updateDoc(doc(ordensServicoRef, ordem.id), {
+        status: "cancelada",
+        excluida: true,
+        excluidaEm: serverTimestamp(),
+        excluidaPor: user.uid,
+        atualizadoEm: serverTimestamp(),
+      });
+      showToast("Ordem de serviço excluída da listagem.", "success");
+    } catch (error) {
+      console.error("Erro ao excluir ordem de servico:", error);
+      showToast("Não foi possível concluir a operação.", "error");
     } finally {
       setSalvando(false);
     }
@@ -1132,10 +1231,10 @@ export default function OrdensServico() {
         )}
       </div>
 
-      <div className="dashboard-grid">
+      <div className="os-summary-grid">
         <div className="card metric-card metric-blue">
           <p>Ordens</p>
-          <h2>{ordensServico.length}</h2>
+          <h2>{ordensVisiveis.length}</h2>
           <small>Total registrado</small>
         </div>
 
@@ -1143,7 +1242,7 @@ export default function OrdensServico() {
           <p>Em andamento</p>
           <h2>
             {
-              ordensServico.filter((ordem) =>
+              ordensVisiveis.filter((ordem) =>
                 ["aberta", "aguardando_aprovacao", "aprovada", "em_execucao"].includes(
                   normalizarStatusOS(ordem.status)
                 )
@@ -1157,8 +1256,9 @@ export default function OrdensServico() {
           <p>Concluidas</p>
           <h2>
             {
-              ordensServico.filter(
-                (ordem) => normalizarStatusOS(ordem.status) === "concluida"
+              ordensVisiveis.filter(
+                (ordem) =>
+                  normalizarStatusOS(ordem.status) === "concluida"
               ).length
             }
           </h2>
@@ -1244,6 +1344,13 @@ export default function OrdensServico() {
                           onClick: () => encerrarOrdem(ordem),
                         }
                       : null,
+                    podeEscreverOrdens && OS_CANCELAVEIS.has(statusValor)
+                      ? {
+                          label: "Cancelar OS",
+                          onClick: () => cancelarOrdem(ordem),
+                          danger: true,
+                        }
+                      : null,
                     {
                       label: "Imprimir OS",
                       onClick: () => imprimirOrdem(ordem),
@@ -1256,6 +1363,13 @@ export default function OrdensServico() {
                       label: "Enviar por WhatsApp",
                       onClick: () => enviarOrdemWhatsApp(ordem),
                     },
+                    podeEscreverOrdens && !ordemEncerrada
+                      ? {
+                          label: "Excluir OS",
+                          onClick: () => excluirOrdem(ordem),
+                          danger: true,
+                        }
+                      : null,
                   ].filter(Boolean);
 
                   return (

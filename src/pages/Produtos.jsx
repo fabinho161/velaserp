@@ -535,7 +535,7 @@ export default function Produtos() {
   // 🔹 EXCLUIR PRODUTO
   // ================================
     const excluirProduto = async (index) => {
-      const confirmado = await confirmar("Deseja realmente excluir este produto?");
+      const confirmado = await confirmar("Excluir este produto?");
       if (!confirmado) return;
 
       const produto = produtos[index];

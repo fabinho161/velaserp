@@ -558,8 +558,10 @@ export default function VendaPecas() {
 
     if (vendaEditandoId) {
       await updateItem("vendas", vendaEditandoId, vendaTratada);
+      showToast("Alterações salvas com sucesso.", "success");
     } else {
       await addItem("vendas", vendaTratada);
+      showToast("Cadastro realizado com sucesso.", "success");
     }
 
     limparFormulario();
@@ -593,6 +595,8 @@ export default function VendaPecas() {
       statusExpedicao: "cancelado",
     });
 
+    showToast("Venda cancelada com sucesso.", "success");
+
     if (vendaEditandoId === venda.id) {
       limparFormulario();
     }
@@ -610,7 +614,7 @@ export default function VendaPecas() {
     <div className="sales-page">
       <h1 className="page-title">Venda de Peças</h1>
 
-      <div className="sales-summary-grid">
+      <div className="sales-summary-grid parts-sales-summary-grid">
         <div className="sales-metric-card sales-metric-green">
           <p>Vendas de peças</p>
           <h2>{vendasPecas.length}</h2>

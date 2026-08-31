@@ -244,7 +244,7 @@ export default function Veiculos() {
     }
 
     if (!normalizarTexto(form.placa) || !normalizarTexto(form.marca) || !normalizarTexto(form.modelo)) {
-      showToast("Informe placa, marca e modelo do veiculo.", "warning");
+      showToast("Preencha os campos obrigatórios.", "warning");
       return;
     }
 
@@ -278,20 +278,20 @@ export default function Veiculos() {
 
       if (veiculoEditando?.id) {
         await updateDoc(doc(veiculosRef, veiculoEditando.id), payload);
-        showToast("Veiculo atualizado com sucesso.", "success");
+        showToast("Alterações salvas com sucesso.", "success");
       } else {
         await addDoc(veiculosRef, {
           ...payload,
           status: "ativo",
           criadoEm: serverTimestamp(),
         });
-        showToast("Veiculo cadastrado com sucesso.", "success");
+        showToast("Cadastro realizado com sucesso.", "success");
       }
 
       resetarModal();
     } catch (error) {
       console.error("Erro ao salvar veiculo:", error);
-      showToast("Nao foi possivel salvar o veiculo.", "error");
+      showToast("Não foi possível salvar. Tente novamente.", "error");
     } finally {
       setSalvando(false);
     }
@@ -313,10 +313,10 @@ export default function Veiculos() {
         status: proximoStatus,
         atualizadoEm: serverTimestamp(),
       });
-      showToast("Status do veiculo atualizado com sucesso.", "success");
+      showToast("Alterações salvas com sucesso.", "success");
     } catch (error) {
       console.error("Erro ao alterar status do veiculo:", error);
-      showToast("Nao foi possivel alterar o status do veiculo.", "error");
+      showToast("Não foi possível concluir a operação.", "error");
     }
   };
 

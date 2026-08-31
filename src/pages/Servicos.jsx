@@ -202,7 +202,7 @@ export default function Servicos() {
     }
 
     if (!normalizarTexto(form.nome)) {
-      showToast("Informe o nome do servico.", "warning");
+      showToast("Preencha os campos obrigatórios.", "warning");
       return;
     }
 
@@ -232,20 +232,20 @@ export default function Servicos() {
 
       if (servicoEditando?.id) {
         await updateDoc(doc(servicosRef, servicoEditando.id), payload);
-        showToast("Servico atualizado com sucesso.", "success");
+        showToast("Alterações salvas com sucesso.", "success");
       } else {
         await addDoc(servicosRef, {
           ...payload,
           status: "ativo",
           criadoEm: serverTimestamp(),
         });
-        showToast("Servico cadastrado com sucesso.", "success");
+        showToast("Cadastro realizado com sucesso.", "success");
       }
 
       resetarModal();
     } catch (error) {
       console.error("Erro ao salvar servico:", error);
-      showToast("Nao foi possivel salvar o servico.", "error");
+      showToast("Não foi possível salvar. Tente novamente.", "error");
     } finally {
       setSalvando(false);
     }
@@ -267,10 +267,10 @@ export default function Servicos() {
         status: proximoStatus,
         atualizadoEm: serverTimestamp(),
       });
-      showToast("Status do servico atualizado com sucesso.", "success");
+      showToast("Alterações salvas com sucesso.", "success");
     } catch (error) {
       console.error("Erro ao alterar status do servico:", error);
-      showToast("Nao foi possivel alterar o status do servico.", "error");
+      showToast("Não foi possível concluir a operação.", "error");
     }
   };
 
