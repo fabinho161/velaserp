@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
@@ -14,6 +14,7 @@ import {
   PlayCircle,
   Search,
 } from "lucide-react";
+import { useERP } from "../context/useERP";
 import {
   categoriasAprendizagem,
   checklistImplantacao,
@@ -22,14 +23,39 @@ import {
   primeirosPassos,
   tutoriaisPorModulo,
 } from "../data/centralAprendizagemData";
+import { normalizarSegmentoEmpresa } from "../config/segmentosEmpresa";
 
 const CATEGORIA_CHECKLIST = "Checklist de Implantacao";
+const LABELS_SEGMENTO = {
+  comercio: "Comércio",
+  industria: "Indústria",
+  oficina: "Oficina",
+  clientes: "Prestação de Serviços",
+};
 
 const normalizar = (valor) =>
   String(valor || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
+
+const CATEGORIAS_INDUSTRIAIS = new Set([
+  "producao",
+  "producao industrial avancada",
+  "perdas e doacoes",
+]);
+const TERMOS_INDUSTRIAIS = [
+  "insumo",
+  "materia-prima",
+  "producao",
+  "semiacabado",
+  "ficha tecnica",
+  "consumo interno",
+  "industria",
+  "industrial",
+  "fabrica",
+];
+const TERMOS_VENDA_TRADICIONAL = ["vendas e pedidos", "primeira venda"];
 
 const textoDoArtigo = (item) =>
   normalizar([
@@ -182,9 +208,38 @@ function ArticleCard({ item, variant = "article" }) {
 }
 
 export default function CentralAprendizagem() {
+  const { empresas = [], empresaId } = useERP();
   const [termoBusca, setTermoBusca] = useState("");
   const [categoriaAtiva, setCategoriaAtiva] = useState("todas");
   const [visualizacao, setVisualizacao] = useState("categorias");
+  const empresaAtual = empresas.find((empresa) => empresa.id === empresaId);
+  const segmentoAtual = normalizarSegmentoEmpresa(empresaAtual?.segmento);
+  const labelSegmentoAtual = LABELS_SEGMENTO[segmentoAtual] || LABELS_SEGMENTO.industria;
+
+  const filtrarSegmento = useCallback((item) => {
+    if (item.segmentos?.length) {
+      return item.segmentos.includes(segmentoAtual);
+    }
+
+    const categoria = normalizar(item.categoria);
+    const texto = textoDoArtigo(item);
+
+    if (segmentoAtual !== "industria") {
+      if (CATEGORIAS_INDUSTRIAIS.has(categoria)) return false;
+      if (TERMOS_INDUSTRIAIS.some((termo) => texto.includes(termo))) return false;
+    }
+
+    if (
+      (segmentoAtual === "oficina" || segmentoAtual === "clientes") &&
+      TERMOS_VENDA_TRADICIONAL.some((termo) => texto.includes(termo))
+    ) {
+      return false;
+    }
+
+    if (segmentoAtual === "clientes" && categoria === "comercial") return false;
+
+    return true;
+  }, [segmentoAtual]);
 
   const todosConteudos = useMemo(
     () => [
@@ -198,15 +253,17 @@ export default function CentralAprendizagem() {
         titulo: item.pergunta,
         categoria: "FAQ",
         conteudo: item.resposta,
+        segmentos: item.segmentos || [],
         palavrasChave: item.palavrasChave || [],
       })),
       ...checklistImplantacao.map((item) => ({
         titulo: item.titulo,
         categoria: CATEGORIA_CHECKLIST,
         conteudo: item.descricao,
+        segmentos: item.segmentos || [],
       })),
-    ],
-    []
+    ].filter(filtrarSegmento),
+    [filtrarSegmento]
   );
 
   const totalPorCategoria = useMemo(() => {
@@ -231,15 +288,18 @@ export default function CentralAprendizagem() {
     return textoDoArtigo(item).includes(buscaNormalizada);
   };
 
-  const primeirosPassosFiltrados = primeirosPassos.filter(filtroCombina);
-  const fluxoRecomendado = primeirosPassos.find((item) =>
+  const primeirosPassosSegmento = primeirosPassos.filter(filtrarSegmento);
+  const primeirosPassosFiltrados = primeirosPassosSegmento.filter(filtroCombina);
+  const fluxoRecomendado = primeirosPassosSegmento.find((item) =>
     normalizar(item.titulo).includes("fluxo recomendado")
   );
-  const guiaIndustrialPrincipal = tutoriaisPorModulo.find((item) =>
-    normalizar(item.titulo || item.modulo).includes(
-      "tudo sobre producao industrial em etapas"
+  const guiaIndustrialPrincipal = segmentoAtual === "industria"
+    ? tutoriaisPorModulo.find((item) =>
+      normalizar(item.titulo || item.modulo).includes(
+        "tudo sobre producao industrial em etapas"
+      )
     )
-  );
+    : null;
   const fluxoRecomendadoVisivel = fluxoRecomendado && filtroCombina(fluxoRecomendado);
   const guiaIndustrialVisivel =
     guiaIndustrialPrincipal &&
@@ -248,25 +308,30 @@ export default function CentralAprendizagem() {
       ...guiaIndustrialPrincipal,
     });
   const primeirosPassosLista = fluxoRecomendadoVisivel
-    ? primeirosPassosFiltrados.filter((item) => item !== fluxoRecomendado)
-    : primeirosPassosFiltrados;
+    ? primeirosPassosSegmento.filter(filtroCombina).filter((item) => item !== fluxoRecomendado)
+    : primeirosPassosSegmento.filter(filtroCombina);
   const tutoriaisFiltrados = tutoriaisPorModulo
+    .filter(filtrarSegmento)
     .map((item) => ({ titulo: item.modulo, ...item }))
     .filter(filtroCombina);
-  const guiasFiltrados = guiasRapidos.filter(filtroCombina);
+  const guiasFiltrados = guiasRapidos.filter(filtrarSegmento).filter(filtroCombina);
   const faqFiltrada = faqAprendizagem.filter((item) =>
+    filtrarSegmento(item) &&
     filtroCombina({
       titulo: item.pergunta,
       categoria: "FAQ",
       conteudo: item.resposta,
+      segmentos: item.segmentos || [],
       palavrasChave: item.palavrasChave || [],
     })
   );
   const checklistFiltrado = checklistImplantacao.filter((item) =>
+    filtrarSegmento(item) &&
     filtroCombina({
       titulo: item.titulo,
       categoria: CATEGORIA_CHECKLIST,
       conteudo: item.descricao,
+      segmentos: item.segmentos || [],
     })
   );
 
@@ -309,7 +374,9 @@ export default function CentralAprendizagem() {
           <p className="page-subtitle">
             Encontre passos, guias rapidos e respostas para orientar a equipe no
             uso do Renovar ERP, do cadastro inicial ate a leitura dos
-            indicadores.
+            indicadores. Conteudo priorizado para o segmento atual:
+            {" "}
+            <strong>{labelSegmentoAtual}</strong>.
           </p>
         </div>
       </div>
@@ -375,7 +442,9 @@ export default function CentralAprendizagem() {
             <small>{todosConteudos.length} topicos</small>
           </button>
 
-          {categoriasAprendizagem.map((categoria) => (
+          {categoriasAprendizagem
+            .filter((categoria) => totalPorCategoria[categoria.titulo] > 0)
+            .map((categoria) => (
             <button
               type="button"
               key={categoria.id}
