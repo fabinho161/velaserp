@@ -1373,7 +1373,11 @@ export default function OrdensServico() {
                   ].filter(Boolean);
 
                   return (
-                    <tr key={ordem.id}>
+                    <tr
+                      key={ordem.id}
+                      className="oficina-os-table-row"
+                      onDoubleClick={() => abrirEdicaoOrdem(ordem)}
+                    >
                       <td>
                         <strong>{ordem.numero || `OS-${ordem.id}`}</strong>
                       </td>
@@ -1395,7 +1399,7 @@ export default function OrdensServico() {
                           {status.label}
                         </span>
                       </td>
-                      <td>
+                      <td onDoubleClick={(event) => event.stopPropagation()}>
                         {acoesOrdem.length > 0 ? (
                           <ActionMenu
                             label="Abrir acoes da ordem de servico"
