@@ -62,6 +62,7 @@ export const SEGMENTOS_EMPRESA = {
     modulos: [
       "dashboard",
       "clientes",
+      "servicos",
       "agenda",
       "atendimentos",
       "financeiro",

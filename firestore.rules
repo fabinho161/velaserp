@@ -23,6 +23,14 @@ service cloud.firestore {
         get(userCompanyPath(ownerUid, empresaId)).data.segmento == segmento;
     }
 
+    function isCompanySegmentForServices(ownerUid, empresaId) {
+      return exists(userCompanyPath(ownerUid, empresaId)) &&
+        (
+          get(userCompanyPath(ownerUid, empresaId)).data.segmento == "oficina" ||
+          get(userCompanyPath(ownerUid, empresaId)).data.segmento == "clientes"
+        );
+    }
+
     function companyUserPath(ownerUid, empresaId, usuarioEmpresaId) {
       return /databases/$(database)/documents/users/$(ownerUid)/empresas/$(empresaId)/usuariosEmpresa/$(usuarioEmpresaId);
     }
@@ -698,9 +706,9 @@ service cloud.firestore {
         }
 
         match /servicos/{servicoId} {
-          allow read: if isCompanySegment(userId, empresaId, "oficina") &&
+          allow read: if isCompanySegmentForServices(userId, empresaId) &&
             canReadModule(userId, empresaId, "servicos");
-          allow create, update: if isCompanySegment(userId, empresaId, "oficina") &&
+          allow create, update: if isCompanySegmentForServices(userId, empresaId) &&
             canWriteModule(userId, empresaId, "servicos");
           allow delete: if false;
         }

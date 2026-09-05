@@ -30,7 +30,10 @@ import saasLogo from "../assets/saas-logo.png";
 import { useERP } from "../context/useERP";
 import { usePlano } from "../hooks/usePlano";
 import { PERMISSOES_EMPRESA } from "../config/perfisEmpresa";
-import { segmentoPossuiModulo } from "../config/segmentosEmpresa.js";
+import {
+  normalizarSegmentoEmpresa,
+  segmentoPossuiModulo,
+} from "../config/segmentosEmpresa.js";
 
 const NOME_SAAS = "Renovar ERP";
 
@@ -58,6 +61,8 @@ export default function Sidebar() {
     empresa.id === empresaId &&
     (empresa.ownerUid || user?.uid) === (empresaOwnerUid || user?.uid)
   ) || null;
+  const segmentoEmpresaAtual = normalizarSegmentoEmpresa(empresaAtual?.segmento);
+  const isPrestacaoServicos = segmentoEmpresaAtual === "clientes";
   const itemPertenceAoSegmento = (item) =>
     !item?.modulo || segmentoPossuiModulo(empresaAtual?.segmento, item.modulo);
   const itensVisiveis = (items) => items.filter(Boolean).filter(itemPertenceAoSegmento);
@@ -85,8 +90,9 @@ export default function Sidebar() {
           { path: "/estoque", label: "Estoque", icon: Warehouse, modulo: "estoque" },
         podeVerMenu(PERMISSOES_EMPRESA.veiculos) &&
           { path: "/veiculos", label: "Veiculos", icon: Car, modulo: "veiculos" },
-        podeVerMenu(PERMISSOES_EMPRESA.servicos) &&
-          { path: "/servicos", label: "Servicos", icon: Wrench, modulo: "servicos" },
+        !isPrestacaoServicos &&
+          podeVerMenu(PERMISSOES_EMPRESA.servicos) &&
+          { path: "/servicos", label: "Serviços", icon: Wrench, modulo: "servicos" },
         podeVerMenu(PERMISSOES_EMPRESA.ordensServico) &&
           { path: "/ordens-servico", label: "Ordens de Servico", icon: ClipboardList, modulo: "ordensServico" },
         podeVerMenu(PERMISSOES_EMPRESA.vendas) &&
@@ -103,6 +109,9 @@ export default function Sidebar() {
           : []),
         ...(podeVerMenu(PERMISSOES_EMPRESA.crm, podeUsarCRMComercial)
           ? [{ path: "/clientes", label: "CRM", icon: Users, modulo: "clientes" }]
+          : []),
+        ...(isPrestacaoServicos && podeVerMenu(PERMISSOES_EMPRESA.servicos)
+          ? [{ path: "/servicos", label: "Serviços", icon: Wrench, modulo: "servicos" }]
           : []),
       ]),
     },

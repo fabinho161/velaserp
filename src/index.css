@@ -1134,6 +1134,14 @@ body {
   background: #f8fafc;
 }
 
+.servicos-table-row {
+  cursor: pointer;
+}
+
+.servicos-table-row:hover td {
+  background: #f8fafc;
+}
+
 .fornecedores-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

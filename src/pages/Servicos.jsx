@@ -13,6 +13,7 @@ import { useConfirmacao } from "../context/useConfirmacao";
 import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
 import { db } from "../firebase";
+import { normalizarSegmentoEmpresa } from "../config/segmentosEmpresa.js";
 import { moedaBR } from "../utils/formatters";
 
 const servicoInicial = {
@@ -51,6 +52,7 @@ export default function Servicos() {
   const {
     empresaId,
     empresaOwnerUid,
+    empresas = [],
     isAdminMaster,
     perfilEmpresaAtual,
     user,
@@ -68,6 +70,12 @@ export default function Servicos() {
   const [filtroStatus, setFiltroStatus] = useState("todos");
 
   const ownerUid = empresaOwnerUid || user?.uid || null;
+  const empresaAtual = empresas.find((empresa) =>
+    empresa.id === empresaId &&
+    (empresa.ownerUid || user?.uid) === (empresaOwnerUid || user?.uid)
+  ) || null;
+  const isPrestacaoServicos =
+    normalizarSegmentoEmpresa(empresaAtual?.segmento) === "clientes";
   const podeEscreverServicos =
     isAdminMaster || PERFIS_ESCRITA_SERVICOS.has(perfilEmpresaAtual);
 
@@ -102,7 +110,7 @@ export default function Servicos() {
       },
       (error) => {
         console.error("Erro ao carregar servicos:", error);
-        showToast("Nao foi possivel carregar servicos.", "error");
+        showToast("Não foi possível carregar serviços.", "error");
         setServicos([]);
         setCarregando(false);
       }
@@ -131,7 +139,7 @@ export default function Servicos() {
 
   const abrirNovoServico = () => {
     if (!podeEscreverServicos) {
-      showToast("Voce nao tem permissao para cadastrar servicos.", "warning");
+      showToast("Você não tem permissão para cadastrar serviços.", "warning");
       return;
     }
 
@@ -192,12 +200,12 @@ export default function Servicos() {
 
   const salvarServico = async () => {
     if (!servicosRef || !user || !empresaId) {
-      showToast("Empresa ainda nao carregou. Aguarde e tente novamente.", "warning");
+      showToast("Empresa ainda não carregou. Aguarde e tente novamente.", "warning");
       return;
     }
 
     if (!podeEscreverServicos) {
-      showToast("Voce nao tem permissao para salvar servicos.", "warning");
+      showToast("Você não tem permissão para salvar serviços.", "warning");
       return;
     }
 
@@ -210,7 +218,7 @@ export default function Servicos() {
     const valorNumero = Number(valorTratado);
 
     if (!valorTratado || !Number.isFinite(valorNumero) || valorNumero < 0) {
-      showToast("Informe um valor numerico maior ou igual a zero.", "warning");
+      showToast("Informe um valor numérico maior ou igual a zero.", "warning");
       return;
     }
 
@@ -257,7 +265,7 @@ export default function Servicos() {
     const statusAtual = normalizarStatus(servico.status);
     const proximoStatus = statusAtual === "ativo" ? "inativo" : "ativo";
     const confirmado = await confirmar(
-      `Deseja marcar ${servico.nome || "este servico"} como ${getStatusLabel(proximoStatus)}?`
+      `Deseja marcar ${servico.nome || "este serviço"} como ${getStatusLabel(proximoStatus)}?`
     );
 
     if (!confirmado) return;
@@ -280,39 +288,41 @@ export default function Servicos() {
         <div>
           <span className="badge badge-info fornecedores-eyebrow">
             <Wrench size={14} />
-            Oficina
+            {isPrestacaoServicos ? "Prestação de Serviços" : "Oficina"}
           </span>
-          <h1 className="page-title">Servicos</h1>
+          <h1 className="page-title">Serviços</h1>
           <p className="page-subtitle">
-            Cadastre a mao de obra que sera usada nas ordens de servico futuras.
+            {isPrestacaoServicos
+              ? "Cadastre os serviços oferecidos pela empresa."
+              : "Cadastre a mao de obra que sera usada nas ordens de servico futuras."}
           </p>
         </div>
 
         {podeEscreverServicos && (
           <button type="button" onClick={abrirNovoServico}>
             <Plus size={18} />
-            Novo servico
+            Novo serviço
           </button>
         )}
       </div>
 
       <div className="summary-grid fornecedores-summary">
         <div className="card metric-card metric-blue">
-          <p>Servicos cadastrados</p>
+          <p>Serviços cadastrados</p>
           <h2>{totalServicos}</h2>
-          <small>Catalogo da oficina</small>
+          <small>{isPrestacaoServicos ? "Catálogo da empresa" : "Catalogo da oficina"}</small>
         </div>
 
         <div className="card metric-card metric-green">
-          <p>Servicos ativos</p>
+          <p>Serviços ativos</p>
           <h2>{servicosAtivos}</h2>
-          <small>Disponiveis para uso futuro</small>
+          <small>Disponíveis para uso futuro</small>
         </div>
 
         <div className="card metric-card metric-amber">
-          <p>Servicos inativos</p>
+          <p>Serviços inativos</p>
           <h2>{servicosInativos}</h2>
-          <small>Preservados no catalogo</small>
+          <small>Preservados no catálogo</small>
         </div>
       </div>
 
@@ -324,9 +334,15 @@ export default function Servicos() {
             </span>
 
             <div>
-              <span className="badge badge-purple">Servicos</span>
-              <h3>Catalogo de mao de obra</h3>
-              <p>Valores e tempos estimados para rotinas da oficina.</p>
+              <span className="badge badge-purple">Serviços</span>
+              <h3>
+                {isPrestacaoServicos ? "Catálogo de serviços" : "Catalogo de mao de obra"}
+              </h3>
+              <p>
+                {isPrestacaoServicos
+                  ? "Valores e tempos estimados dos serviços oferecidos."
+                  : "Valores e tempos estimados para rotinas da oficina."}
+              </p>
             </div>
           </div>
         </div>
@@ -356,13 +372,13 @@ export default function Servicos() {
         </div>
 
         {carregando ? (
-          <div className="empty-state">Carregando servicos...</div>
+          <div className="empty-state">Carregando serviços...</div>
         ) : (
           <div className="table-wrapper">
             <table>
               <thead>
                 <tr>
-                  <th>Servico</th>
+                  <th>Serviço</th>
                   <th>Valor</th>
                   <th>Tempo estimado</th>
                   <th>Status</th>
@@ -372,11 +388,15 @@ export default function Servicos() {
 
               <tbody>
                 {servicosFiltrados.map((servico) => (
-                  <tr key={servico.id}>
+                  <tr
+                    key={servico.id}
+                    className="servicos-table-row"
+                    onDoubleClick={() => abrirEdicaoServico(servico)}
+                  >
                     <td>
                       <div className="fornecedores-cell-main">
                         <strong>{servico.nome || "-"}</strong>
-                        <small>{servico.descricao || "Descricao nao informada"}</small>
+                        <small>{servico.descricao || "Descrição não informada"}</small>
                       </div>
                     </td>
                     <td>{moedaBR(servico.valor)}</td>
@@ -386,20 +406,20 @@ export default function Servicos() {
                         {getStatusLabel(servico.status)}
                       </span>
                     </td>
-                    <td>
+                    <td onDoubleClick={(event) => event.stopPropagation()}>
                       {podeEscreverServicos ? (
                         <ActionMenu
-                          label="Abrir acoes do servico"
+                          label="Abrir ações do serviço"
                           items={[
                             {
-                              label: "Editar servico",
+                              label: "Editar serviço",
                               onClick: () => abrirEdicaoServico(servico),
                             },
                             {
                               label:
                                 normalizarStatus(servico.status) === "ativo"
-                                  ? "Inativar servico"
-                                  : "Ativar servico",
+                                  ? "Inativar serviço"
+                                  : "Ativar serviço",
                               danger: normalizarStatus(servico.status) === "ativo",
                               onClick: () => alternarStatusServico(servico),
                             },
@@ -414,7 +434,7 @@ export default function Servicos() {
 
                 {servicosFiltrados.length === 0 && (
                   <tr>
-                    <td colSpan="5">Nenhum servico encontrado.</td>
+                    <td colSpan="5">Nenhum serviço encontrado.</td>
                   </tr>
                 )}
               </tbody>
@@ -440,18 +460,22 @@ export default function Servicos() {
                   <Wrench size={14} />
                   {servicoEditando ? "Editar cadastro" : "Novo cadastro"}
                 </span>
-                <h3>{servicoEditando ? "Editar servico" : "Novo servico"}</h3>
-                <p>Dados basicos para compor ordens de servico futuras.</p>
+                <h3>{servicoEditando ? "Editar serviço" : "Novo serviço"}</h3>
+                <p>
+                  {isPrestacaoServicos
+                    ? "Dados básicos do serviço oferecido."
+                    : "Dados basicos para compor ordens de servico futuras."}
+                </p>
               </div>
             </div>
 
             <div className="fornecedores-form-grid">
               <label>
-                Nome do servico *
+                Nome do serviço *
                 <input
                   value={form.nome}
                   onChange={(event) => atualizarCampo("nome", event.target.value)}
-                  placeholder="Ex: Troca de oleo"
+                  placeholder={isPrestacaoServicos ? "Ex: Consultoria mensal" : "Ex: Troca de oleo"}
                 />
               </label>
 
@@ -493,11 +517,11 @@ export default function Servicos() {
               </label>
 
               <label className="fornecedores-form-wide">
-                Descricao
+                Descrição
                 <textarea
                   value={form.descricao}
                   onChange={(event) => atualizarCampo("descricao", event.target.value)}
-                  placeholder="Observacoes sobre o servico"
+                  placeholder="Observações sobre o serviço"
                   rows={4}
                 />
               </label>
@@ -508,7 +532,7 @@ export default function Servicos() {
                 Cancelar
               </button>
               <button type="button" onClick={salvarServico} disabled={salvando}>
-                {salvando ? "Salvando..." : "Salvar servico"}
+                {salvando ? "Salvando..." : "Salvar serviço"}
               </button>
             </div>
           </div>
