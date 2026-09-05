@@ -14,6 +14,7 @@ import { useToast } from "../context/useToast";
 import { useConfirmacao } from "../context/useConfirmacao";
 import { usePlano } from "../hooks/usePlano";
 import { useTableSort } from "../hooks/useTableSort";
+import { normalizarSegmentoEmpresa } from "../config/segmentosEmpresa.js";
 import { dataBR, moedaBR, numeroBR } from "../utils/formatters";
 
 const TIPOS_CLIENTE = ["Final", "Revendedor", "Distribuidor", "Outro"];
@@ -108,6 +109,8 @@ export default function ClientesCRM() {
   const {
     user,
     empresaId,
+    empresaOwnerUid,
+    empresas = [],
     clientesComerciais = [],
     vendas = [],
     addItem,
@@ -139,6 +142,12 @@ export default function ClientesCRM() {
   const [clienteExclusao, setClienteExclusao] = useState(null);
   const [clienteExclusaoBloqueada, setClienteExclusaoBloqueada] = useState(null);
   const [excluindoCliente, setExcluindoCliente] = useState(false);
+  const empresaAtual = empresas.find((empresa) =>
+    empresa.id === empresaId &&
+    (empresa.ownerUid || user?.uid) === (empresaOwnerUid || user?.uid)
+  ) || null;
+  const isPrestacaoServicos =
+    normalizarSegmentoEmpresa(empresaAtual?.segmento) === "clientes";
 
   const vendasValidas = useMemo(
     () =>
@@ -292,6 +301,7 @@ export default function ClientesCRM() {
 
       if (termo && !textoBusca.includes(termo)) return false;
       if (
+        !isPrestacaoServicos &&
         podeUsarCRMInteligente &&
         filtroStatusRecompra &&
         cliente.metricas.statusRecompra !== filtroStatusRecompra
@@ -300,7 +310,7 @@ export default function ClientesCRM() {
       }
       if (filtroTipo && cliente.tipo !== filtroTipo) return false;
       if (
-        podeUsarCRMFollowUp &&
+        (isPrestacaoServicos || podeUsarCRMFollowUp) &&
         filtroRelacionamento &&
         cliente.statusRelacionamento !== filtroRelacionamento
       ) {
@@ -315,6 +325,7 @@ export default function ClientesCRM() {
     filtroRelacionamento,
     filtroStatusRecompra,
     filtroTipo,
+    isPrestacaoServicos,
     podeUsarCRMFollowUp,
     podeUsarCRMInteligente,
   ]);
@@ -332,7 +343,10 @@ export default function ClientesCRM() {
         totalComprado: Number(cliente.metricas.totalComprado || 0),
         ticketMedio: Number(cliente.metricas.ticketMedio || 0),
         statusRecompra: cliente.metricas.statusRecompra || "",
+        relacionamento: cliente.statusRelacionamento || "",
         proximaAcao: cliente.dataProximaAcao || cliente.proximaAcao || "",
+        dataProximaAcao: cliente.dataProximaAcao || "",
+        status: cliente.ativo === false ? "inativo" : "ativo",
       };
 
       return valores[chave] ?? "";
@@ -364,6 +378,13 @@ export default function ClientesCRM() {
           ) {
             acc.contatosHoje += 1;
           }
+          if (
+            cliente.ativo !== false &&
+            cliente.dataProximaAcao &&
+            cliente.dataProximaAcao > hojeISO
+          ) {
+            acc.proximosContatos += 1;
+          }
 
           return acc;
         },
@@ -375,6 +396,7 @@ export default function ClientesCRM() {
           receita: 0,
           pedidos: 0,
           contatosHoje: 0,
+          proximosContatos: 0,
         }
       );
     },
@@ -494,7 +516,9 @@ export default function ClientesCRM() {
 
   const desativarCliente = async (cliente) => {
     const confirmado = await confirmar(
-      `Deseja desativar ${cliente.nome}? O histórico de compras será preservado.`
+      isPrestacaoServicos
+        ? `Deseja desativar ${cliente.nome}? O histórico de relacionamento será preservado.`
+        : `Deseja desativar ${cliente.nome}? O histórico de compras será preservado.`
     );
 
     if (!confirmado) return;
@@ -570,6 +594,12 @@ export default function ClientesCRM() {
     }
 
     const telefoneComPais = telefone.startsWith("55") ? telefone : `55${telefone}`;
+
+    if (isPrestacaoServicos) {
+      const mensagem = encodeURIComponent(`Olá, ${cliente.nome}. Tudo bem?`);
+      window.open(`https://wa.me/${telefoneComPais}?text=${mensagem}`, "_blank", "noopener,noreferrer");
+      return;
+    }
     const mensagem = encodeURIComponent(
       `Olá, ${cliente.nome}! Tudo bem?\n\nVi aqui que talvez esteja na hora de repor seu estoque. Quer que eu separe um novo pedido para você?`
     );
@@ -614,9 +644,13 @@ export default function ClientesCRM() {
     <div className="crm-page">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Carteira de Clientes</h1>
+          <h1 className="page-title">
+            {isPrestacaoServicos ? "Clientes" : "Carteira de Clientes"}
+          </h1>
           <p className="page-subtitle">
-            Acompanhe clientes comerciais, histórico de compras e oportunidades de recompra.
+            {isPrestacaoServicos
+              ? "Gerencie seus clientes, relacionamento e próximos contatos."
+              : "Acompanhe clientes comerciais, histórico de compras e oportunidades de recompra."}
           </p>
         </div>
 
@@ -628,7 +662,7 @@ export default function ClientesCRM() {
         )}
       </div>
 
-      {!podeUsarCRMInteligente && (
+      {!isPrestacaoServicos && !podeUsarCRMInteligente && (
         <div className="plan-locked-inline">
           <span>Recompra inteligente disponível no plano Profissional.</span>
           <button type="button" onClick={() => navigate("/planos")}>
@@ -637,7 +671,7 @@ export default function ClientesCRM() {
         </div>
       )}
 
-      {podeUsarCRMInteligente && !podeUsarCRMFollowUp && (
+      {!isPrestacaoServicos && podeUsarCRMInteligente && !podeUsarCRMFollowUp && (
         <div className="plan-locked-inline">
           <span>Follow-up disponível no plano Profissional.</span>
           <button type="button" onClick={() => navigate("/planos")}>
@@ -646,52 +680,78 @@ export default function ClientesCRM() {
         </div>
       )}
 
-      {podeUsarCRMInteligente && (
-      <div className="crm-summary-grid">
-        <div className="card metric-card metric-blue">
-          <p>Clientes ativos</p>
-          <h2>{resumo.ativos}</h2>
-          <small>Carteira atual</small>
-        </div>
+      {isPrestacaoServicos ? (
+        <div className="crm-summary-grid">
+          <div className="card metric-card metric-blue">
+            <p>Clientes ativos</p>
+            <h2>{resumo.ativos}</h2>
+            <small>Carteira atual</small>
+          </div>
 
-        <div className="card metric-card metric-amber">
-          <p>Próximos da recompra</p>
-          <h2>{resumo.proximos}</h2>
-          <small>Até 3 dias</small>
-        </div>
+          <div className="card metric-card metric-purple">
+            <p>Clientes inativos</p>
+            <h2>{resumo.inativos}</h2>
+            <small>Preservados no cadastro</small>
+          </div>
 
-        <div className="card metric-card metric-red">
-          <p>Atrasados</p>
-          <h2>{resumo.atrasados}</h2>
-          <small>Passaram da previsão</small>
-        </div>
-
-        <div className="card metric-card metric-purple">
-          <p>Inativos</p>
-          <h2>{resumo.inativos}</h2>
-          <small>Mais de 30 dias após previsão</small>
-        </div>
-
-        <div className="card metric-card metric-green">
-          <p>Ticket médio geral</p>
-          <h2>{moedaBR(ticketMedioGeral)}</h2>
-          <small>Pedidos da carteira</small>
-        </div>
-
-        <div className="card metric-card">
-          <p>Receita da carteira</p>
-          <h2>{moedaBR(resumo.receita)}</h2>
-          <small>Total comprado</small>
-        </div>
-
-        {podeUsarCRMFollowUp && (
           <div className="card metric-card metric-amber">
             <p>Contatos de hoje</p>
             <h2>{resumo.contatosHoje}</h2>
-            <small>Follow-up programado</small>
+            <small>Relacionamento programado</small>
           </div>
-        )}
-      </div>
+
+          <div className="card metric-card metric-green">
+            <p>Próximos contatos</p>
+            <h2>{resumo.proximosContatos}</h2>
+            <small>Clientes ativos com data futura</small>
+          </div>
+        </div>
+      ) : podeUsarCRMInteligente && (
+        <div className="crm-summary-grid">
+          <div className="card metric-card metric-blue">
+            <p>Clientes ativos</p>
+            <h2>{resumo.ativos}</h2>
+            <small>Carteira atual</small>
+          </div>
+
+          <div className="card metric-card metric-amber">
+            <p>Próximos da recompra</p>
+            <h2>{resumo.proximos}</h2>
+            <small>Até 3 dias</small>
+          </div>
+
+          <div className="card metric-card metric-red">
+            <p>Atrasados</p>
+            <h2>{resumo.atrasados}</h2>
+            <small>Passaram da previsão</small>
+          </div>
+
+          <div className="card metric-card metric-purple">
+            <p>Inativos</p>
+            <h2>{resumo.inativos}</h2>
+            <small>Mais de 30 dias após previsão</small>
+          </div>
+
+          <div className="card metric-card metric-green">
+            <p>Ticket médio geral</p>
+            <h2>{moedaBR(ticketMedioGeral)}</h2>
+            <small>Pedidos da carteira</small>
+          </div>
+
+          <div className="card metric-card">
+            <p>Receita da carteira</p>
+            <h2>{moedaBR(resumo.receita)}</h2>
+            <small>Total comprado</small>
+          </div>
+
+          {podeUsarCRMFollowUp && (
+            <div className="card metric-card metric-amber">
+              <p>Contatos de hoje</p>
+              <h2>{resumo.contatosHoje}</h2>
+              <small>Follow-up programado</small>
+            </div>
+          )}
+        </div>
       )}
 
       <div className="card crm-filter-card">
@@ -705,7 +765,7 @@ export default function ClientesCRM() {
             />
           </label>
 
-          {podeUsarCRMInteligente && (
+          {!isPrestacaoServicos && podeUsarCRMInteligente && (
             <select
               value={filtroStatusRecompra}
               onChange={(e) => setFiltroStatusRecompra(e.target.value)}
@@ -728,7 +788,7 @@ export default function ClientesCRM() {
             ))}
           </select>
 
-          {podeUsarCRMFollowUp && (
+          {(isPrestacaoServicos || podeUsarCRMFollowUp) && (
             <select
               value={filtroRelacionamento}
               onChange={(e) => setFiltroRelacionamento(e.target.value)}
@@ -766,20 +826,35 @@ export default function ClientesCRM() {
                 <th>Telefone</th>
                 <th>{renderCabecalhoOrdenavel("Tipo", "tipo")}</th>
                 <th>{renderCabecalhoOrdenavel("Cidade/UF", "cidade")}</th>
-                <th>{renderCabecalhoOrdenavel("Última compra", "ultimaCompra")}</th>
-                {podeUsarCRMInteligente && (
+                {isPrestacaoServicos && (
+                  <th>{renderCabecalhoOrdenavel("Relacionamento", "relacionamento")}</th>
+                )}
+                {!isPrestacaoServicos && (
+                  <th>{renderCabecalhoOrdenavel("Última compra", "ultimaCompra")}</th>
+                )}
+                {!isPrestacaoServicos && podeUsarCRMInteligente && (
                   <th>{renderCabecalhoOrdenavel("Frequência média", "frequenciaMediaDias")}</th>
                 )}
-                {podeUsarCRMInteligente && (
+                {!isPrestacaoServicos && podeUsarCRMInteligente && (
                   <th>{renderCabecalhoOrdenavel("Próxima compra", "proximaCompraPrevista")}</th>
                 )}
-                <th>{renderCabecalhoOrdenavel("Total comprado", "totalComprado")}</th>
-                <th>{renderCabecalhoOrdenavel("Ticket médio", "ticketMedio")}</th>
-                {podeUsarCRMInteligente && (
+                {!isPrestacaoServicos && (
+                  <th>{renderCabecalhoOrdenavel("Total comprado", "totalComprado")}</th>
+                )}
+                {!isPrestacaoServicos && (
+                  <th>{renderCabecalhoOrdenavel("Ticket médio", "ticketMedio")}</th>
+                )}
+                {!isPrestacaoServicos && podeUsarCRMInteligente && (
                   <th>{renderCabecalhoOrdenavel("Status recompra", "statusRecompra")}</th>
                 )}
-                {podeUsarCRMFollowUp && (
+                {(isPrestacaoServicos || podeUsarCRMFollowUp) && (
                   <th>{renderCabecalhoOrdenavel("Próxima ação", "proximaAcao")}</th>
+                )}
+                {isPrestacaoServicos && (
+                  <th>{renderCabecalhoOrdenavel("Data próxima ação", "dataProximaAcao")}</th>
+                )}
+                {isPrestacaoServicos && (
+                  <th>{renderCabecalhoOrdenavel("Status", "status")}</th>
                 )}
                 <th>Ações</th>
               </tr>
@@ -790,7 +865,11 @@ export default function ClientesCRM() {
                 const metricas = cliente.metricas;
 
                 return (
-                  <tr key={cliente.id}>
+                  <tr
+                    key={cliente.id}
+                    className="crm-client-row"
+                    onDoubleClick={() => editarCliente(cliente)}
+                  >
                     <td>
                       <strong>{cliente.nome}</strong>
                       {cliente.ativo === false && (
@@ -800,20 +879,29 @@ export default function ClientesCRM() {
                     <td>{cliente.telefone || "-"}</td>
                     <td>{cliente.tipo || "-"}</td>
                     <td>{[cliente.cidade, cliente.uf].filter(Boolean).join("/") || "-"}</td>
-                    <td>{formatarData(metricas.dataUltimaCompra)}</td>
-                    {podeUsarCRMInteligente && (
+                    {isPrestacaoServicos && (
+                      <td>{cliente.statusRelacionamento || "-"}</td>
+                    )}
+                    {!isPrestacaoServicos && (
+                      <td>{formatarData(metricas.dataUltimaCompra)}</td>
+                    )}
+                    {!isPrestacaoServicos && podeUsarCRMInteligente && (
                       <td>
                         {metricas.frequenciaMediaDias === null
                           ? "Sem histórico suficiente"
                           : `${numeroBR(metricas.frequenciaMediaDias, 0)} dias`}
                       </td>
                     )}
-                    {podeUsarCRMInteligente && (
+                    {!isPrestacaoServicos && podeUsarCRMInteligente && (
                       <td>{formatarData(metricas.proximaCompraPrevista)}</td>
                     )}
-                    <td>{moedaBR(metricas.totalComprado)}</td>
-                    <td>{moedaBR(metricas.ticketMedio)}</td>
-                    {podeUsarCRMInteligente && (
+                    {!isPrestacaoServicos && (
+                      <td>{moedaBR(metricas.totalComprado)}</td>
+                    )}
+                    {!isPrestacaoServicos && (
+                      <td>{moedaBR(metricas.ticketMedio)}</td>
+                    )}
+                    {!isPrestacaoServicos && podeUsarCRMInteligente && (
                       <td>
                         <span
                           className={`badge ${obterClasseStatusRecompra(
@@ -824,17 +912,23 @@ export default function ClientesCRM() {
                         </span>
                       </td>
                     )}
-                    {podeUsarCRMFollowUp && (
+                    {(isPrestacaoServicos || podeUsarCRMFollowUp) && (
                       <td>
                         {cliente.proximaAcao || "-"}
-                        {cliente.dataProximaAcao && (
+                        {!isPrestacaoServicos && cliente.dataProximaAcao && (
                           <small className="crm-next-action-date">
                             {formatarData(cliente.dataProximaAcao)}
                           </small>
                         )}
                       </td>
                     )}
-                    <td>
+                    {isPrestacaoServicos && (
+                      <td>{formatarData(cliente.dataProximaAcao)}</td>
+                    )}
+                    {isPrestacaoServicos && (
+                      <td>{cliente.ativo === false ? "Inativo" : "Ativo"}</td>
+                    )}
+                    <td onDoubleClick={(event) => event.stopPropagation()}>
                       <ActionMenu
                         label="Abrir ações do cliente"
                         items={[
@@ -842,7 +936,7 @@ export default function ClientesCRM() {
                             label: "Editar cliente",
                             onClick: () => editarCliente(cliente),
                           },
-                          {
+                          !isPrestacaoServicos && {
                             label: "Ver histórico",
                             onClick: () => setClienteHistorico(cliente),
                           },
@@ -871,7 +965,17 @@ export default function ClientesCRM() {
 
               {clientesOrdenados.length === 0 && (
                 <tr>
-                  <td colSpan={podeUsarCRMInteligente ? (podeUsarCRMFollowUp ? 12 : 11) : 8}>
+                  <td
+                    colSpan={
+                      isPrestacaoServicos
+                        ? 9
+                        : podeUsarCRMInteligente
+                        ? podeUsarCRMFollowUp
+                          ? 12
+                          : 11
+                        : 8
+                    }
+                  >
                     Nenhum cliente encontrado.
                   </td>
                 </tr>
@@ -987,7 +1091,7 @@ export default function ClientesCRM() {
                 </label>
               )}
 
-              {podeUsarCRMFollowUp && (
+              {(isPrestacaoServicos || podeUsarCRMFollowUp) && (
                 <label>
                   Relacionamento
                   <select
@@ -1013,7 +1117,7 @@ export default function ClientesCRM() {
                 />
               </label>
 
-              {podeUsarCRMFollowUp && (
+              {(isPrestacaoServicos || podeUsarCRMFollowUp) && (
                 <>
                   <label>
                     Próxima ação
@@ -1074,16 +1178,19 @@ export default function ClientesCRM() {
             </div>
 
             <div className="crm-delete-warning">
-              Este cliente possui histórico comercial/financeiro. Utilize
-              "Desativar cliente" para preservar relatórios e auditoria.
+              {isPrestacaoServicos
+                ? "Este cliente possui informações de relacionamento. Utilize \"Desativar cliente\" para preservar o histórico."
+                : "Este cliente possui histórico comercial/financeiro. Utilize \"Desativar cliente\" para preservar relatórios e auditoria."}
             </div>
 
-            <div className="crm-delete-summary">
-              <span>Vendas vinculadas</span>
-              <strong>{clienteExclusaoBloqueada.movimentacao.compras}</strong>
-              <span>Total comprado</span>
-              <strong>{moedaBR(clienteExclusaoBloqueada.movimentacao.totalComprado)}</strong>
-            </div>
+            {!isPrestacaoServicos && (
+              <div className="crm-delete-summary">
+                <span>Vendas vinculadas</span>
+                <strong>{clienteExclusaoBloqueada.movimentacao.compras}</strong>
+                <span>Total comprado</span>
+                <strong>{moedaBR(clienteExclusaoBloqueada.movimentacao.totalComprado)}</strong>
+              </div>
+            )}
 
             <div className="modal-actions">
               <button
@@ -1111,7 +1218,9 @@ export default function ClientesCRM() {
             </div>
 
             <div className="crm-delete-warning danger">
-              Esta ação é permanente. O cadastro será removido porque não existem vendas, total comprado ou histórico comercial vinculado.
+              {isPrestacaoServicos
+                ? "Esta ação é permanente. O cadastro será removido porque não existem informações de relacionamento vinculadas."
+                : "Esta ação é permanente. O cadastro será removido porque não existem vendas, total comprado ou histórico comercial vinculado."}
             </div>
 
             <div className="modal-actions">
@@ -1136,7 +1245,7 @@ export default function ClientesCRM() {
         </div>
       )}
 
-      {clienteHistorico && (
+      {!isPrestacaoServicos && clienteHistorico && (
         <div className="modal-overlay" role="dialog" aria-modal="true">
           <div className="modal-card crm-history-modal">
             <div className="crm-modal-header">

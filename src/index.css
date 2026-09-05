@@ -4599,6 +4599,14 @@ tr:hover td {
   min-width: 1180px;
 }
 
+.crm-client-row {
+  cursor: pointer;
+}
+
+.crm-client-row:hover td {
+  background: #f8fafc;
+}
+
 .crm-inactive-label {
   display: block;
   width: fit-content;
