@@ -3,15 +3,16 @@ import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
+import { UNIDADES_CONVERSAO_CANONICAS } from "../utils/unidadesMedida";
 
 const defaultParams = {
   unidadesMedida: [
-    { id: "un", nome: "Unidade", ativo: true, criadoEm: new Date(), atualizadoEm: new Date() },
-    { id: "kg", nome: "Kilograma", ativo: true, criadoEm: new Date(), atualizadoEm: new Date() },
-    { id: "g", nome: "Grama", ativo: true, criadoEm: new Date(), atualizadoEm: new Date() },
-    { id: "lt", nome: "Litro", ativo: true, criadoEm: new Date(), atualizadoEm: new Date() },
-    { id: "ml", nome: "Mililitro", ativo: true, criadoEm: new Date(), atualizadoEm: new Date() },
-    { id: "m", nome: "Metro", ativo: true, criadoEm: new Date(), atualizadoEm: new Date() },
+    { id: "un", nome: "Unidade", ativo: true, grupoConversao: "unidade", fatorBase: 1, criadoEm: new Date(), atualizadoEm: new Date() },
+    { id: "kg", nome: "Kilograma", ativo: true, grupoConversao: "massa", fatorBase: 1000, criadoEm: new Date(), atualizadoEm: new Date() },
+    { id: "g", nome: "Grama", ativo: true, grupoConversao: "massa", fatorBase: 1, criadoEm: new Date(), atualizadoEm: new Date() },
+    { id: "lt", nome: "Litro", ativo: true, grupoConversao: "volume", fatorBase: 1000, criadoEm: new Date(), atualizadoEm: new Date() },
+    { id: "ml", nome: "Mililitro", ativo: true, grupoConversao: "volume", fatorBase: 1, criadoEm: new Date(), atualizadoEm: new Date() },
+    { id: "m", nome: "Metro", ativo: true, grupoConversao: "comprimento", fatorBase: 1000, criadoEm: new Date(), atualizadoEm: new Date() },
     { id: "cm", nome: "Centímetro", ativo: true, criadoEm: new Date(), atualizadoEm: new Date() },
     { id: "mm", nome: "Milímetro", ativo: true, criadoEm: new Date(), atualizadoEm: new Date() },
   ],
@@ -29,6 +30,11 @@ const defaultParams = {
     { id: "impostosTaxas", nome: "Impostos e Taxas", ativo: true, criadoEm: new Date(), atualizadoEm: new Date() },
   ],
 };
+
+defaultParams.unidadesMedida = defaultParams.unidadesMedida.map((unidade) => ({
+  ...unidade,
+  ...(UNIDADES_CONVERSAO_CANONICAS[unidade.id] || {}),
+}));
 
 export function useParametros() {
   const { user, empresaId, empresaOwnerUid } = useERP();
