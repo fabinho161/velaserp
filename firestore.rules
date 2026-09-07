@@ -31,6 +31,62 @@ service cloud.firestore {
         );
     }
 
+    function isValidAgendaStatus(status) {
+      return ["agendado", "confirmado", "concluido", "cancelado"].hasAny([status]);
+    }
+
+    function hasValidAgendaPayload() {
+      return request.resource.data.keys().hasOnly([
+          "clienteId",
+          "clienteNome",
+          "clienteTelefone",
+          "servicoId",
+          "servicoNome",
+          "valorServico",
+          "data",
+          "horaInicio",
+          "duracaoMinutos",
+          "status",
+          "observacoes",
+          "criadoEm",
+          "atualizadoEm",
+          "criadoPor"
+        ]) &&
+        request.resource.data.clienteId is string &&
+        request.resource.data.clienteNome is string &&
+        request.resource.data.clienteTelefone is string &&
+        request.resource.data.servicoId is string &&
+        request.resource.data.servicoNome is string &&
+        request.resource.data.valorServico is number &&
+        request.resource.data.valorServico >= 0 &&
+        request.resource.data.data is string &&
+        request.resource.data.horaInicio is string &&
+        request.resource.data.duracaoMinutos is int &&
+        request.resource.data.duracaoMinutos > 0 &&
+        request.resource.data.status is string &&
+        isValidAgendaStatus(request.resource.data.status) &&
+        request.resource.data.observacoes is string &&
+        request.resource.data.criadoPor is string;
+    }
+
+    function hasValidAgendaCreate() {
+      return hasValidAgendaPayload() &&
+        request.resource.data.criadoPor == request.auth.uid &&
+        request.resource.data.criadoEm == request.time &&
+        request.resource.data.atualizadoEm == request.time;
+    }
+
+    function hasValidAgendaUpdate() {
+      return hasValidAgendaPayload() &&
+        request.resource.data.criadoPor == resource.data.criadoPor &&
+        request.resource.data.criadoEm == resource.data.criadoEm &&
+        (
+          resource.data.status != "cancelado" ||
+          request.resource.data.status == "cancelado"
+        ) &&
+        request.resource.data.atualizadoEm == request.time;
+    }
+
     function companyUserPath(ownerUid, empresaId, usuarioEmpresaId) {
       return /databases/$(database)/documents/users/$(ownerUid)/empresas/$(empresaId)/usuariosEmpresa/$(usuarioEmpresaId);
     }
@@ -187,6 +243,13 @@ service cloud.firestore {
           ])
         ) ||
         (
+          modulo == "agenda" &&
+          isCompanyRole(role, perfil, [
+            "financeiro",
+            "visualizacao"
+          ])
+        ) ||
+        (
           (modulo == "veiculos" || modulo == "servicos" || modulo == "ordensServico") &&
           isCompanyRole(role, perfil, [
             "financeiro",
@@ -199,6 +262,7 @@ service cloud.firestore {
             "insumos",
             "produtos",
             "producao",
+            "agenda",
             "veiculos",
             "servicos",
             "ordensServico",
@@ -237,6 +301,7 @@ service cloud.firestore {
           isCompanyRole(role, perfil, ["comercial"]) &&
           [
             "veiculos",
+            "agenda",
             "servicos",
             "ordensServico",
             "vendas",
@@ -710,6 +775,18 @@ service cloud.firestore {
             canReadModule(userId, empresaId, "servicos");
           allow create, update: if isCompanySegmentForServices(userId, empresaId) &&
             canWriteModule(userId, empresaId, "servicos");
+          allow delete: if false;
+        }
+
+        match /agendamentos/{agendamentoId} {
+          allow read: if isCompanySegment(userId, empresaId, "clientes") &&
+            canReadModule(userId, empresaId, "agenda");
+          allow create: if isCompanySegment(userId, empresaId, "clientes") &&
+            canWriteModule(userId, empresaId, "agenda") &&
+            hasValidAgendaCreate();
+          allow update: if isCompanySegment(userId, empresaId, "clientes") &&
+            canWriteModule(userId, empresaId, "agenda") &&
+            hasValidAgendaUpdate();
           allow delete: if false;
         }
 

@@ -12,6 +12,7 @@ import {
   Car,
   Wrench,
   ClipboardList,
+  CalendarDays,
   Users,
   Wallet,
   Truck,
@@ -108,10 +109,18 @@ export default function Sidebar() {
           ? [{ path: "/vendas", label: "Vendas", icon: ShoppingCart, modulo: "vendas" }]
           : []),
         ...(podeVerMenu(PERMISSOES_EMPRESA.crm, podeUsarCRMComercial)
-          ? [{ path: "/clientes", label: "CRM", icon: Users, modulo: "clientes" }]
+          ? [{
+              path: "/clientes",
+              label: isPrestacaoServicos ? "Clientes" : "CRM",
+              icon: Users,
+              modulo: "clientes",
+            }]
           : []),
         ...(isPrestacaoServicos && podeVerMenu(PERMISSOES_EMPRESA.servicos)
           ? [{ path: "/servicos", label: "Serviços", icon: Wrench, modulo: "servicos" }]
+          : []),
+        ...(isPrestacaoServicos && podeVerMenu(PERMISSOES_EMPRESA.agenda)
+          ? [{ path: "/agenda", label: "Agenda", icon: CalendarDays, modulo: "agenda" }]
           : []),
       ]),
     },

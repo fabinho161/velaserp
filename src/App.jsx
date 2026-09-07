@@ -26,6 +26,7 @@ import Insumos from "./pages/Insumos";
 import Fornecedores from "./pages/Fornecedores";
 import Veiculos from "./pages/Veiculos";
 import Servicos from "./pages/Servicos";
+import Agenda from "./pages/Agenda";
 import OrdensServico from "./pages/OrdensServico";
 import ClientesCRM from "./pages/ClientesCRM";
 import Configuracoes from "./pages/Configuracoes";
@@ -172,6 +173,16 @@ function AuthenticatedApp() {
               <SegmentoRoute modulo="servicos">
                 <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.servicos}>
                   <Servicos />
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
+            )}
+          />
+          <Route
+            path="/agenda"
+            element={(
+              <SegmentoRoute modulo="agenda">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.agenda}>
+                  <Agenda />
                 </EmpresaPermissionRoute>
               </SegmentoRoute>
             )}

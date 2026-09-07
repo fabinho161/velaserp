@@ -6,6 +6,7 @@ export const PERMISSOES_EMPRESA = {
   estoque: "estoque",
   veiculos: "veiculos",
   servicos: "servicos",
+  agenda: "agenda",
   ordensServico: "ordensServico",
   vendas: "vendas",
   crm: "crm",
@@ -28,6 +29,7 @@ export const PERFIS_EMPRESA = {
     permissoes: [
       PERMISSOES_EMPRESA.dashboard,
       PERMISSOES_EMPRESA.financeiro,
+      PERMISSOES_EMPRESA.agenda,
       PERMISSOES_EMPRESA.veiculos,
       PERMISSOES_EMPRESA.servicos,
       PERMISSOES_EMPRESA.ordensServico,
@@ -55,6 +57,7 @@ export const PERFIS_EMPRESA = {
       PERMISSOES_EMPRESA.dashboard,
       PERMISSOES_EMPRESA.vendas,
       PERMISSOES_EMPRESA.crm,
+      PERMISSOES_EMPRESA.agenda,
       PERMISSOES_EMPRESA.veiculos,
       PERMISSOES_EMPRESA.servicos,
       PERMISSOES_EMPRESA.ordensServico,
@@ -76,6 +79,7 @@ export const PERFIS_EMPRESA = {
     label: "Visualizacao",
     permissoes: [
       PERMISSOES_EMPRESA.dashboard,
+      PERMISSOES_EMPRESA.agenda,
       PERMISSOES_EMPRESA.veiculos,
       PERMISSOES_EMPRESA.servicos,
       PERMISSOES_EMPRESA.ordensServico,
