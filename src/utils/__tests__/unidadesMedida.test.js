@@ -5,6 +5,8 @@ import {
   UNIDADES_CONVERSAO_CANONICAS,
   converterQuantidade,
   obterMetadadosUnidade,
+  obterUnidadesCompativeis,
+  prepararCompraInsumo,
   unidadesCompativeis,
 } from "../unidadesMedida.js";
 
@@ -192,4 +194,179 @@ test("resolve metadados canonicos quando lista de unidades nao e fornecida", () 
   assert.equal(metadados.conversivel, true);
   assert.equal(metadados.grupoConversao, "massa");
   assert.equal(metadados.fatorBase, 1000);
+});
+
+test("lista somente unidades ativas compativeis com a unidade de estoque", () => {
+  const unidades = [
+    { id: "ml", nome: "Mililitro", ativo: true },
+    { id: "lt", nome: "Litro", ativo: true },
+    { id: "kg", nome: "Quilograma", ativo: true },
+    { id: "g", nome: "Grama", ativo: false },
+  ];
+
+  assert.deepEqual(
+    obterUnidadesCompativeis("lt", unidades).map((unidade) => unidade.id),
+    ["ml", "lt"]
+  );
+});
+
+test("prepara compra de 500 ml para estoque em lt", () => {
+  const resultado = prepararCompraInsumo({
+    data: "2026-09-07",
+    quantidade: 500,
+    valorTotal: 20,
+    unidadeCompra: "ml",
+    unidadeEstoque: "lt",
+    unidades: [
+      { id: "ml", nome: "Mililitro", ativo: true },
+      { id: "lt", nome: "Litro", ativo: true },
+    ],
+  });
+
+  assert.equal(resultado.ok, true);
+  assert.deepEqual(resultado.compra, {
+    data: "2026-09-07",
+    quantidade: 0.5,
+    valorTotal: 20,
+    quantidadeInformada: 500,
+    unidadeCompra: "ml",
+    unidadeEstoque: "lt",
+  });
+});
+
+test("prepara compra de 0.5 lt para estoque em ml", () => {
+  const resultado = prepararCompraInsumo({
+    data: "2026-09-07",
+    quantidade: 0.5,
+    valorTotal: 12,
+    unidadeCompra: "lt",
+    unidadeEstoque: "ml",
+    unidades: [
+      { id: "ml", nome: "Mililitro", ativo: true },
+      { id: "lt", nome: "Litro", ativo: true },
+    ],
+  });
+
+  assert.equal(resultado.ok, true);
+  assert.equal(resultado.compra.quantidade, 500);
+});
+
+test("prepara compra de 2 kg para estoque em g", () => {
+  const resultado = prepararCompraInsumo({
+    data: "2026-09-07",
+    quantidade: 2,
+    valorTotal: 30,
+    unidadeCompra: "kg",
+    unidadeEstoque: "g",
+    unidades: unidadesPadrao,
+  });
+
+  assert.equal(resultado.ok, true);
+  assert.equal(resultado.compra.quantidade, 2000);
+});
+
+test("prepara compra na mesma unidade sem converter", () => {
+  const resultado = prepararCompraInsumo({
+    data: "2026-09-07",
+    quantidade: 3,
+    valorTotal: 15,
+    unidadeCompra: "kg",
+    unidadeEstoque: "kg",
+    unidades: unidadesPadrao,
+  });
+
+  assert.equal(resultado.ok, true);
+  assert.equal(resultado.compra.quantidade, 3);
+  assert.equal(resultado.compra.quantidadeInformada, 3);
+});
+
+test("prepara compra legada customizada na mesma unidade", () => {
+  const resultado = prepararCompraInsumo({
+    data: "2026-09-07",
+    quantidade: 10,
+    valorTotal: 100,
+    unidadeCompra: "cx",
+    unidadeEstoque: "cx",
+    unidades: [{ id: "cx", nome: "Caixa", ativo: true }],
+  });
+
+  assert.equal(resultado.ok, true);
+  assert.equal(resultado.compra.quantidade, 10);
+  assert.equal(resultado.compra.unidadeCompra, "cx");
+  assert.equal(resultado.compra.unidadeEstoque, "cx");
+});
+
+test("bloqueia compra com unidades incompativeis", () => {
+  const resultado = prepararCompraInsumo({
+    data: "2026-09-07",
+    quantidade: 1,
+    valorTotal: 20,
+    unidadeCompra: "kg",
+    unidadeEstoque: "lt",
+    unidades: unidadesPadrao,
+  });
+
+  assert.equal(resultado.ok, false);
+  assert.equal(resultado.motivo, "unidades_incompativeis");
+});
+
+test("bloqueia conversao de unidade customizada para unidade canonica", () => {
+  const resultado = prepararCompraInsumo({
+    data: "2026-09-07",
+    quantidade: 10,
+    valorTotal: 100,
+    unidadeCompra: "cx",
+    unidadeEstoque: "un",
+    unidades: [
+      { id: "cx", nome: "Caixa", ativo: true },
+      { id: "un", nome: "Unidade", ativo: true },
+    ],
+  });
+
+  assert.equal(resultado.ok, false);
+  assert.equal(resultado.motivo, "grupo_conversao_invalido");
+});
+
+test("compra legada sem unidade propria preserva quantidade normalizada existente", () => {
+  const compraLegada = {
+    data: "2026-09-07",
+    quantidade: 10,
+    valorTotal: 50,
+  };
+
+  assert.equal(compraLegada.quantidade, 10);
+  assert.equal(compraLegada.quantidadeInformada, undefined);
+  assert.equal(compraLegada.unidadeCompra, undefined);
+});
+
+test("bloqueia compra com quantidade invalida, zerada ou negativa", () => {
+  const casos = ["abc", 0, -1].map((quantidade) =>
+    prepararCompraInsumo({
+      data: "2026-09-07",
+      quantidade,
+      valorTotal: 10,
+      unidadeCompra: "kg",
+      unidadeEstoque: "kg",
+      unidades: unidadesPadrao,
+    })
+  );
+
+  assert.deepEqual(
+    casos.map((resultado) => resultado.ok),
+    [false, false, false]
+  );
+});
+
+test("bloqueia compra com valor total invalido", () => {
+  const resultado = prepararCompraInsumo({
+    data: "2026-09-07",
+    quantidade: 1,
+    valorTotal: "abc",
+    unidadeCompra: "kg",
+    unidadeEstoque: "kg",
+    unidades: unidadesPadrao,
+  });
+
+  assert.equal(resultado.ok, false);
+  assert.equal(resultado.motivo, "valor_total_invalido");
 });

@@ -114,6 +114,15 @@ export const unidadesCompativeis = (unidadeOrigem, unidadeDestino, unidades = []
   );
 };
 
+export const obterUnidadesCompativeis = (unidadeDestino, unidades = []) => {
+  const destino = normalizarUnidade(unidadeDestino);
+  if (!destino || !Array.isArray(unidades)) return [];
+
+  return unidades.filter(
+    (unidade) => unidade?.ativo !== false && unidadesCompativeis(unidade.id, destino, unidades)
+  );
+};
+
 export const converterQuantidade = ({
   quantidade,
   unidadeOrigem,
@@ -205,5 +214,55 @@ export const converterQuantidade = ({
     motivo: "",
     unidadeOrigem: origem,
     unidadeDestino: destino,
+  };
+};
+
+export const prepararCompraInsumo = ({
+  data,
+  quantidade,
+  valorTotal,
+  unidadeCompra,
+  unidadeEstoque,
+  unidades = [],
+} = {}) => {
+  const quantidadeInformada = Number(quantidade);
+  const valorTotalCompra = Number(valorTotal);
+  const valorTotalPreenchido =
+    valorTotal !== null &&
+    valorTotal !== undefined &&
+    (typeof valorTotal !== "string" || valorTotal.trim() !== "");
+  const origem = normalizarUnidade(unidadeCompra);
+  const destino = normalizarUnidade(unidadeEstoque);
+
+  if (!valorTotalPreenchido || !Number.isFinite(valorTotalCompra) || valorTotalCompra < 0) {
+    return { ok: false, motivo: "valor_total_invalido", compra: null };
+  }
+
+  const conversao = converterQuantidade({
+    quantidade: quantidadeInformada,
+    unidadeOrigem: origem,
+    unidadeDestino: destino,
+    unidades,
+  });
+
+  if (!conversao.ok) {
+    return { ok: false, motivo: conversao.motivo, compra: null };
+  }
+
+  if (!Number.isFinite(conversao.quantidade) || conversao.quantidade <= 0) {
+    return { ok: false, motivo: "quantidade_normalizada_invalida", compra: null };
+  }
+
+  return {
+    ok: true,
+    motivo: "",
+    compra: {
+      data,
+      quantidade: conversao.quantidade,
+      valorTotal: valorTotalCompra,
+      quantidadeInformada,
+      unidadeCompra: origem,
+      unidadeEstoque: destino,
+    },
   };
 };

@@ -6,6 +6,11 @@ import { useTableSort } from "../hooks/useTableSort";
 import ActionMenu from "../components/ActionMenu";
 import { moedaBR, numeroBR, dataBR } from "../utils/formatters";
 import { useParametros } from "../hooks/useParametros";
+import {
+  normalizarUnidade,
+  obterUnidadesCompativeis,
+  prepararCompraInsumo,
+} from "../utils/unidadesMedida";
 
 export default function Insumos() {
   // ================================
@@ -40,6 +45,7 @@ export default function Insumos() {
     insumoIndex: "",
     data: "",
     quantidade: "",
+    unidadeCompra: "",
     valorTotal: "",
   });
 
@@ -57,6 +63,40 @@ export default function Insumos() {
     chave: "nome",
     direcao: "asc",
   });
+
+  const insumoCompraSelecionado =
+    novaCompra.insumoIndex !== "" ? insumos[Number(novaCompra.insumoIndex)] : null;
+
+  const unidadeEstoqueCompra = normalizarUnidade(insumoCompraSelecionado?.unidade);
+
+  const unidadesCompraCompativeis = unidadeEstoqueCompra
+    ? obterUnidadesCompativeis(unidadeEstoqueCompra, unidadesAtivas)
+    : [];
+
+  const unidadeCompraJaListada = unidadesCompraCompativeis.some(
+    (unidade) => normalizarUnidade(unidade.id) === unidadeEstoqueCompra
+  );
+
+  const unidadesCompraDisponiveis =
+    unidadeEstoqueCompra && !unidadeCompraJaListada
+      ? [
+          {
+            id: unidadeEstoqueCompra,
+            nome: unidadeEstoqueCompra,
+            ativo: true,
+          },
+          ...unidadesCompraCompativeis,
+        ]
+      : unidadesCompraCompativeis;
+
+  const obterRotuloUnidade = (unidadeId) => {
+    const idNormalizado = normalizarUnidade(unidadeId);
+    const unidade = unidadesMedida.find(
+      (item) => normalizarUnidade(item?.id) === idNormalizado
+    );
+
+    return unidade?.nome || idNormalizado;
+  };
 
   // ================================
   // 🔹 CUSTO MÉDIO
@@ -190,6 +230,7 @@ export default function Insumos() {
       insumoIndex: "",
       data: "",
       quantidade: "",
+      unidadeCompra: "",
       valorTotal: "",
     });
 
@@ -268,9 +309,48 @@ export default function Insumos() {
       novaCompra.insumoIndex === "" ||
       !novaCompra.data ||
       !novaCompra.quantidade ||
+      !novaCompra.unidadeCompra ||
       !novaCompra.valorTotal
     ) {
       showToast("Preencha todos os dados da compra.", "warning");
+      return;
+    }
+
+    const insumoIndex = Number(novaCompra.insumoIndex);
+    const insumo = insumos[insumoIndex];
+
+    if (!insumo) {
+      showToast("Selecione um insumo válido.", "warning");
+      return;
+    }
+
+    const compraPreparada = prepararCompraInsumo({
+      data: novaCompra.data,
+      quantidade: novaCompra.quantidade,
+      valorTotal: novaCompra.valorTotal,
+      unidadeCompra: novaCompra.unidadeCompra,
+      unidadeEstoque: insumo.unidade,
+      unidades: unidadesAtivas,
+    });
+
+    if (!compraPreparada.ok) {
+      const mensagens = {
+        quantidade_invalida: "Informe uma quantidade válida.",
+        quantidade_negativa: "Informe uma quantidade válida.",
+        quantidade_normalizada_invalida: "Informe uma quantidade válida.",
+        valor_total_invalido: "Informe um valor total válido.",
+        unidade_invalida: "Unidade da compra incompatível com a unidade do insumo.",
+        unidade_desconhecida: "Unidade da compra incompatível com a unidade do insumo.",
+        grupo_conversao_invalido: "Unidade da compra incompatível com a unidade do insumo.",
+        fator_base_invalido: "Unidade da compra incompatível com a unidade do insumo.",
+        unidades_incompativeis: "Unidade da compra incompatível com a unidade do insumo.",
+      };
+
+      showToast(
+        mensagens[compraPreparada.motivo] ||
+          "Unidade da compra incompatível com a unidade do insumo.",
+        "warning"
+      );
       return;
     }
 
@@ -279,26 +359,18 @@ export default function Insumos() {
       compras: [...(insumo.compras || [])],
     }));
 
-    const compraTratada = {
-      data: novaCompra.data,
-      quantidade: Number(novaCompra.quantidade),
-      valorTotal: Number(novaCompra.valorTotal),
-    };
-
     if (
       editCompra.insumoIndex !== null &&
       editCompra.compraIndex !== null
     ) {
       listaAtualizada[editCompra.insumoIndex].compras[editCompra.compraIndex] =
-        compraTratada;
+        compraPreparada.compra;
     } else {
-      listaAtualizada[novaCompra.insumoIndex].compras.push(compraTratada);
+      listaAtualizada[insumoIndex].compras.push(compraPreparada.compra);
     }
 
-    const insumo = insumos[novaCompra.insumoIndex];
-
     await updateItem("insumos", insumo.id, {
-    compras: listaAtualizada[novaCompra.insumoIndex].compras,
+    compras: listaAtualizada[insumoIndex].compras,
     });
     limparCompra();
   };
@@ -307,12 +379,15 @@ export default function Insumos() {
   // 🔹 EDITAR COMPRA
   // ================================
   const editarCompra = (insumoIndex, compraIndex) => {
-    const compra = insumos[insumoIndex].compras[compraIndex];
+    const insumo = insumos[insumoIndex];
+    const compra = insumo.compras[compraIndex];
+    const unidadeEstoque = normalizarUnidade(compra.unidadeEstoque || insumo.unidade);
 
     setNovaCompra({
       insumoIndex,
       data: compra.data,
-      quantidade: compra.quantidade,
+      quantidade: compra.quantidadeInformada ?? compra.quantidade,
+      unidadeCompra: normalizarUnidade(compra.unidadeCompra || unidadeEstoque),
       valorTotal: compra.valorTotal,
     });
 
@@ -498,9 +573,16 @@ export default function Insumos() {
 
         <select
           value={novaCompra.insumoIndex}
-          onChange={(e) =>
-            setNovaCompra({ ...novaCompra, insumoIndex: e.target.value })
-          }
+          onChange={(e) => {
+            const insumoSelecionado = insumos[Number(e.target.value)];
+            const unidadeCompra = normalizarUnidade(insumoSelecionado?.unidade);
+
+            setNovaCompra({
+              ...novaCompra,
+              insumoIndex: e.target.value,
+              unidadeCompra,
+            });
+          }}
           disabled={editCompra.compraIndex !== null}
         >
           <option value="">Selecione o insumo</option>
@@ -529,6 +611,21 @@ export default function Insumos() {
             setNovaCompra({ ...novaCompra, quantidade: e.target.value })
           }
         />
+
+        <select
+          value={novaCompra.unidadeCompra}
+          onChange={(e) =>
+            setNovaCompra({ ...novaCompra, unidadeCompra: e.target.value })
+          }
+          disabled={!insumoCompraSelecionado}
+        >
+          <option value="">Unidade da compra</option>
+          {unidadesCompraDisponiveis.map((unidade) => (
+            <option key={unidade.id} value={normalizarUnidade(unidade.id)}>
+              {unidade.nome || unidade.id}
+            </option>
+          ))}
+        </select>
 
         <input
           type="number"
@@ -675,13 +772,20 @@ export default function Insumos() {
               </thead>
 
               <tbody>
-                {insumo.compras?.map((compra, compraIndex) => (
+                {insumo.compras?.map((compra, compraIndex) => {
+                  const quantidadeExibida =
+                    compra.quantidadeInformada ?? compra.quantidade;
+                  const unidadeExibida =
+                    compra.unidadeCompra || compra.unidadeEstoque || insumo.unidade;
+                  const unidadeCusto = compra.unidadeEstoque || insumo.unidade;
+
+                  return (
                   <tr key={compraIndex}>
                     <td>{dataBR(compra.data)}</td>
 
                     
                       <td>
-                      {numeroBR(compra.quantidade, 3)} {insumo.unidade}
+                      {numeroBR(quantidadeExibida, 3)} {obterRotuloUnidade(unidadeExibida)}
                     </td>
 
                     <td>
@@ -690,7 +794,7 @@ export default function Insumos() {
 
                     <td>
                       {Number(compra.quantidade) > 0
-                        ? moedaBR(compra.valorTotal / compra.quantidade)
+                        ? `${moedaBR(compra.valorTotal / compra.quantidade)} / ${unidadeCusto}`
                         : moedaBR(0)}
                     </td>
 
@@ -713,7 +817,8 @@ export default function Insumos() {
                       />
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
 
                 {(!insumo.compras || insumo.compras.length === 0) && (
                   <tr>
