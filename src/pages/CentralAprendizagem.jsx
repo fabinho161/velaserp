@@ -25,7 +25,7 @@ import {
 } from "../data/centralAprendizagemData";
 import { normalizarSegmentoEmpresa } from "../config/segmentosEmpresa";
 
-const CATEGORIA_CHECKLIST = "Checklist de Implantacao";
+const CATEGORIA_CHECKLIST = "Checklist de Implantação";
 const LABELS_SEGMENTO = {
   comercio: "Comércio",
   industria: "Indústria",
@@ -188,12 +188,12 @@ function ArticleCard({ item, variant = "article" }) {
         )}
 
         <LearningInfoBlock title="Campos principais" items={item.camposPrincipais} />
-        <LearningInfoBlock title="O que acontece apos salvar" items={item.aposSalvar} />
-        <LearningInfoBlock title="Impacto em outros modulos" items={item.impactoOutrosModulos} />
+        <LearningInfoBlock title="O que acontece após salvar" items={item.aposSalvar} />
+        <LearningInfoBlock title="Impacto em outros módulos" items={item.impactoOutrosModulos} />
         <LearningInfoBlock title="Cuidados importantes" items={item.cuidados} />
-        <LearningInfoBlock title="Exemplos praticos" items={item.exemplos} />
+        <LearningInfoBlock title="Exemplos práticos" items={item.exemplos} />
         <LearningInfoBlock title="Erros comuns" items={item.errosComuns} />
-        <LearningInfoBlock title="Boas praticas" items={item.boasPraticas} />
+        <LearningInfoBlock title="Boas práticas" items={item.boasPraticas} />
 
         {item.palavrasChave?.length > 0 && (
           <div className="learning-keyword-row">
@@ -372,9 +372,9 @@ export default function CentralAprendizagem() {
           <h1 className="page-title">Central de Aprendizagem</h1>
 
           <p className="page-subtitle">
-            Encontre passos, guias rapidos e respostas para orientar a equipe no
-            uso do Renovar ERP, do cadastro inicial ate a leitura dos
-            indicadores. Conteudo priorizado para o segmento atual:
+            Encontre passos, guias rápidos e respostas para orientar a equipe no
+            uso do Renovar ERP, do cadastro inicial até a leitura dos
+            indicadores. Conteúdo priorizado para o segmento atual:
             {" "}
             <strong>{labelSegmentoAtual}</strong>.
           </p>
@@ -386,7 +386,7 @@ export default function CentralAprendizagem() {
           <Search size={18} />
           <input
             type="text"
-            placeholder="Buscar por titulo, categoria, palavra-chave ou conteudo..."
+            placeholder="Buscar por título, categoria, palavra-chave ou conteúdo..."
             value={termoBusca}
             onChange={(event) => setTermoBusca(event.target.value)}
           />
@@ -403,8 +403,8 @@ export default function CentralAprendizagem() {
           <SectionTitle
             icon={ClipboardCheck}
             label="Comece por aqui"
-            title="Fluxo recomendado para comecar a usar o ERP"
-            description="Sequencia guiada para configurar a empresa, formar estoque, vender, acompanhar resultado e liberar a equipe."
+            title="Fluxo recomendado para começar a usar o ERP"
+            description="Sequência guiada para configurar a empresa, formar estoque, vender, acompanhar resultado e liberar a equipe."
           />
 
           <ArticleCard item={fluxoRecomendado} variant="featured" />
@@ -439,7 +439,7 @@ export default function CentralAprendizagem() {
               <Layers3 size={19} />
             </span>
             <strong>Todas as categorias</strong>
-            <small>{todosConteudos.length} topicos</small>
+            <small>{todosConteudos.length} tópicos</small>
           </button>
 
           {categoriasAprendizagem
@@ -465,7 +465,7 @@ export default function CentralAprendizagem() {
                 )}
               </span>
               <strong>{categoria.titulo}</strong>
-              <small>{totalPorCategoria[categoria.titulo] || 0} topicos</small>
+              <small>{totalPorCategoria[categoria.titulo] || 0} tópicos</small>
               <p>{categoria.descricao}</p>
             </button>
           ))}
@@ -484,14 +484,14 @@ export default function CentralAprendizagem() {
               Voltar
             </button>
 
-            <span>Ajuda / Checklist de Implantacao</span>
+            <span>Ajuda / Checklist de Implantação</span>
           </div>
 
           <SectionTitle
             icon={ClipboardCheck}
-            label="Implantacao"
-            title="Checklist de Implantacao"
-            description="Use esta sequencia para preparar a empresa, validar cadastros e iniciar a operacao com mais confianca."
+            label="Implantação"
+            title="Checklist de Implantação"
+            description="Use esta sequência para preparar a empresa, validar cadastros e iniciar a operação com mais confiança."
           />
 
           <div className="learning-checklist learning-checklist-detail">
@@ -519,7 +519,7 @@ export default function CentralAprendizagem() {
                 icon={GraduationCap}
                 label="Onboarding"
                 title="Primeiros passos"
-                description="Sequencia inicial para configurar a empresa e registrar as primeiras rotinas."
+                description="Sequência inicial para configurar a empresa e registrar as primeiras rotinas."
               />
 
               <div className="learning-article-grid">
@@ -534,9 +534,9 @@ export default function CentralAprendizagem() {
             <section className="card learning-section-card">
               <SectionTitle
                 icon={BookOpen}
-                label="Modulos"
-                title="Tutoriais por modulo"
-                description="Visao rapida do papel de cada modulo dentro do ERP."
+                label="Módulos"
+                title="Tutoriais por módulo"
+                description="Visão rápida do papel de cada módulo dentro do ERP."
               />
 
               <div className="learning-module-grid">
@@ -552,7 +552,7 @@ export default function CentralAprendizagem() {
               <SectionTitle
                 icon={Lightbulb}
                 label="Guias"
-                title="Guias rapidos"
+                title="Guias rápidos"
                 description="Respostas curtas para tarefas comuns do dia a dia."
               />
 
@@ -570,7 +570,7 @@ export default function CentralAprendizagem() {
                 icon={FileQuestion}
                 label="FAQ"
                 title="Perguntas frequentes"
-                description="Duvidas basicas sobre multiempresa, perfis e funcionamento geral."
+                description="Dúvidas básicas sobre multiempresa, perfis e funcionamento geral."
               />
 
               <div className="learning-faq-list">
@@ -591,14 +591,14 @@ export default function CentralAprendizagem() {
             <SectionTitle
               icon={PlayCircle}
               label="Em breve"
-              title="Videos e prints"
-              description="Espaco reservado para tutoriais visuais, demonstracoes de tela e exemplos guiados."
+              title="Vídeos e prints"
+              description="Espaço reservado para tutoriais visuais, demonstrações de tela e exemplos guiados."
             />
 
             <div className="learning-media-placeholder">
               <PlayCircle size={34} />
               <strong>Biblioteca visual futura</strong>
-              <span>Sem backend nesta primeira versao.</span>
+              <span>Sem backend nesta primeira versão.</span>
             </div>
           </section>
 
@@ -627,7 +627,7 @@ export default function CentralAprendizagem() {
 
           {totalResultados === 0 && (
             <div className="empty-state learning-empty">
-              Nenhum conteudo encontrado para a busca atual.
+              Nenhum conteúdo encontrado para a busca atual.
             </div>
           )}
         </>
