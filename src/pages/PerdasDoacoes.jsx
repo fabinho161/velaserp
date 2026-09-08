@@ -3,6 +3,7 @@ import ActionMenu from "../components/ActionMenu";
 import { useConfirmacao } from "../context/useConfirmacao";
 import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
+import { useParametros } from "../hooks/useParametros";
 import { useTableSort } from "../hooks/useTableSort";
 import {
   calcularEstoqueInsumos,
@@ -10,6 +11,14 @@ import {
   normalizarChaveProduto,
 } from "../utils/estoqueProdutos";
 import { dataBR, moedaBR, numeroBR } from "../utils/formatters";
+import {
+  obterQuantidadeExibicaoBaixa,
+  prepararBaixaInsumo,
+} from "../utils/perdasDoacoes";
+import {
+  normalizarUnidade,
+  obterUnidadesCompativeis,
+} from "../utils/unidadesMedida";
 
 const FORM_INICIAL = {
   tipoItem: "produto",
@@ -19,6 +28,7 @@ const FORM_INICIAL = {
   insumoId: "",
   insumo: "",
   quantidade: "",
+  unidadeInformada: "",
   data: new Date().toISOString().split("T")[0],
   motivo: "",
   destinatario: "",
@@ -78,6 +88,7 @@ export default function PerdasDoacoes() {
   } = useERP();
   const { showToast } = useToast();
   const { confirmar } = useConfirmacao();
+  const { unidadesMedida = [] } = useParametros();
   const ordenacaoRegistros = useTableSort({
     chave: "data",
     direcao: "desc",
@@ -85,6 +96,10 @@ export default function PerdasDoacoes() {
 
   const [form, setForm] = useState(FORM_INICIAL);
   const [filtros, setFiltros] = useState(FILTRO_INICIAL);
+  const unidadesAtivas = useMemo(
+    () => unidadesMedida.filter((unidade) => unidade?.ativo !== false),
+    [unidadesMedida]
+  );
 
   const estoqueProdutos = useMemo(
     () =>
@@ -144,13 +159,43 @@ export default function PerdasDoacoes() {
   const quantidade = Number(form.quantidade || 0);
   const saldoDisponivel = Number(itemSelecionadoEstoque?.saldo || 0);
   const custoUnitarioSnapshot = Number(itemSelecionadoEstoque?.custoMedio || 0);
-  const custoTotalSnapshot = quantidade * custoUnitarioSnapshot;
   const unidadeProduto =
     produtoSelecionadoCadastro?.fiscal?.unidadeTributavel ||
     produtoSelecionadoCadastro?.unidade ||
     "unidades";
-  const unidadeInsumo = insumoSelecionadoCadastro?.unidade || insumoSelecionadoEstoque?.unidade || "";
+  const unidadeInsumo = normalizarUnidade(
+    insumoSelecionadoCadastro?.unidade || insumoSelecionadoEstoque?.unidade || ""
+  );
+  const unidadeInformadaInsumo = normalizarUnidade(form.unidadeInformada || unidadeInsumo);
   const unidadeItem = form.tipoItem === "insumo" ? unidadeInsumo : unidadeProduto;
+  const unidadesInsumoCompativeis = useMemo(() => {
+    if (!unidadeInsumo) return [];
+
+    const compativeis = obterUnidadesCompativeis(unidadeInsumo, unidadesAtivas);
+    const unidadePrincipalListada = compativeis.some(
+      (unidade) => normalizarUnidade(unidade.id) === unidadeInsumo
+    );
+
+    return unidadePrincipalListada
+      ? compativeis
+      : [{ id: unidadeInsumo, nome: unidadeInsumo, ativo: true }, ...compativeis];
+  }, [unidadeInsumo, unidadesAtivas]);
+  const baixaInsumoPreview =
+    form.tipoItem === "insumo"
+      ? prepararBaixaInsumo({
+          quantidade: form.quantidade,
+          unidadeInformada: unidadeInformadaInsumo,
+          unidadeEstoque: unidadeInsumo,
+          unidades: unidadesAtivas,
+          saldoDisponivel,
+          custoUnitarioSnapshot,
+        })
+      : null;
+  const quantidadeParaCusto =
+    form.tipoItem === "insumo"
+      ? Number(baixaInsumoPreview?.baixa?.quantidade || 0)
+      : quantidade;
+  const custoTotalSnapshot = quantidadeParaCusto * custoUnitarioSnapshot;
 
   const limparFormulario = () => {
     setForm(FORM_INICIAL);
@@ -170,7 +215,55 @@ export default function PerdasDoacoes() {
       return;
     }
 
-    if (quantidade > saldoDisponivel) {
+    let quantidadeRegistro = quantidade;
+    let unidadeRegistro = unidadeItem;
+    let custoUnitarioRegistro = custoUnitarioSnapshot;
+    let custoTotalRegistro = custoTotalSnapshot;
+    let snapshotInsumo = {};
+
+    if (form.tipoItem === "insumo") {
+      const baixaPreparada = prepararBaixaInsumo({
+        quantidade: form.quantidade,
+        unidadeInformada: unidadeInformadaInsumo,
+        unidadeEstoque: unidadeInsumo,
+        unidades: unidadesAtivas,
+        saldoDisponivel,
+        custoUnitarioSnapshot,
+      });
+
+      if (!baixaPreparada.ok) {
+        const mensagens = {
+          quantidade_invalida: "Informe uma quantidade valida.",
+          quantidade_negativa: "Informe uma quantidade valida.",
+          quantidade_normalizada_invalida: "Informe uma quantidade valida.",
+          unidade_invalida: "Selecione uma unidade compativel com o insumo.",
+          unidade_desconhecida: "Selecione uma unidade compativel com o insumo.",
+          grupo_conversao_invalido: "Selecione uma unidade compativel com o insumo.",
+          fator_base_invalido: "Selecione uma unidade compativel com o insumo.",
+          unidades_incompativeis: "Selecione uma unidade compativel com o insumo.",
+          estoque_insuficiente: `Estoque insuficiente. Saldo disponivel: ${numeroBR(
+            saldoDisponivel,
+            3
+          )} ${unidadeInsumo}.`,
+        };
+
+        showToast(
+          mensagens[baixaPreparada.motivo] || "Nao foi possivel registrar a baixa do insumo.",
+          "warning"
+        );
+        return;
+      }
+
+      quantidadeRegistro = baixaPreparada.baixa.quantidade;
+      unidadeRegistro = baixaPreparada.baixa.unidade;
+      custoUnitarioRegistro = baixaPreparada.baixa.custoUnitarioSnapshot;
+      custoTotalRegistro = baixaPreparada.baixa.custoTotalSnapshot;
+      snapshotInsumo = {
+        quantidadeInformada: baixaPreparada.baixa.quantidadeInformada,
+        unidadeInformada: baixaPreparada.baixa.unidadeInformada,
+        unidadeEstoque: baixaPreparada.baixa.unidadeEstoque,
+      };
+    } else if (quantidade > saldoDisponivel) {
       showToast("Nao e possivel registrar perda/doacao maior que o saldo disponivel.", "warning");
       return;
     }
@@ -196,19 +289,20 @@ export default function PerdasDoacoes() {
           : "",
       insumoNome:
         form.tipoItem === "insumo" ? insumoSelecionadoEstoque?.nome || form.insumo : "",
-      quantidade,
-      unidade: unidadeItem,
+      quantidade: quantidadeRegistro,
+      unidade: unidadeRegistro,
       data: form.data,
       motivo: form.motivo || "",
       destinatario: form.tipo === "doacao" ? form.destinatario || "" : "",
       observacoes: form.observacoes || "",
       responsavelUid: user?.uid || "",
       responsavelNome: user?.displayName || user?.email || "",
-      custoUnitarioSnapshot,
-      custoTotalSnapshot,
+      custoUnitarioSnapshot: custoUnitarioRegistro,
+      custoTotalSnapshot: custoTotalRegistro,
       criadoEm: agora,
       atualizadoEm: agora,
       status: "ativo",
+      ...snapshotInsumo,
     };
 
     await addItem("perdasDoacoes", registro);
@@ -366,6 +460,7 @@ export default function PerdasDoacoes() {
                   produto: "",
                   insumoId: "",
                   insumo: "",
+                  unidadeInformada: "",
                 })
               }
             >
@@ -430,6 +525,7 @@ export default function PerdasDoacoes() {
                     ...form,
                     insumoId: selecionado?.insumoId || "",
                     insumo: selecionado?.nome || "",
+                    unidadeInformada: normalizarUnidade(selecionado?.unidade || ""),
                   });
                 }}
               >
@@ -457,6 +553,26 @@ export default function PerdasDoacoes() {
               placeholder="Ex: 10"
             />
           </label>
+
+          {form.tipoItem === "insumo" && (
+            <label>
+              Unidade
+              <select
+                value={unidadeInformadaInsumo}
+                disabled={!unidadeInsumo}
+                onChange={(e) =>
+                  setForm({ ...form, unidadeInformada: normalizarUnidade(e.target.value) })
+                }
+              >
+                <option value="">Selecione a unidade</option>
+                {unidadesInsumoCompativeis.map((unidade) => (
+                  <option key={unidade.id} value={normalizarUnidade(unidade.id)}>
+                    {unidade.nome || unidade.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <label>
             Data
@@ -639,58 +755,62 @@ export default function PerdasDoacoes() {
             </thead>
 
             <tbody>
-              {registrosOrdenados.map(({ registro }) => (
-                <tr key={registro.id}>
-                  <td>{dataBR(registro.data)}</td>
-                  <td>
-                    <span className="badge badge-purple">
-                      {(registro.tipoItem || "produto") === "insumo"
-                        ? "Insumo"
-                        : "Produto"}
-                    </span>
-                  </td>
-                  <td>
-                    <span
-                      className={`badge ${
-                        registro.tipo === "doacao" ? "badge-info" : "badge-danger"
-                      }`}
-                    >
-                      {obterLabelTipo(registro.tipo)}
-                    </span>
-                  </td>
-                  <td>{registro.produtoNome || registro.insumoNome}</td>
-                  <td>
-                    {numeroBR(registro.quantidade, 3)} {registro.unidade || ""}
-                  </td>
-                  <td>{moedaBR(registro.custoTotalSnapshot || 0)}</td>
-                  <td>{registro.motivo || "-"}</td>
-                  <td>{registro.destinatario || "-"}</td>
-                  <td>
-                    <span
-                      className={`badge ${
-                        registro.status === "cancelado"
-                          ? "badge-warning"
-                          : "badge-success"
-                      }`}
-                    >
-                      {registro.status === "cancelado" ? "Cancelado" : "Ativo"}
-                    </span>
-                  </td>
-                  <td>
-                    <ActionMenu
-                      label="Abrir acoes da baixa"
-                      items={[
-                        {
-                          label: "Cancelar registro",
-                          danger: true,
-                          disabled: registro.status === "cancelado",
-                          onClick: () => cancelarRegistro(registro),
-                        },
-                      ]}
-                    />
-                  </td>
-                </tr>
-              ))}
+              {registrosOrdenados.map(({ registro }) => {
+                const quantidadeExibicao = obterQuantidadeExibicaoBaixa(registro);
+
+                return (
+                  <tr key={registro.id}>
+                    <td>{dataBR(registro.data)}</td>
+                    <td>
+                      <span className="badge badge-purple">
+                        {(registro.tipoItem || "produto") === "insumo"
+                          ? "Insumo"
+                          : "Produto"}
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        className={`badge ${
+                          registro.tipo === "doacao" ? "badge-info" : "badge-danger"
+                        }`}
+                      >
+                        {obterLabelTipo(registro.tipo)}
+                      </span>
+                    </td>
+                    <td>{registro.produtoNome || registro.insumoNome}</td>
+                    <td>
+                      {numeroBR(quantidadeExibicao.quantidade, 3)} {quantidadeExibicao.unidade}
+                    </td>
+                    <td>{moedaBR(registro.custoTotalSnapshot || 0)}</td>
+                    <td>{registro.motivo || "-"}</td>
+                    <td>{registro.destinatario || "-"}</td>
+                    <td>
+                      <span
+                        className={`badge ${
+                          registro.status === "cancelado"
+                            ? "badge-warning"
+                            : "badge-success"
+                        }`}
+                      >
+                        {registro.status === "cancelado" ? "Cancelado" : "Ativo"}
+                      </span>
+                    </td>
+                    <td>
+                      <ActionMenu
+                        label="Abrir acoes da baixa"
+                        items={[
+                          {
+                            label: "Cancelar registro",
+                            danger: true,
+                            disabled: registro.status === "cancelado",
+                            onClick: () => cancelarRegistro(registro),
+                          },
+                        ]}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
 
               {registrosOrdenados.length === 0 && (
                 <tr>
