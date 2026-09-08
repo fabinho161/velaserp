@@ -1,8 +1,17 @@
 import { useState } from "react";
+import {
+  Boxes,
+  ChartColumnIncreasing,
+  Factory,
+  FileChartLine,
+  PackageSearch,
+  Receipt,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
 import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
 import { usePlano } from "../hooks/usePlano";
-import { useTableSort } from "../hooks/useTableSort";
 import { moedaBR, inteiroBR, dataBR, numeroBR } from "../utils/formatters";
 import {
   calcularEstoqueInsumos,
@@ -44,14 +53,6 @@ export default function Relatorios() {
   } = useERP();
   const { showToast } = useToast();
   const { podeUsarDRE, podeGerarPDF } = usePlano();
-  const ordenacaoAlertas = useTableSort({
-    chave: "item",
-    direcao: "asc",
-  });
-  const ordenacaoVendas = useTableSort({
-    chave: "data",
-    direcao: "desc",
-  });
 
   // ================================
   // 🔹 FILTRO GLOBAL DOS RELATÓRIOS
@@ -286,18 +287,6 @@ export default function Relatorios() {
   const margemBruta =
     totalVendas > 0 ? (lucroBruto / totalVendas) * 100 : 0;
 
-  const totalItensVendidos = vendasFiltradas.reduce((total, venda) => {
-    const itens = venda.itens || [];
-
-    return (
-      total +
-      itens.reduce(
-        (subtotal, item) => subtotal + Number(item.quantidade ?? 0),
-        0
-      )
-    );
-  }, 0);
-
   const totalProduzido = producoesFiltradas.reduce(
     (total, producao) => total + Number(producao.quantidade ?? 0),
     0
@@ -361,88 +350,6 @@ export default function Relatorios() {
 
     return estoqueMinimo > 0 && estoqueAtual <= estoqueMinimo;
   });
-
-  const alertasEstoqueOrdenados = ordenacaoAlertas.ordenar(
-    [
-      ...insumosAbaixoMinimo.map((insumo) => {
-        return {
-          id: insumo.id,
-          tipo: "Insumo",
-          item: insumo.nome || "",
-          unidade: insumo.unidade || "",
-          estoqueAtual: insumo.estoqueAtual,
-          estoqueMinimo: insumo.estoqueMinimo,
-          situacao: "Estoque baixo",
-        };
-      }),
-      ...produtosAbaixoMinimo.map((produto) => {
-        const estoqueAtual = Number(produto.saldo ?? 0);
-        const estoqueMinimo = Number(produto.estoqueMinimo ?? 0);
-
-        return {
-          id: produto.id || produto.produto,
-          tipo: "Produto",
-          item: produto.produto || "",
-          estoqueAtual,
-          estoqueMinimo,
-          situacao: "Estoque baixo",
-        };
-      }),
-    ],
-    (item, chave) => {
-      const valores = {
-        tipo: item.tipo,
-        item: item.item,
-        estoqueAtual: item.estoqueAtual,
-        estoqueMinimo: item.estoqueMinimo,
-        situacao: item.situacao,
-      };
-
-      return valores[chave] ?? "";
-    }
-  );
-
-  const vendasTabelaOrdenadas = ordenacaoVendas.ordenar(
-    vendasFiltradas.map((venda) => {
-      const total = Number(venda.total ?? 0);
-      const custo = Number(venda.custoTotal ?? 0);
-      const margem = total > 0 ? ((total - custo) / total) * 100 : 0;
-
-      return {
-        venda,
-        total,
-        custo,
-        margem,
-      };
-    }),
-    (item, chave) => {
-      const valores = {
-        data: item.venda.data || "",
-        pedido: item.venda.numeroPedido || "",
-        cliente: obterNomeClienteVenda(item.venda),
-        total: item.total,
-        custo: item.custo,
-        margem: item.margem,
-      };
-
-      return valores[chave] ?? "";
-    }
-  );
-
-  const renderCabecalhoOrdenavel = (label, chave, sort) => {
-    const ativo = sort.ativo(chave);
-
-    return (
-      <button
-        type="button"
-        className={ativo ? "table-sort-button active" : "table-sort-button"}
-        onClick={() => sort.ordenarPor(chave)}
-      >
-        <span>{label}</span>
-        {ativo && <span aria-hidden="true">{sort.indicador(chave)}</span>}
-      </button>
-    );
-  };
 
   // ================================
   // 🔹 DRE GERENCIAL
@@ -526,37 +433,43 @@ export default function Relatorios() {
       tipo: "vendas",
       titulo: "Relatório de Vendas",
       descricao: "Resumo de pedidos, clientes, itens vendidos, receita e margem.",
-      status: "Disponível",
+      Icone: Receipt,
+      cor: "green",
     },
     {
       tipo: "financeiro",
       titulo: "Relatório Financeiro",
       descricao: "Entradas, saídas, saldo, despesas pendentes e fluxo de caixa.",
-      status: "Disponível",
+      Icone: Wallet,
+      cor: "blue",
     },
     {
       tipo: "dre",
       titulo: "DRE Gerencial",
       descricao: "Receita, custos, despesas, lucro bruto e resultado líquido.",
-      status: "Disponível",
+      Icone: FileChartLine,
+      cor: "amber",
     },
     {
       tipo: "estoque",
       titulo: "Relatório de Estoque",
       descricao: "Produtos e insumos com estoque atual, mínimo e alertas.",
-      status: "Disponível",
+      Icone: PackageSearch,
+      cor: "purple",
     },
     {
       tipo: "producao",
       titulo: "Relatório de Produção",
       descricao: "Produções realizadas, custo real e quantidade produzida.",
-      status: "Disponível",
+      Icone: Factory,
+      cor: "slate",
     },
     {
       tipo: "insumos",
       titulo: "Relatório de Insumos",
       descricao: "Compras, consumo, estoque e custo médio dos insumos.",
-      status: "Disponível",
+      Icone: Boxes,
+      cor: "teal",
     },
   ];
 
@@ -1259,7 +1172,13 @@ export default function Relatorios() {
 
   return (
     <div className="reports-page">
-      <h1 className="page-title">Relatórios</h1>
+      <div className="reports-hero">
+        <div>
+          <span className="reports-eyebrow">Central de Relatórios</span>
+          <h1 className="page-title">Relatórios</h1>
+          <p>Analise os resultados da empresa e gere relatórios profissionais.</p>
+        </div>
+      </div>
 
       {/* ================================
           🔹 FILTROS
@@ -1267,8 +1186,8 @@ export default function Relatorios() {
       <div className="card reports-filter-card">
         <div className="reports-filter-heading">
           <div>
-            <h3>Filtros inteligentes</h3>
-            <p>Combine período e cliente para analisar vendas, financeiro e DRE.</p>
+            <h3>Filtros</h3>
+            <p>Combine período e cliente para refinar a análise.</p>
           </div>
 
           {clienteSelecionado && (
@@ -1379,19 +1298,25 @@ export default function Relatorios() {
       {/* ================================
           🔹 INDICADORES PRINCIPAIS
       ================================= */}
-      <div className="reports-summary-grid">
-        <div className="card reports-metric-card reports-metric-green">
+      <div className="reports-kpi-grid">
+        <div className="reports-kpi-card reports-kpi-green">
+          <span className="reports-kpi-icon">
+            <Receipt size={18} />
+          </span>
           <p>Vendas</p>
-          <h2>{moedaBR(totalVendas)}</h2>
+          <strong>{moedaBR(totalVendas)}</strong>
           <small>
             {inteiroBR(vendasFiltradas.length)} vendas no período
             {clienteSelecionado ? ` para ${clienteSelecionado.nome}` : ""}
           </small>
         </div>
 
-        <div className="card reports-metric-card reports-metric-red">
+        <div className="reports-kpi-card reports-kpi-red">
+          <span className="reports-kpi-icon">
+            <Wallet size={18} />
+          </span>
           <p>Despesas</p>
-          <h2>{moedaBR(totalDespesas)}</h2>
+          <strong>{moedaBR(totalDespesas)}</strong>
           <small>
             {clienteSelecionado
               ? "Saídas gerais da empresa, sem rateio por cliente"
@@ -1399,11 +1324,14 @@ export default function Relatorios() {
           </small>
         </div>
 
-        <div className="card reports-metric-card reports-metric-blue">
+        <div className="reports-kpi-card reports-kpi-blue">
+          <span className="reports-kpi-icon">
+            <TrendingUp size={18} />
+          </span>
           <p>Saldo</p>
-          <h2 className={saldoFinanceiro >= 0 ? "text-blue" : "text-red"}>
+          <strong className={saldoFinanceiro >= 0 ? "text-blue" : "text-red"}>
             {moedaBR(saldoFinanceiro)}
-          </h2>
+          </strong>
           <small>
             {clienteSelecionado
               ? "Lucro bruto do cliente, sem despesas gerais"
@@ -1411,174 +1339,68 @@ export default function Relatorios() {
           </small>
         </div>
 
-        <div className="card reports-metric-card reports-metric-amber">
+        <div className="reports-kpi-card reports-kpi-amber">
+          <span className="reports-kpi-icon">
+            <ChartColumnIncreasing size={18} />
+          </span>
           <p>Margem Bruta</p>
-          <h2>{numeroBR(margemBruta, 2)}%</h2>
+          <strong>{numeroBR(margemBruta, 2)}%</strong>
           <small>Lucro bruto sobre vendas</small>
         </div>
-      </div>
 
-      {/* ================================
-          🔹 INDICADORES OPERACIONAIS
-      ================================= */}
-      <div className="reports-summary-grid">
-        <div className="card reports-metric-card">
-          <p>Itens Vendidos</p>
-          <h2>{inteiroBR(totalItensVendidos)}</h2>
-          <small>Quantidade total vendida</small>
-        </div>
-
-        <div className="card reports-metric-card">
+        <div className="reports-kpi-card reports-kpi-slate">
+          <span className="reports-kpi-icon">
+            <Factory size={18} />
+          </span>
           <p>Produção</p>
-          <h2>{inteiroBR(totalProduzido)}</h2>
+          <strong>{inteiroBR(totalProduzido)}</strong>
           <small>Quantidade produzida no período</small>
-        </div>
-
-        <div className="card reports-metric-card">
-          <p>Insumos em Alerta</p>
-          <h2 className="text-red">{inteiroBR(insumosAbaixoMinimo.length)}</h2>
-          <small>Abaixo ou igual ao estoque mínimo</small>
-        </div>
-
-        <div className="card reports-metric-card">
-          <p>Produtos em Alerta</p>
-          <h2 className="text-red">{inteiroBR(produtosAbaixoMinimo.length)}</h2>
-          <small>Abaixo ou igual ao estoque mínimo</small>
-        </div>
-
-        <div className="card reports-metric-card">
-          <p>Produtos Fabricados</p>
-          <h2>{inteiroBR(totalProdutosFabricados)}</h2>
-          <small>Origem operacional fabricado</small>
-        </div>
-
-        <div className="card reports-metric-card">
-          <p>Produtos de Revenda</p>
-          <h2>{inteiroBR(totalProdutosRevenda)}</h2>
-          <small>Comprados prontos para venda</small>
         </div>
       </div>
 
       {/* ================================
           🔹 CENTRAL DE RELATÓRIOS
       ================================= */}
-      <div className="card">
-        <h3>Central de Relatórios</h3>
+      <section className="reports-center-card">
+        <div className="reports-center-header">
+          <div>
+            <h2>Central de Relatórios</h2>
+            <p>Escolha um relatório para gerar um PDF profissional com os filtros atuais.</p>
+          </div>
+        </div>
 
         <div className="reports-list-grid">
-          {relatoriosDisponiveis.map((relatorio) => (
-            <div key={relatorio.tipo} className="reports-report-card">
+          {relatoriosDisponiveis.map((relatorio) => {
+            const Icone = relatorio.Icone;
+
+            return (
+              <div
+                key={relatorio.tipo}
+                className={`reports-report-card reports-report-${relatorio.cor}`}
+              >
+                <span className="reports-report-icon">
+                  <Icone size={22} />
+                </span>
+
               <div>
                 <h3>{relatorio.titulo}</h3>
                 <p>{relatorio.descricao}</p>
               </div>
 
               <div className="reports-report-actions">
-                <span>{relatorio.status}</span>
-
                 <button
                   type="button"
                   className="reports-report-button"
                   onClick={() => gerarRelatorioPDF(relatorio.tipo)}
                 >
-                  Ver relatório
+                  Abrir relatório <span aria-hidden="true">→</span>
                 </button>
               </div>
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
-      </div>
-
-      {/* ================================
-          🔹 ALERTAS DE ESTOQUE
-      ================================= */}
-      <div className="card">
-        <h3>Alertas de Estoque</h3>
-
-        <table>
-          <thead>
-            <tr>
-              <th>{renderCabecalhoOrdenavel("Tipo", "tipo", ordenacaoAlertas)}</th>
-              <th>{renderCabecalhoOrdenavel("Item", "item", ordenacaoAlertas)}</th>
-              <th>{renderCabecalhoOrdenavel("Estoque Atual", "estoqueAtual", ordenacaoAlertas)}</th>
-              <th>{renderCabecalhoOrdenavel("Estoque Mínimo", "estoqueMinimo", ordenacaoAlertas)}</th>
-              <th>{renderCabecalhoOrdenavel("Situação", "situacao", ordenacaoAlertas)}</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {alertasEstoqueOrdenados.map((alerta, index) => (
-              <tr key={`${alerta.tipo}-${alerta.id || index}`}>
-                <td>{alerta.tipo}</td>
-                <td>{alerta.item}</td>
-                <td>
-                  {numeroBR(alerta.estoqueAtual, alerta.tipo === "Insumo" ? 3 : 2)}
-                  {alerta.unidade ? ` ${alerta.unidade}` : ""}
-                </td>
-                <td>
-                  {numeroBR(alerta.estoqueMinimo, alerta.tipo === "Insumo" ? 3 : 2)}
-                  {alerta.unidade ? ` ${alerta.unidade}` : ""}
-                </td>
-                <td className="text-red strong">{alerta.situacao}</td>
-              </tr>
-            ))}
-
-            {insumosAbaixoMinimo.length === 0 &&
-              produtosAbaixoMinimo.length === 0 && (
-                <tr>
-                  <td colSpan="5">Nenhum item abaixo do estoque mínimo.</td>
-                </tr>
-              )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* ================================
-          🔹 ÚLTIMAS VENDAS
-      ================================= */}
-      <div className="card">
-        <h3>Últimas Vendas no Período</h3>
-
-        <table>
-          <thead>
-            <tr>
-              <th>{renderCabecalhoOrdenavel("Data", "data", ordenacaoVendas)}</th>
-              <th>{renderCabecalhoOrdenavel("Pedido", "pedido", ordenacaoVendas)}</th>
-              <th>{renderCabecalhoOrdenavel("Cliente", "cliente", ordenacaoVendas)}</th>
-              <th>{renderCabecalhoOrdenavel("Total", "total", ordenacaoVendas)}</th>
-              <th>{renderCabecalhoOrdenavel("Custo", "custo", ordenacaoVendas)}</th>
-              <th>{renderCabecalhoOrdenavel("Margem", "margem", ordenacaoVendas)}</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {/* Mostra apenas as 10 primeiras vendas para evitar sobrecarregar a tabela */}
-            {vendasTabelaOrdenadas.slice(0, 10).map(({
-              venda,
-              total,
-              custo,
-              margem,
-            }) => {
-              return (
-                <tr key={venda.id}>
-                  <td>{dataBR(venda.data)}</td>
-                  <td>{venda.numeroPedido || "-"}</td>
-                  <td>{obterNomeClienteVenda(venda)}</td>
-                  <td>{moedaBR(total)}</td>
-                  <td>{moedaBR(custo)}</td>
-                  <td>{numeroBR(margem, 2)}%</td>
-                </tr>
-              );
-            })}
-
-            {vendasFiltradas.length === 0 && (
-              <tr>
-                <td colSpan="6">Nenhuma venda encontrada no período.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      </section>
     </div>
   );
 }
