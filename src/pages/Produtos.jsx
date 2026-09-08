@@ -7,6 +7,12 @@ import ActionMenu from "../components/ActionMenu";
 import { moedaBR, numeroBR } from "../utils/formatters";
 import { useParametros } from "../hooks/useParametros";
 import { normalizarSegmentoEmpresa } from "../config/segmentosEmpresa";
+import {
+  normalizarUnidade,
+  obterConsumoFichaTecnicaFormulario,
+  obterUnidadesCompativeis,
+  prepararConsumoFichaTecnica,
+} from "../utils/unidadesMedida";
 
 const FISCAL_PRODUTO_PADRAO = {
   ncm: "",
@@ -169,6 +175,7 @@ const criarFormularioProdutoInicial = (tipoProduto = "", segmento = "industria")
   origemProduto: segmento === "industria" ? ORIGEM_PRODUTO_PADRAO : "revenda",
   dataCadastro: "",
   consumos: {},
+  consumosDetalhados: {},
   componentesProduto: {},
   fiscal: FISCAL_PRODUTO_PADRAO,
   classeIndustrial: CLASSE_INDUSTRIAL_PADRAO,
@@ -184,11 +191,12 @@ export default function Produtos() {
     useERP();
   const { showToast } = useToast();
   const { confirmar } = useConfirmacao();
-  const { tiposProduto = [] } = useParametros();
+  const { tiposProduto = [], unidadesMedida = [] } = useParametros();
 
   const tiposProdutoAtivos = tiposProduto.filter(
     (tipo) => tipo.ativo
   );
+  const unidadesAtivas = unidadesMedida.filter((unidade) => unidade.ativo);
   const empresaAtiva = empresas.find((empresa) => empresa.id === empresaId);
   const segmentoEmpresa = normalizarSegmentoEmpresa(empresaAtiva?.segmento);
   const produtoIndustrial = segmentoEmpresa === "industria";
@@ -396,6 +404,130 @@ export default function Produtos() {
     }));
   };
 
+  const obterOpcoesUnidadesInsumo = (insumo) => {
+    const unidadeEstoque = normalizarUnidade(insumo?.unidade);
+    const unidadesCompativeis = unidadeEstoque
+      ? obterUnidadesCompativeis(unidadeEstoque, unidadesAtivas)
+      : [];
+
+    const unidadeJaListada = unidadesCompativeis.some(
+      (unidade) => normalizarUnidade(unidade.id) === unidadeEstoque
+    );
+
+    return unidadeEstoque && !unidadeJaListada
+      ? [
+          {
+            id: unidadeEstoque,
+            nome: unidadeEstoque,
+            ativo: true,
+          },
+          ...unidadesCompativeis,
+        ]
+      : unidadesCompativeis;
+  };
+
+  const atualizarConsumoInsumo = (insumo, campo, valor) => {
+    setForm((atual) => {
+      const consumoAtual = obterConsumoFichaTecnicaFormulario({
+        produto: atual,
+        insumo,
+      });
+      const quantidadeInformada =
+        campo === "quantidade" ? valor : consumoAtual.quantidadeInformada;
+      const unidadeInformada =
+        campo === "unidade" ? valor : consumoAtual.unidadeInformada;
+      const consumos = { ...(atual.consumos || {}) };
+      const consumosDetalhados = { ...(atual.consumosDetalhados || {}) };
+      const nomeInsumo = insumo.nome;
+      const unidadeEstoque = normalizarUnidade(insumo.unidade);
+
+      if (String(quantidadeInformada ?? "").trim() === "") {
+        delete consumos[nomeInsumo];
+        delete consumosDetalhados[nomeInsumo];
+        return {
+          ...atual,
+          consumos,
+          consumosDetalhados,
+        };
+      }
+
+      const consumoPreparado = prepararConsumoFichaTecnica({
+        insumo,
+        quantidade: quantidadeInformada,
+        unidadeInformada,
+        unidades: unidadesAtivas,
+      });
+
+      if (consumoPreparado.ok) {
+        consumos[nomeInsumo] = consumoPreparado.consumo;
+        consumosDetalhados[nomeInsumo] = consumoPreparado.detalhe;
+      } else {
+        consumos[nomeInsumo] = "";
+        consumosDetalhados[nomeInsumo] = {
+          quantidadeInformada,
+          unidadeInformada: normalizarUnidade(unidadeInformada),
+          quantidadeNormalizada: "",
+          unidadeEstoque,
+        };
+      }
+
+      return {
+        ...atual,
+        consumos,
+        consumosDetalhados,
+      };
+    });
+  };
+
+  const prepararConsumosProduto = () => {
+    const consumosNormalizados = {};
+    const consumosDetalhadosNormalizados = {};
+    const nomesInsumosAtuais = new Set(
+      insumos.map((insumo) => String(insumo.nome || "").trim()).filter(Boolean)
+    );
+
+    for (const insumo of insumos) {
+      const consumoFormulario = obterConsumoFichaTecnicaFormulario({
+        produto: form,
+        insumo,
+      });
+
+      if (String(consumoFormulario.quantidadeInformada ?? "").trim() === "") {
+        continue;
+      }
+
+      const consumoPreparado = prepararConsumoFichaTecnica({
+        insumo,
+        quantidade: consumoFormulario.quantidadeInformada,
+        unidadeInformada: consumoFormulario.unidadeInformada,
+        unidades: unidadesAtivas,
+      });
+
+      if (!consumoPreparado.ok) {
+        return {
+          ok: false,
+          motivo: consumoPreparado.motivo,
+          nomeInsumo: insumo.nome,
+        };
+      }
+
+      consumosNormalizados[insumo.nome] = consumoPreparado.consumo;
+      consumosDetalhadosNormalizados[insumo.nome] = consumoPreparado.detalhe;
+    }
+
+    Object.entries(form.consumos || {}).forEach(([nomeInsumo, quantidade]) => {
+      if (nomesInsumosAtuais.has(nomeInsumo)) return;
+
+      consumosNormalizados[nomeInsumo] = Number(quantidade || 0);
+    });
+
+    return {
+      ok: true,
+      consumos: consumosNormalizados,
+      consumosDetalhados: consumosDetalhadosNormalizados,
+    };
+  };
+
   // ================================
   // 🔹 LIMPAR FORMULÁRIO
   // ================================
@@ -428,13 +560,37 @@ export default function Produtos() {
     return;
   }
 
-  const consumosNormalizados = Object.entries(form.consumos || {}).reduce(
-    (acc, [insumo, quantidade]) => ({
-      ...acc,
-      [insumo]: Number(quantidade || 0),
-    }),
-    {}
-  );
+  const devePersistirFichaTecnica = produtoIndustrial && !produtoRevenda;
+  const consumosPreparados = devePersistirFichaTecnica
+    ? prepararConsumosProduto()
+    : {
+        ok: true,
+        consumos: form.consumos || {},
+        consumosDetalhados: form.consumosDetalhados || {},
+      };
+
+  if (!consumosPreparados.ok) {
+    const mensagens = {
+      quantidade_invalida: "Informe uma quantidade válida para a ficha técnica.",
+      quantidade_negativa: "Informe uma quantidade válida para a ficha técnica.",
+      quantidade_normalizada_invalida:
+        "Informe uma quantidade válida para a ficha técnica.",
+      unidade_invalida: "Unidade incompatível na ficha técnica.",
+      unidade_desconhecida: "Unidade incompatível na ficha técnica.",
+      grupo_conversao_invalido: "Unidade incompatível na ficha técnica.",
+      fator_base_invalido: "Unidade incompatível na ficha técnica.",
+      unidades_incompativeis: "Unidade incompatível na ficha técnica.",
+    };
+
+    showToast(
+      `${mensagens[consumosPreparados.motivo] || "Revise a ficha técnica."} ${
+        consumosPreparados.nomeInsumo || ""
+      }`.trim(),
+      "warning"
+    );
+    return;
+  }
+
   const componentesProdutoNormalizados = Object.entries(
     form.componentesProduto || {}
   ).reduce((acc, [produtoId, componente]) => {
@@ -456,7 +612,6 @@ export default function Produtos() {
     };
   }, {});
 
-  const devePersistirFichaTecnica = produtoIndustrial && !produtoRevenda;
   const produtoCalculado = {
     ...form,
     tipoProduto,
@@ -470,7 +625,10 @@ export default function Produtos() {
       : editIndex === null
       ? "revenda"
       : normalizarOrigemProduto(form.origemProduto),
-    consumos: devePersistirFichaTecnica ? consumosNormalizados : form.consumos || {},
+    consumos: devePersistirFichaTecnica ? consumosPreparados.consumos : form.consumos || {},
+    consumosDetalhados: devePersistirFichaTecnica
+      ? consumosPreparados.consumosDetalhados
+      : form.consumosDetalhados || {},
     componentesProduto: devePersistirFichaTecnica
       ? componentesProdutoNormalizados
       : form.componentesProduto || {},
@@ -521,6 +679,7 @@ export default function Produtos() {
       origemProduto: normalizarOrigemProduto(produto.origemProduto),
       dataCadastro: produto.dataCadastro || "",
       consumos: produto.consumos || {},
+      consumosDetalhados: produto.consumosDetalhados || {},
       componentesProduto: produto.componentesProduto || {},
       fiscal: normalizarFiscalProduto(produto.fiscal),
       classeIndustrial: normalizarClasseIndustrial(produto.classeIndustrial),
@@ -980,6 +1139,11 @@ export default function Produtos() {
           const custoMedio = calcularCustoMedio(insumo.compras || []);
           const consumo = Number(form.consumos?.[insumo.nome] || 0);
           const custoParcial = consumo * custoMedio;
+          const consumoFormulario = obterConsumoFichaTecnicaFormulario({
+            produto: form,
+            insumo,
+          });
+          const unidadesCompativeis = obterOpcoesUnidadesInsumo(insumo);
 
           return (
            <div key={insumo.id || index} className="product-consumption-row">
@@ -994,18 +1158,25 @@ export default function Produtos() {
               <input
                 type="number"
                 step="0.001"
-                placeholder={`Consumo em ${insumo.unidade}`}
-                value={form.consumos?.[insumo.nome] || ""}
+                placeholder="Quantidade"
+                value={consumoFormulario.quantidadeInformada}
                 onChange={(e) =>
-                  setForm({
-                    ...form,
-                    consumos: {
-                      ...form.consumos,
-                      [insumo.nome]: e.target.value,
-                    },
-                  })
+                  atualizarConsumoInsumo(insumo, "quantidade", e.target.value)
                 }
               />
+
+              <select
+                value={consumoFormulario.unidadeInformada}
+                onChange={(e) =>
+                  atualizarConsumoInsumo(insumo, "unidade", e.target.value)
+                }
+              >
+                {unidadesCompativeis.map((unidade) => (
+                  <option key={unidade.id} value={normalizarUnidade(unidade.id)}>
+                    {unidade.nome || unidade.id}
+                  </option>
+                ))}
+              </select>
 
               <div>
                 <small>Custo parcial</small>

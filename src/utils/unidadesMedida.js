@@ -266,3 +266,83 @@ export const prepararCompraInsumo = ({
     },
   };
 };
+
+export const prepararConsumoFichaTecnica = ({
+  insumo,
+  quantidade,
+  unidadeInformada,
+  unidades = [],
+} = {}) => {
+  const nomeInsumo = String(insumo?.nome || "").trim();
+  const quantidadeInformada = Number(quantidade);
+  const origem = normalizarUnidade(unidadeInformada);
+  const destino = normalizarUnidade(insumo?.unidade);
+
+  if (!nomeInsumo) {
+    return { ok: false, motivo: "insumo_invalido", consumo: null, detalhe: null };
+  }
+
+  const conversao = converterQuantidade({
+    quantidade: quantidadeInformada,
+    unidadeOrigem: origem,
+    unidadeDestino: destino,
+    unidades,
+  });
+
+  if (!conversao.ok) {
+    return { ok: false, motivo: conversao.motivo, consumo: null, detalhe: null };
+  }
+
+  if (!Number.isFinite(conversao.quantidade) || conversao.quantidade <= 0) {
+    return {
+      ok: false,
+      motivo: "quantidade_normalizada_invalida",
+      consumo: null,
+      detalhe: null,
+    };
+  }
+
+  return {
+    ok: true,
+    motivo: "",
+    consumo: conversao.quantidade,
+    detalhe: {
+      quantidadeInformada,
+      unidadeInformada: origem,
+      quantidadeNormalizada: conversao.quantidade,
+      unidadeEstoque: destino,
+    },
+  };
+};
+
+export const obterConsumoFichaTecnicaFormulario = ({
+  produto,
+  insumo,
+} = {}) => {
+  const nomeInsumo = String(insumo?.nome || "").trim();
+  const unidadeEstoque = normalizarUnidade(insumo?.unidade);
+
+  if (!nomeInsumo) {
+    return {
+      quantidadeInformada: "",
+      unidadeInformada: unidadeEstoque,
+    };
+  }
+
+  const detalhe = produto?.consumosDetalhados?.[nomeInsumo];
+
+  if (detalhe) {
+    return {
+      quantidadeInformada:
+        detalhe.quantidadeInformada ?? detalhe.quantidadeNormalizada ?? "",
+      unidadeInformada: normalizarUnidade(detalhe.unidadeInformada || unidadeEstoque),
+    };
+  }
+
+  const consumoLegado = produto?.consumos?.[nomeInsumo];
+
+  return {
+    quantidadeInformada: consumoLegado ?? "",
+    unidadeInformada: unidadeEstoque,
+  };
+};

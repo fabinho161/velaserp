@@ -4,8 +4,10 @@ import test from "node:test";
 import {
   UNIDADES_CONVERSAO_CANONICAS,
   converterQuantidade,
+  obterConsumoFichaTecnicaFormulario,
   obterMetadadosUnidade,
   obterUnidadesCompativeis,
+  prepararConsumoFichaTecnica,
   prepararCompraInsumo,
   unidadesCompativeis,
 } from "../unidadesMedida.js";
@@ -369,4 +371,173 @@ test("bloqueia compra com valor total invalido", () => {
 
   assert.equal(resultado.ok, false);
   assert.equal(resultado.motivo, "valor_total_invalido");
+});
+
+test("prepara consumo de ficha tecnica de 180 g para insumo em kg", () => {
+  const resultado = prepararConsumoFichaTecnica({
+    insumo: { nome: "Parafina", unidade: "kg" },
+    quantidade: 180,
+    unidadeInformada: "g",
+    unidades: unidadesPadrao,
+  });
+
+  assert.equal(resultado.ok, true);
+  assert.equal(resultado.consumo, 0.18);
+  assert.deepEqual(resultado.detalhe, {
+    quantidadeInformada: 180,
+    unidadeInformada: "g",
+    quantidadeNormalizada: 0.18,
+    unidadeEstoque: "kg",
+  });
+});
+
+test("prepara consumo de ficha tecnica de 0.18 kg para insumo em kg", () => {
+  const resultado = prepararConsumoFichaTecnica({
+    insumo: { nome: "Parafina", unidade: "kg" },
+    quantidade: 0.18,
+    unidadeInformada: "kg",
+    unidades: unidadesPadrao,
+  });
+
+  assert.equal(resultado.ok, true);
+  assert.equal(resultado.consumo, 0.18);
+});
+
+test("prepara consumo de ficha tecnica de 12 ml para insumo em ml", () => {
+  const resultado = prepararConsumoFichaTecnica({
+    insumo: { nome: "Essencia", unidade: "ml" },
+    quantidade: 12,
+    unidadeInformada: "ml",
+    unidades: unidadesPadrao,
+  });
+
+  assert.equal(resultado.ok, true);
+  assert.equal(resultado.consumo, 12);
+});
+
+test("prepara consumo de ficha tecnica de 500 ml para insumo em lt", () => {
+  const resultado = prepararConsumoFichaTecnica({
+    insumo: { nome: "Base", unidade: "lt" },
+    quantidade: 500,
+    unidadeInformada: "ml",
+    unidades: unidadesPadrao,
+  });
+
+  assert.equal(resultado.ok, true);
+  assert.equal(resultado.consumo, 0.5);
+});
+
+test("prepara consumo de ficha tecnica de 2 kg para insumo em g", () => {
+  const resultado = prepararConsumoFichaTecnica({
+    insumo: { nome: "Po", unidade: "g" },
+    quantidade: 2,
+    unidadeInformada: "kg",
+    unidades: unidadesPadrao,
+  });
+
+  assert.equal(resultado.ok, true);
+  assert.equal(resultado.consumo, 2000);
+});
+
+test("prepara consumo de ficha tecnica com unidade personalizada igual", () => {
+  const resultado = prepararConsumoFichaTecnica({
+    insumo: { nome: "Caixa", unidade: "cx" },
+    quantidade: 3,
+    unidadeInformada: "cx",
+    unidades: [{ id: "cx", nome: "Caixa", ativo: true }],
+  });
+
+  assert.equal(resultado.ok, true);
+  assert.equal(resultado.consumo, 3);
+});
+
+test("bloqueia consumo de ficha tecnica com unidades incompativeis", () => {
+  const resultado = prepararConsumoFichaTecnica({
+    insumo: { nome: "Base", unidade: "lt" },
+    quantidade: 1,
+    unidadeInformada: "kg",
+    unidades: unidadesPadrao,
+  });
+
+  assert.equal(resultado.ok, false);
+  assert.equal(resultado.motivo, "unidades_incompativeis");
+});
+
+test("bloqueia consumo de ficha tecnica de unidade personalizada para canonica", () => {
+  const resultado = prepararConsumoFichaTecnica({
+    insumo: { nome: "Caixa", unidade: "un" },
+    quantidade: 10,
+    unidadeInformada: "cx",
+    unidades: [
+      { id: "cx", nome: "Caixa", ativo: true },
+      { id: "un", nome: "Unidade", ativo: true },
+    ],
+  });
+
+  assert.equal(resultado.ok, false);
+  assert.equal(resultado.motivo, "grupo_conversao_invalido");
+});
+
+test("produto legado sem consumosDetalhados usa consumo na unidade do insumo", () => {
+  const resultado = obterConsumoFichaTecnicaFormulario({
+    produto: { consumos: { Parafina: 0.18 } },
+    insumo: { nome: "Parafina", unidade: "kg" },
+  });
+
+  assert.deepEqual(resultado, {
+    quantidadeInformada: 0.18,
+    unidadeInformada: "kg",
+  });
+});
+
+test("produto novo preserva quantidade informada e normalizada na ficha tecnica", () => {
+  const produto = {
+    consumos: { Parafina: 0.18 },
+    consumosDetalhados: {
+      Parafina: {
+        quantidadeInformada: 180,
+        unidadeInformada: "g",
+        quantidadeNormalizada: 0.18,
+        unidadeEstoque: "kg",
+      },
+    },
+  };
+
+  const resultado = obterConsumoFichaTecnicaFormulario({
+    produto,
+    insumo: { nome: "Parafina", unidade: "kg" },
+  });
+
+  assert.deepEqual(resultado, {
+    quantidadeInformada: 180,
+    unidadeInformada: "g",
+  });
+});
+
+test("bloqueia consumo de ficha tecnica com quantidade invalida, zerada ou negativa", () => {
+  const casos = ["abc", 0, -1].map((quantidade) =>
+    prepararConsumoFichaTecnica({
+      insumo: { nome: "Parafina", unidade: "kg" },
+      quantidade,
+      unidadeInformada: "kg",
+      unidades: unidadesPadrao,
+    })
+  );
+
+  assert.deepEqual(
+    casos.map((resultado) => resultado.ok),
+    [false, false, false]
+  );
+});
+
+test("preserva precisao de 7.5 g para kg na ficha tecnica", () => {
+  const resultado = prepararConsumoFichaTecnica({
+    insumo: { nome: "Corante", unidade: "kg" },
+    quantidade: 7.5,
+    unidadeInformada: "g",
+    unidades: unidadesPadrao,
+  });
+
+  assert.equal(resultado.ok, true);
+  assert.equal(resultado.consumo, 0.0075);
 });
