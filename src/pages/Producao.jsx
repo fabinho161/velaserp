@@ -10,6 +10,12 @@ import {
   calcularEstoqueInsumos,
   calcularEstoqueProdutos,
 } from "../utils/estoqueProdutos";
+import {
+  calcularComponentesProdutoProducao,
+  calcularConsumosInsumosProducao,
+  normalizarQuantidadeProduzida,
+  validarEstoqueInsumosProducao,
+} from "../utils/producao";
 
 const normalizarClasseIndustrial = (valor) =>
   String(valor || "produto_acabado").trim();
@@ -54,7 +60,7 @@ export default function Producao() {
   });
 
   // ================================
-  // 🔹 FORMULÁRIO DE PRODUÇÃO
+  // 🔹 Formulário de produção
   // ================================
   const [form, setForm] = useState({
     produtoIndex: "",
@@ -65,25 +71,12 @@ export default function Producao() {
   // ================================
   // 🔹 CALCULAR CUSTO MÉDIO DOS INSUMOS
   // ================================
-  const calcularCustoMedio = (compras = []) => {
-    const qtdTotal = compras.reduce(
-      (total, compra) => total + Number(compra.quantidade || 0),
-      0
-    );
-
-    const valorTotal = compras.reduce(
-      (total, compra) => total + Number(compra.valorTotal || 0),
-      0
-    );
-
-    return qtdTotal > 0 ? valorTotal / qtdTotal : 0;
-  };
-
   // ================================
   // 🔹 PRODUTO SELECIONADO
   // ================================
   const produtoSelecionado =
     form.produtoIndex !== "" ? produtos[form.produtoIndex] : null;
+  const quantidadeProduzida = normalizarQuantidadeProduzida(form.quantidade);
   const produtosPorId = new Map(produtos.map((produto) => [produto.id, produto]));
   const getProdutoDaProducao = (producao = {}) =>
     produtosPorId.get(producao.produtoId) ||
@@ -119,32 +112,11 @@ export default function Producao() {
   // ================================
   // 🔹 CALCULAR CONSUMO DOS INSUMOS
   // ================================
-  const calcularConsumos = () => {
-    if (!produtoSelecionado) return [];
-
-    return insumos.map((insumo) => {
-      const consumoUnitario = Number(
-        produtoSelecionado.consumos?.[insumo.nome] || 0
-      );
-
-      const quantidadeTotal =
-        consumoUnitario * Number(form.quantidade || 0);
-
-      const custoMedio = calcularCustoMedio(insumo.compras || []);
-
-      const custoTotal = quantidadeTotal * custoMedio;
-
-      return {
-        nome: insumo.nome,
-        unidade: insumo.unidade,
-        quantidadeTotal,
-        custoMedio,
-        custoTotal,
-      };
-    });
-  };
-
-  const consumosCalculados = calcularConsumos();
+  const consumosCalculados = calcularConsumosInsumosProducao({
+    produtoSelecionado,
+    insumos,
+    quantidadeProduzida: quantidadeProduzida || 0,
+  });
   const estoqueInsumos = calcularEstoqueInsumos({
     insumos,
     producoes,
@@ -157,39 +129,14 @@ export default function Producao() {
     perdasDoacoes,
     ordensServico,
   });
-  const calcularComponentesProduto = () => {
-    if (!produtoSelecionado) return [];
-
-    return Object.values(produtoSelecionado.componentesProduto || {})
-      .map((componente) => {
-        const produtoComponente =
-          produtosPorId.get(componente.produtoId) ||
-          produtos.find((produto) => produto.codigo === componente.codigo);
-        const quantidadeUnitario = Number(componente.quantidade || 0);
-        const quantidadeTotal = quantidadeUnitario * Number(form.quantidade || 0);
-        const custoUnitarioSnapshot = Number(
-          componente.custoUnitarioSnapshot ||
-            produtoComponente?.custoUnitario ||
-            0
-        );
-
-        return {
-          produtoId: componente.produtoId || produtoComponente?.id || "",
-          codigo: componente.codigo || produtoComponente?.codigo || "",
-          nome: componente.nome || produtoComponente?.nome || "",
-          unidade: componente.unidade || produtoComponente?.unidade || "un",
-          quantidadeUnitario,
-          quantidadeTotal,
-          custoUnitarioSnapshot,
-          custoTotal: quantidadeTotal * custoUnitarioSnapshot,
-        };
-      })
-      .filter((componente) => componente.quantidadeTotal > 0);
-  };
-  const componentesProdutoCalculados = calcularComponentesProduto();
+  const componentesProdutoCalculados = calcularComponentesProdutoProducao({
+    produtoSelecionado,
+    produtos,
+    quantidadeProduzida: quantidadeProduzida || 0,
+  });
 
   // ================================
-  // 🔹 CUSTOS DA PRODUÇÃO
+  // 🔹 Custos da produção
   // ================================
   const custoTotalInsumos = consumosCalculados.reduce(
     (total, item) => total + Number(item.custoTotal || 0),
@@ -202,8 +149,8 @@ export default function Producao() {
   const custoTotalProducao = custoTotalInsumos + custoTotalComponentesProduto;
 
   const custoUnitario =
-    Number(form.quantidade || 0) > 0
-      ? custoTotalProducao / Number(form.quantidade)
+    quantidadeProduzida
+      ? custoTotalProducao / quantidadeProduzida
       : 0;
 
   // ================================
@@ -259,22 +206,15 @@ export default function Producao() {
   // 🔹 VALIDAR ESTOQUE DE INSUMOS
   // ================================
   const validarEstoque = () => {
-    for (let consumo of consumosCalculados) {
-      const insumo = insumos.find((i) => i.nome === consumo.nome);
-      const estoqueInsumo = estoqueInsumos.find(
-        (item) => item.insumoId === insumo?.id || item.nome === consumo.nome
-      );
+    const estoqueInsumosValidado = validarEstoqueInsumosProducao({
+      consumosCalculados,
+      insumos,
+      estoqueInsumos,
+    });
 
-      // Energia entra como custo, mas não bloqueia produção
-      if (
-        insumo &&
-        insumo.nome !== "Energia" &&
-        Number(estoqueInsumo?.saldo ?? insumo.estoque ?? 0) <
-          Number(consumo.quantidadeTotal || 0)
-      ) {
-        showToast(`Estoque insuficiente para ${insumo.nome}`, "warning");
-        return false;
-      }
+    if (!estoqueInsumosValidado.ok) {
+      showToast(`Estoque insuficiente para ${estoqueInsumosValidado.insumo.nome}`, "warning");
+      return false;
     }
 
     for (let componente of componentesProdutoCalculados) {
@@ -300,7 +240,7 @@ export default function Producao() {
   };
 
   // ================================
-  // 🔹 REGISTRAR PRODUÇÃO
+  // 🔹 Registrar produção
   // ================================
      const registrarProducao = async () => {
   if (!produtoSelecionado || !form.quantidade || !form.data) {
@@ -308,7 +248,7 @@ export default function Producao() {
     return;
   }
 
-  if (Number(form.quantidade) <= 0) {
+  if (!quantidadeProduzida) {
     showToast("Informe uma quantidade válida.", "warning");
     return;
   }
@@ -321,7 +261,7 @@ export default function Producao() {
       codigo: produtoSelecionado.codigo,
       nomeProduto: produtoSelecionado.nome,
       tipo: produtoSelecionado.tipo,
-      quantidade: Number(form.quantidade),
+      quantidade: quantidadeProduzida,
       data: form.data,
       consumos: consumosCalculados,
       componentesProduto: componentesProdutoCalculados,
@@ -338,7 +278,7 @@ export default function Producao() {
     });
   };
   // ================================
-  // 🔹 EXCLUIR PRODUÇÃO
+  // 🔹 Excluir produção
   // ================================
     const excluirProducao = async (index) => {
     const confirmado = await confirmar("Deseja excluir esta produção?");
@@ -350,7 +290,7 @@ export default function Producao() {
   };
 
   // ================================
-  // 🔹 RENDERIZAÇÃO
+  // 🔹 Renderização
   // ================================
   return (
     <div>
@@ -393,7 +333,7 @@ export default function Producao() {
       </div>
 
       {/* ================================
-          🔹 REGISTRAR PRODUÇÃO
+          🔹 Registrar produção
       ================================= */}
       <div className="card">
         <h3>Registrar Produção</h3>
@@ -435,7 +375,7 @@ export default function Producao() {
       <br />
 
       {/* ================================
-          🔹 PRÉVIA DA PRODUÇÃO
+          🔹 Prévia da produção
       ================================= */}
       {produtoSelecionado && (
         <div className="card">
@@ -609,7 +549,7 @@ export default function Producao() {
       <br />
 
       {/* ================================
-          🔹 HISTÓRICO DE PRODUÇÃO
+          🔹 Histórico de produção
       ================================= */}
       <div className="card">
         <h3>Histórico de Produção</h3>
