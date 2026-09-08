@@ -317,6 +317,12 @@ export default function Relatorios() {
   const produtosPorId = new Map(
     (produtos || []).map((produto) => [produto.id, produto])
   );
+  const encontrarCadastroInsumo = (insumo = {}) =>
+    (insumos || []).find(
+      (item) => item.id === insumo.insumoId || item.nome === insumo.nome
+    );
+  const formatarQuantidadeInsumoPDF = (valor, unidade = "") =>
+    `${numeroBR(numeroSeguro(valor), 3)}${unidade ? ` ${unidade}` : ""}`;
   const normalizarOrigemProdutoRelatorio = (valor = "") =>
     String(valor || "fabricado").trim().toLowerCase() === "revenda"
       ? "revenda"
@@ -331,12 +337,23 @@ export default function Relatorios() {
   // ================================
   // 🔹 ALERTAS DE ESTOQUE
   // ================================
-  const insumosAbaixoMinimo = (insumos || []).filter((insumo) => {
-    const estoqueAtual = Number(insumo.estoqueAtual ?? insumo.estoque ?? 0);
-    const estoqueMinimo = Number(insumo.estoqueMinimo ?? 0);
+  const insumosAbaixoMinimo = insumosEstoqueCalculado
+    .map((insumo) => {
+      const cadastro = encontrarCadastroInsumo(insumo);
+      const estoqueAtual = Number(insumo.saldoReal ?? insumo.saldo ?? 0);
+      const estoqueMinimo = Number(cadastro?.estoqueMinimo ?? 0);
 
-    return estoqueMinimo > 0 && estoqueAtual <= estoqueMinimo;
-  });
+      return {
+        id: cadastro?.id || insumo.insumoId || insumo.nome,
+        nome: cadastro?.nome || insumo.nome || "",
+        unidade: cadastro?.unidade || insumo.unidade || "",
+        estoqueAtual,
+        estoqueMinimo,
+      };
+    })
+    .filter(
+      (insumo) => insumo.estoqueMinimo > 0 && insumo.estoqueAtual <= insumo.estoqueMinimo
+    );
 
   const produtosAbaixoMinimo = produtosEstoqueCalculado.filter((produto) => {
     const estoqueAtual = Number(produto.saldo ?? 0);
@@ -348,15 +365,13 @@ export default function Relatorios() {
   const alertasEstoqueOrdenados = ordenacaoAlertas.ordenar(
     [
       ...insumosAbaixoMinimo.map((insumo) => {
-        const estoqueAtual = Number(insumo.estoqueAtual ?? insumo.estoque ?? 0);
-        const estoqueMinimo = Number(insumo.estoqueMinimo ?? 0);
-
         return {
           id: insumo.id,
           tipo: "Insumo",
           item: insumo.nome || "",
-          estoqueAtual,
-          estoqueMinimo,
+          unidade: insumo.unidade || "",
+          estoqueAtual: insumo.estoqueAtual,
+          estoqueMinimo: insumo.estoqueMinimo,
           situacao: "Estoque baixo",
         };
       }),
@@ -1062,17 +1077,16 @@ export default function Relatorios() {
 
       const itensEstoque = [
         ...insumosEstoqueCalculado.map((insumo) => {
-          const cadastro = (insumos || []).find(
-            (item) => item.id === insumo.insumoId || item.nome === insumo.nome
-          );
+          const cadastro = encontrarCadastroInsumo(insumo);
           const estoqueAtual = numeroSeguro(insumo.saldo);
           const estoqueMinimo = numeroSeguro(cadastro?.estoqueMinimo);
+          const unidade = cadastro?.unidade || insumo.unidade || "";
 
           return [
             "Insumo",
             textoPDF(insumo.nome),
-            numeroBR(estoqueAtual, 2),
-            numeroBR(estoqueMinimo, 2),
+            formatarQuantidadeInsumoPDF(estoqueAtual, unidade),
+            formatarQuantidadeInsumoPDF(estoqueMinimo, unidade),
             estoqueMinimo > 0 && estoqueAtual <= estoqueMinimo
               ? "Estoque baixo"
               : "OK",
@@ -1184,9 +1198,7 @@ export default function Relatorios() {
         (insumo) => numeroSeguro(insumo.saldo) <= 0
       ).length;
       const insumosCriticos = insumosEstoqueCalculado.filter((insumo) => {
-        const cadastro = (insumos || []).find(
-          (item) => item.id === insumo.insumoId || item.nome === insumo.nome
-        );
+        const cadastro = encontrarCadastroInsumo(insumo);
         const minimo = numeroSeguro(cadastro?.estoqueMinimo);
         return minimo > 0 && numeroSeguro(insumo.saldo) <= minimo;
       }).length;
@@ -1206,11 +1218,10 @@ export default function Relatorios() {
         startY: y,
         head: [["Insumo", "Estoque atual", "Estoque mínimo", "Custo médio", "Valor em estoque", "Status"]],
         body: insumosEstoqueCalculado.map((insumo) => {
-          const cadastro = (insumos || []).find(
-            (item) => item.id === insumo.insumoId || item.nome === insumo.nome
-          );
+          const cadastro = encontrarCadastroInsumo(insumo);
           const estoqueAtual = numeroSeguro(insumo.saldo);
           const estoqueMinimo = numeroSeguro(cadastro?.estoqueMinimo);
+          const unidade = cadastro?.unidade || insumo.unidade || "";
           const status =
             estoqueAtual <= 0
               ? "Zerado"
@@ -1220,8 +1231,8 @@ export default function Relatorios() {
 
           return [
             textoPDF(insumo.nome),
-            numeroBR(estoqueAtual, 2),
-            numeroBR(estoqueMinimo, 2),
+            formatarQuantidadeInsumoPDF(estoqueAtual, unidade),
+            formatarQuantidadeInsumoPDF(estoqueMinimo, unidade),
             moedaBR(numeroSeguro(insumo.custoMedio)),
             moedaBR(numeroSeguro(insumo.valorEstoque)),
             status,
@@ -1500,8 +1511,14 @@ export default function Relatorios() {
               <tr key={`${alerta.tipo}-${alerta.id || index}`}>
                 <td>{alerta.tipo}</td>
                 <td>{alerta.item}</td>
-                <td>{numeroBR(alerta.estoqueAtual, 2)}</td>
-                <td>{numeroBR(alerta.estoqueMinimo, 2)}</td>
+                <td>
+                  {numeroBR(alerta.estoqueAtual, alerta.tipo === "Insumo" ? 3 : 2)}
+                  {alerta.unidade ? ` ${alerta.unidade}` : ""}
+                </td>
+                <td>
+                  {numeroBR(alerta.estoqueMinimo, alerta.tipo === "Insumo" ? 3 : 2)}
+                  {alerta.unidade ? ` ${alerta.unidade}` : ""}
+                </td>
                 <td className="text-red strong">{alerta.situacao}</td>
               </tr>
             ))}

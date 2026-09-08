@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calcularEstoqueProdutos } from "../estoqueProdutos.js";
+import {
+  calcularEstoqueInsumos,
+  calcularEstoqueProdutos,
+} from "../estoqueProdutos.js";
 
 const produtoPadrao = {
   id: "produto-1",
@@ -282,4 +285,101 @@ test("fallback legado por codigo e nome permanece funcionando para vendas", () =
 
   assert.equal(produto.vendido, 2);
   assert.equal(produto.saldo, 4);
+});
+
+test("estoque de insumos usa valores ja normalizados sem conversao adicional", () => {
+  const [insumo] = calcularEstoqueInsumos({
+    insumos: [
+      {
+        id: "insumo-parafina",
+        nome: "Parafina",
+        unidade: "kg",
+        compras: [{ quantidade: 0.5, valorTotal: 10 }],
+      },
+    ],
+    producoes: [
+      {
+        consumos: [
+          {
+            insumoId: "insumo-parafina",
+            nome: "Parafina",
+            unidade: "kg",
+            quantidadeTotal: 0.12,
+          },
+        ],
+      },
+    ],
+    perdasDoacoes: [
+      {
+        tipoItem: "insumo",
+        status: "ativo",
+        insumoId: "insumo-parafina",
+        insumoNome: "Parafina",
+        unidade: "kg",
+        quantidade: 0.05,
+      },
+    ],
+  });
+
+  assert.equal(insumo.comprado, 0.5);
+  assert.equal(insumo.consumido, 0.12);
+  assert.equal(insumo.baixado, 0.05);
+  assert.equal(Number(insumo.saldoReal.toFixed(6)), 0.33);
+  assert.equal(Number(insumo.saldo.toFixed(6)), 0.33);
+  assert.equal(insumo.custoMedio, 20);
+});
+
+test("estoque de insumos preserva precisao fracionaria normalizada", () => {
+  const [insumo] = calcularEstoqueInsumos({
+    insumos: [
+      {
+        id: "insumo-corante",
+        nome: "Corante",
+        unidade: "kg",
+        compras: [{ quantidade: 0.2, valorTotal: 4 }],
+      },
+    ],
+    producoes: [
+      {
+        consumos: [
+          {
+            insumoId: "insumo-corante",
+            nome: "Corante",
+            unidade: "kg",
+            quantidadeTotal: 0.1425,
+          },
+        ],
+      },
+    ],
+    perdasDoacoes: [
+      {
+        tipoItem: "insumo",
+        status: "ativo",
+        insumoId: "insumo-corante",
+        insumoNome: "Corante",
+        unidade: "kg",
+        quantidade: 0.05,
+      },
+    ],
+  });
+
+  assert.equal(Number(insumo.saldoReal.toFixed(6)), 0.0075);
+  assert.equal(Number(insumo.saldo.toFixed(6)), 0.0075);
+});
+
+test("compra de insumo em litro normalizada para estoque nao e convertida novamente", () => {
+  const [insumo] = calcularEstoqueInsumos({
+    insumos: [
+      {
+        id: "insumo-base",
+        nome: "Base",
+        unidade: "lt",
+        compras: [{ quantidade: 0.5, valorTotal: 12 }],
+      },
+    ],
+  });
+
+  assert.equal(insumo.comprado, 0.5);
+  assert.equal(insumo.saldo, 0.5);
+  assert.equal(insumo.unidade, "lt");
 });
