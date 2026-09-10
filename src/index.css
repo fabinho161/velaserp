@@ -4097,6 +4097,17 @@ tr:hover td {
     flex-direction: column;
   }
 
+  .empresa-nova-linha {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .empresa-nova-linha input,
+  .empresa-nova-linha button,
+  .empresa-nova select {
+    width: 100%;
+  }
+
   .empresa-nova button {
     width: 100%;
   }
