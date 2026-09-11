@@ -16,6 +16,10 @@ import {
   extrairNumeroPedido,
   ordenarPorConfig,
 } from "../utils/sortUtils";
+import {
+  criarFiscalEmpresaSnapshot,
+  criarFiscalSnapshotItemVenda,
+} from "../utils/fiscalVenda";
 
 const NOME_SAAS = "Renovar ERP";
 
@@ -317,6 +321,9 @@ export default function Vendas() {
   const produtoSelecionado = produtosDisponiveisVenda.find(
     (p) => p.produto === itemAtual.produto
   );
+  const produtoCadastroSelecionado = produtoSelecionado?.produtoId
+    ? produtosCadastradosVendaveis.get(produtoSelecionado.produtoId)
+    : null;
 
   const quantidadeJaNoPedido = itens.reduce((total, item) => {
     if (produtoSelecionado?.produtoId && item.produtoId === produtoSelecionado.produtoId) {
@@ -471,6 +478,7 @@ export default function Vendas() {
       custoTotal: custoItem,
       lucro: lucroItem,
       margem: margemItem,
+      fiscalSnapshot: criarFiscalSnapshotItemVenda(produtoCadastroSelecionado),
     };
 
     setItens([...itens, novoItem]);
@@ -572,6 +580,10 @@ export default function Vendas() {
           ? vendas[editIndex].statusExpedicao || "Pendente"
           : "Pendente",
     };
+
+    if (editIndex === null) {
+      pedidoTratado.fiscalEmpresaSnapshot = criarFiscalEmpresaSnapshot(configuracoes?.fiscal);
+    }
 
       if (editIndex !== null) {
   const venda = vendas[editIndex];

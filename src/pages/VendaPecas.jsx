@@ -10,6 +10,10 @@ import {
   textoProdutoSeguro,
 } from "../utils/estoqueProdutos";
 import { extrairNumeroPedido } from "../utils/sortUtils";
+import {
+  criarFiscalEmpresaSnapshot,
+  criarFiscalSnapshotItemVenda,
+} from "../utils/fiscalVenda";
 
 const CLIENTE_CONSUMIDOR_FINAL = "Consumidor Final";
 
@@ -97,6 +101,7 @@ export default function VendaPecas() {
     producoes: producoesContexto = [],
     perdasDoacoes: perdasDoacoesContexto = [],
     ordensServico: ordensServicoContexto = [],
+    configuracoes = {},
     addItem,
     updateItem,
   } = useERP() || {};
@@ -271,6 +276,9 @@ export default function VendaPecas() {
   const produtoSelecionado = produtosDisponiveis.find(
     (produto) => produto.produtoId === itemAtual.produtoId
   );
+  const produtoCadastroSelecionado = produtoSelecionado?.produtoId
+    ? produtosPorId.get(produtoSelecionado.produtoId)
+    : null;
 
   const quantidadeJaNaVenda = itens.reduce((total, item) => {
     if (produtoSelecionado?.produtoId && item.produtoId === produtoSelecionado.produtoId) {
@@ -436,6 +444,7 @@ export default function VendaPecas() {
       custoTotal: custoItem,
       lucro: lucroItem,
       margem: margemItem,
+      fiscalSnapshot: criarFiscalSnapshotItemVenda(produtoCadastroSelecionado),
     };
 
     setItens((atuais) => [...atuais, novoItem]);
@@ -555,6 +564,10 @@ export default function VendaPecas() {
       statusExpedicao:
         form.statusPagamento === "cancelado" ? "cancelado" : "entregue",
     };
+
+    if (!vendaEditandoId) {
+      vendaTratada.fiscalEmpresaSnapshot = criarFiscalEmpresaSnapshot(configuracoes?.fiscal);
+    }
 
     if (vendaEditandoId) {
       await updateItem("vendas", vendaEditandoId, vendaTratada);
