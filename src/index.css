@@ -3693,6 +3693,25 @@ tr:hover td {
     white-space: normal;
   }
 
+  .sidebar .empresa-nova-linha {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .sidebar .empresa-nova-linha input,
+  .sidebar .empresa-nova-linha button,
+  .sidebar .empresa-nova select {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .sidebar .empresa-nova-linha input,
+  .sidebar .empresa-nova-linha button {
+    flex: none;
+  }
+
   .card {
     overflow-x: auto;
   }
@@ -4116,21 +4135,6 @@ tr:hover td {
   .sales-table-actions,
   .sales-button-row {
     flex-direction: column;
-  }
-
-  .empresa-nova {
-    flex-direction: column;
-  }
-
-  .empresa-nova-linha {
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .empresa-nova-linha input,
-  .empresa-nova-linha button,
-  .empresa-nova select {
-    width: 100%;
   }
 
   .empresa-nova button {
