@@ -319,7 +319,8 @@ export default function Estoque() {
     <div className="card">
       <h3>{titulo}</h3>
 
-      <table>
+      <div className="table-wrapper">
+        <table>
         <thead>
           <tr>
             <th>{renderCabecalhoOrdenavel(oficina ? "Peça" : "Produto", "produto", ordenacaoProdutos)}</th>
@@ -439,7 +440,8 @@ export default function Estoque() {
             </tr>
           )}
         </tbody>
-      </table>
+        </table>
+      </div>
     </div>
   );
 
@@ -632,7 +634,8 @@ export default function Estoque() {
       <div className="card">
         <h3>Estoque de Insumos</h3>
 
-        <table>
+        <div className="table-wrapper">
+          <table>
           <thead>
             <tr>
               <th>{renderCabecalhoOrdenavel("Insumo", "insumo", ordenacaoInsumos)}</th>
@@ -708,7 +711,8 @@ export default function Estoque() {
               </tr>
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
 
       <br />
@@ -719,7 +723,8 @@ export default function Estoque() {
       <div className="card">
         <h3>Estoque de Produtos Acabados</h3>
 
-        <table>
+        <div className="table-wrapper">
+          <table>
           <thead>
             <tr>
               <th>{renderCabecalhoOrdenavel("Produto", "produto", ordenacaoProdutos)}</th>
@@ -815,7 +820,8 @@ export default function Estoque() {
               </tr>
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
 
       <br />

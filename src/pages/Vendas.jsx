@@ -1415,7 +1415,8 @@ export default function Vendas() {
       <div className="card">
         <h3>Itens do Pedido</h3>
 
-        <table>
+        <div className="table-wrapper">
+          <table>
           <thead>
             <tr>
               <th>Produto</th>
@@ -1471,7 +1472,8 @@ export default function Vendas() {
               </tr>
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
 
       <br />
@@ -1535,7 +1537,8 @@ export default function Vendas() {
       <div className="card">
         <h3>Histórico de Pedidos</h3>
 
-        <table>
+        <div className="table-wrapper">
+          <table>
           <thead>
             <tr>
               <th>{renderCabecalhoOrdenavel("Nº Pedido", "numeroPedido", ordenacaoHistorico, setOrdenacaoHistorico)}</th>
@@ -1591,7 +1594,8 @@ export default function Vendas() {
               </tr>
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
 
       <br />
@@ -1602,7 +1606,8 @@ export default function Vendas() {
       <div className="card">
         <h3>Área de Expedição</h3>
 
-        <table>
+        <div className="table-wrapper">
+          <table>
           <thead>
             <tr>
               <th>{renderCabecalhoOrdenavel("Nº Pedido", "numeroPedido", ordenacaoExpedicao, setOrdenacaoExpedicao)}</th>
@@ -1644,7 +1649,8 @@ export default function Vendas() {
               </tr>
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
 
       {edicaoExpedicao.index !== null && (

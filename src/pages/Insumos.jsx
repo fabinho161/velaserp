@@ -656,7 +656,8 @@ export default function Insumos() {
       <div className="card">
         <h3>Estoque de Insumos</h3>
 
-        <table>
+        <div className="table-wrapper">
+          <table>
           <thead>
             <tr>
               <th>{renderCabecalhoOrdenavel("Insumo", "nome", ordenacaoInsumos)}</th>
@@ -745,7 +746,8 @@ export default function Insumos() {
               </tr>
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
 
       <br />
@@ -760,7 +762,8 @@ export default function Insumos() {
           <div key={insumoIndex} style={{ marginBottom: "30px" }}>
             <h4>{insumo.nome}</h4>
 
-            <table>
+            <div className="table-wrapper">
+              <table>
               <thead>
                 <tr>
                   <th>Data</th>
@@ -826,7 +829,8 @@ export default function Insumos() {
                   </tr>
                 )}
               </tbody>
-            </table>
+              </table>
+            </div>
           </div>
         ))}
       </div>

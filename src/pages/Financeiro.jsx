@@ -722,7 +722,8 @@ const margemLiquida =
         <div className="card">
           <h3>DRE - Demonstrativo de Resultado</h3>
 
-          <table>
+          <div className="table-wrapper">
+            <table>
             <tbody>
               <tr>
                 <td><strong>Receita Bruta</strong></td>
@@ -795,7 +796,8 @@ const margemLiquida =
                 </td>
               </tr>
             </tbody>
-          </table>
+            </table>
+          </div>
 
           <br />
 
@@ -854,7 +856,8 @@ const margemLiquida =
       <div className="card">
         <h3>Fluxo de Caixa</h3>
 
-        <table>
+        <div className="table-wrapper">
+          <table>
           <thead>
             <tr>
               <th>{renderCabecalhoOrdenavel("Data", "data", ordenacaoFluxo)}</th>
@@ -933,7 +936,8 @@ const margemLiquida =
               </tr>
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
 
       <br />
@@ -944,7 +948,8 @@ const margemLiquida =
       <div className="card">
         <h3>Despesas Cadastradas</h3>
 
-        <table>
+        <div className="table-wrapper">
+          <table>
           <thead>
             <tr>
               <th>{renderCabecalhoOrdenavel("Data", "data", ordenacaoDespesas)}</th>
@@ -989,7 +994,8 @@ const margemLiquida =
               </tr>
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
     </div>
   );

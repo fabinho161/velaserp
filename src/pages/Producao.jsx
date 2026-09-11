@@ -418,7 +418,8 @@ export default function Producao() {
 
           <h3>Consumo de Insumos</h3>
 
-          <table>
+          <div className="table-wrapper">
+            <table>
             <thead>
               <tr>
                 <th>Insumo</th>
@@ -481,14 +482,16 @@ export default function Producao() {
                 );
               })}
             </tbody>
-          </table>
+            </table>
+          </div>
 
           {componentesProdutoCalculados.length > 0 && (
             <>
               <br />
               <h3>Componentes de Produto/Semiacabado</h3>
 
-              <table>
+              <div className="table-wrapper">
+                <table>
                 <thead>
                   <tr>
                     <th>Componente</th>
@@ -540,7 +543,8 @@ export default function Producao() {
                     );
                   })}
                 </tbody>
-              </table>
+                </table>
+              </div>
             </>
           )}
         </div>
@@ -554,7 +558,8 @@ export default function Producao() {
       <div className="card">
         <h3>Histórico de Produção</h3>
 
-        <table>
+        <div className="table-wrapper">
+          <table>
           <thead>
             <tr>
               <th>{renderCabecalhoOrdenavel("Data", "data", ordenacaoProducoes)}</th>
@@ -609,7 +614,8 @@ export default function Producao() {
               </tr>
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
     </div>
   );
