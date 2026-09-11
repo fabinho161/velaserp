@@ -277,6 +277,15 @@ export default function Sidebar() {
               <h2 className="sidebar-logo">{nomeSistema}</h2>
               <span className="sidebar-subtitle">ERP SaaS</span>
             </div>
+
+            <button
+              type="button"
+              className="sidebar-close-button"
+              onClick={() => setMenuAberto(false)}
+              aria-label="Fechar menu"
+            >
+              <X size={20} />
+            </button>
           </div>
 
           <EmpresaSwitcher />

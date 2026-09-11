@@ -100,6 +100,10 @@ body {
   color: #94a3b8;
 }
 
+.sidebar-close-button {
+  display: none;
+}
+
 .sidebar-menu {
   margin-top: 18px;
   display: flex;
@@ -3643,6 +3647,27 @@ tr:hover td {
 
   .sidebar-header {
     margin-bottom: 14px;
+  }
+
+  .sidebar-header .sidebar-brand-text {
+    flex: 1;
+  }
+
+  .sidebar-close-button {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+    margin: 0;
+    padding: 0;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    box-shadow: none;
   }
 
   .sidebar-menu {
