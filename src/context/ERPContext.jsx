@@ -25,7 +25,10 @@ import {
   perfilEmpresaSomenteLeitura,
   temPermissaoEmpresa,
 } from "../config/perfisEmpresa";
-import { normalizarSegmentoEmpresa } from "../config/segmentosEmpresa.js";
+import {
+  normalizarSegmentoEmpresa,
+  segmentoPossuiModulo,
+} from "../config/segmentosEmpresa.js";
 
 const assinaturaPadrao = assinaturaGratisPadrao;
 const API_URL =
@@ -318,6 +321,7 @@ export function ERPProvider({ children }) {
   const [usuariosEmpresa, setUsuariosEmpresa] = useState([]);
   const [usuariosEmpresaCarregando, setUsuariosEmpresaCarregando] = useState(false);
   const criacaoInicialEmpresaRef = useRef(new Set());
+  const empresaAtivaAtualRef = useRef({ empresaId: null, ownerUid: null });
 
   const [insumos, setInsumos] = useState([]);
   const [produtos, setProdutos] = useState([]);
@@ -328,6 +332,13 @@ export function ERPProvider({ children }) {
   const [clientesComerciais, setClientesComerciais] = useState([]);
   const [ordensServico, setOrdensServico] = useState([]);
   const [configuracoes, setConfiguracoes] = useState({});
+
+  useEffect(() => {
+    empresaAtivaAtualRef.current = {
+      empresaId,
+      ownerUid: empresaOwnerUid,
+    };
+  }, [empresaId, empresaOwnerUid]);
 
   const criarEmpresaBackend = useCallback(async (nome, segmento) => {
     const usuarioAuth = auth.currentUser;
@@ -482,10 +493,15 @@ export function ERPProvider({ children }) {
       }
 
       const empresaSelecionada = empresas.find((empresa) => empresa.id === id);
+      const ownerUidSelecionado = empresaSelecionada?.ownerUid || user?.uid || null;
 
       setUsuariosEmpresaCarregando(true);
+      empresaAtivaAtualRef.current = {
+        empresaId: id,
+        ownerUid: ownerUidSelecionado,
+      };
       setEmpresaId(id);
-      setEmpresaOwnerUid(empresaSelecionada?.ownerUid || user?.uid || null);
+      setEmpresaOwnerUid(ownerUidSelecionado);
       setUsuariosEmpresa([]);
       setInsumos([]);
       setProdutos([]);
@@ -512,11 +528,25 @@ const criarNovaEmpresa = async (nomeEmpresa, segmento) => {
 
   try {
     const empresaCriada = await criarEmpresaBackend(nomeTratado, segmento);
+    const ownerUidCriada = empresaCriada.ownerUid || user.uid;
 
     setEmpresas([...empresas, empresaCriada]);
     setUsuariosEmpresaCarregando(true);
+    empresaAtivaAtualRef.current = {
+      empresaId: empresaCriada.id,
+      ownerUid: ownerUidCriada,
+    };
     setEmpresaId(empresaCriada.id);
-    setEmpresaOwnerUid(empresaCriada.ownerUid || user.uid);
+    setEmpresaOwnerUid(ownerUidCriada);
+    setUsuariosEmpresa([]);
+    setInsumos([]);
+    setProdutos([]);
+    setProducoes([]);
+    setVendas([]);
+    setDespesas([]);
+    setClientesComerciais([]);
+    setOrdensServico([]);
+    setConfiguracoes({});
     localStorage.setItem(`renovarEmpresaAtiva_${user.uid}`, empresaCriada.id);
     await limparOnboardingPrimeiraEmpresa(user);
     showToast("Empresa criada com sucesso!", "success");
@@ -638,8 +668,13 @@ const excluirEmpresa = useCallback(async (id) => {
 
             setEmpresas([empresaCriada]);
             setUsuariosEmpresaCarregando(true);
+            const ownerUidCriada = empresaCriada.ownerUid || user.uid;
+            empresaAtivaAtualRef.current = {
+              empresaId: empresaCriada.id,
+              ownerUid: ownerUidCriada,
+            };
             setEmpresaId(empresaCriada.id);
-            setEmpresaOwnerUid(empresaCriada.ownerUid || user.uid);
+            setEmpresaOwnerUid(ownerUidCriada);
             localStorage.setItem(`renovarEmpresaAtiva_${user.uid}`, empresaCriada.id);
           } else {
             const mapaEmpresas = new Map();
@@ -688,10 +723,20 @@ const excluirEmpresa = useCallback(async (id) => {
               ? lista.find((empresa) => empresa.id === empresaSalva)
               : null;
             const empresaSelecionada = empresaSalvaValida || lista[0];
+            const ownerUidSelecionado = empresaSelecionada.ownerUid || user.uid;
+            const empresaJaAtiva =
+              empresaAtivaAtualRef.current.empresaId === empresaSelecionada.id &&
+              empresaAtivaAtualRef.current.ownerUid === ownerUidSelecionado;
 
-            setUsuariosEmpresaCarregando(true);
+            if (!empresaJaAtiva) {
+              setUsuariosEmpresaCarregando(true);
+            }
+            empresaAtivaAtualRef.current = {
+              empresaId: empresaSelecionada.id,
+              ownerUid: ownerUidSelecionado,
+            };
             setEmpresaId(empresaSelecionada.id);
-            setEmpresaOwnerUid(empresaSelecionada.ownerUid || user.uid);
+            setEmpresaOwnerUid(ownerUidSelecionado);
             localStorage.setItem(`renovarEmpresaAtiva_${user.uid}`, empresaSelecionada.id);
           }
         } catch (error) {
@@ -832,6 +877,10 @@ const excluirEmpresa = useCallback(async (id) => {
 
     if (usuariosEmpresaCarregando || !usuarioAtual) return;
 
+    const empresaAtual = empresas.find((empresa) =>
+      empresa.id === empresaId &&
+      (empresa.ownerUid || user.uid) === (empresaOwnerUid || user.uid)
+    ) || null;
     const perfilAtual = normalizarRoleEmpresa(usuarioAtual);
     const permissoesPorColecao = new Map(COLECOES_POR_PERMISSAO);
     const statusUsuarioAtual = normalizarStatusUsuarioEmpresa(usuarioAtual.status);
@@ -840,10 +889,14 @@ const excluirEmpresa = useCallback(async (id) => {
       temPermissaoEmpresa(perfilAtual, PERMISSOES_EMPRESA.dashboard);
     const podeOuvirColecao = (colecao) => {
       const permissao = permissoesPorColecao.get(colecao);
+      const segmentoPermiteColecao =
+        colecao !== "ordensServico" ||
+        segmentoPossuiModulo(empresaAtual?.segmento, "ordensServico");
       const podeOuvirClientesParaVeiculos =
         colecao === "clientesComerciais" && perfilAtual === PERFIL_PRODUCAO_EMPRESA;
 
       return usuarioAtivo &&
+        segmentoPermiteColecao &&
         (
           (permissao && temPermissaoEmpresa(perfilAtual, permissao)) ||
           podeOuvirClientesParaVeiculos ||
@@ -929,6 +982,7 @@ const excluirEmpresa = useCallback(async (id) => {
     empresaId,
     empresaOwnerUid,
     getRef,
+    empresas,
     usuariosEmpresa,
     usuariosEmpresaCarregando,
   ]);
