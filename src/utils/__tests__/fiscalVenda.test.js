@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   criarFiscalEmpresaSnapshot,
   criarFiscalSnapshotItemVenda,
+  criarDestinatarioSnapshotVenda,
+  destinatarioVendaMudou,
 } from "../fiscalVenda.js";
 
 test("cria snapshot fiscal de item com todos os campos cadastrados", () => {
@@ -141,4 +143,164 @@ test("campos fiscais nao sao inventados", () => {
 test("snapshots fiscais usam versao 1", () => {
   assert.equal(criarFiscalSnapshotItemVenda().versao, 1);
   assert.equal(criarFiscalEmpresaSnapshot().versao, 1);
+});
+
+test("cria snapshot do destinatario com cliente cadastrado completo", () => {
+  const snapshot = criarDestinatarioSnapshotVenda({
+    cliente: {
+      id: "cliente-1",
+      nome: "Cliente Completo",
+      documento: "12345678900",
+      email: "cliente@email.com",
+      telefone: "62999990000",
+      endereco: "Rua Central",
+      cidade: "Itumbiara",
+      uf: "GO",
+      inscricaoEstadual: "nao incluir",
+    },
+  });
+
+  assert.deepEqual(snapshot, {
+    versao: 1,
+    clienteId: "cliente-1",
+    nome: "Cliente Completo",
+    documento: "12345678900",
+    email: "cliente@email.com",
+    telefone: "62999990000",
+    endereco: "Rua Central",
+    cidade: "Itumbiara",
+    uf: "GO",
+  });
+});
+
+test("cria snapshot do destinatario com cliente cadastrado parcial", () => {
+  const snapshot = criarDestinatarioSnapshotVenda({
+    cliente: {
+      id: "cliente-2",
+      nome: "Cliente Parcial",
+      uf: "SP",
+    },
+  });
+
+  assert.deepEqual(snapshot, {
+    versao: 1,
+    clienteId: "cliente-2",
+    nome: "Cliente Parcial",
+    documento: "",
+    email: "",
+    telefone: "",
+    endereco: "",
+    cidade: "",
+    uf: "SP",
+  });
+});
+
+test("ausencia de cliente cria snapshot vazio e compativel", () => {
+  assert.deepEqual(criarDestinatarioSnapshotVenda(), {
+    versao: 1,
+    clienteId: "",
+    nome: "",
+    documento: "",
+    email: "",
+    telefone: "",
+    endereco: "",
+    cidade: "",
+    uf: "",
+  });
+});
+
+test("cliente manual preserva somente nome informado", () => {
+  const snapshot = criarDestinatarioSnapshotVenda({
+    nome: "Cliente informado manualmente",
+  });
+
+  assert.deepEqual(snapshot, {
+    versao: 1,
+    clienteId: "",
+    nome: "Cliente informado manualmente",
+    documento: "",
+    email: "",
+    telefone: "",
+    endereco: "",
+    cidade: "",
+    uf: "",
+  });
+});
+
+test("Consumidor Final e preservado como texto cadastral", () => {
+  const snapshot = criarDestinatarioSnapshotVenda({
+    nome: "Consumidor Final",
+  });
+
+  assert.equal(snapshot.nome, "Consumidor Final");
+  assert.equal(Object.hasOwn(snapshot, "consumidorFinal"), false);
+  assert.equal(Object.hasOwn(snapshot, "contribuinteICMS"), false);
+});
+
+test("snapshot do destinatario usa versao 1", () => {
+  assert.equal(criarDestinatarioSnapshotVenda().versao, 1);
+});
+
+test("snapshot do destinatario nao depende de mutacao posterior do cliente original", () => {
+  const cliente = {
+    id: "cliente-mutavel",
+    nome: "Nome original",
+    documento: "111",
+    endereco: "Endereco original",
+  };
+  const snapshot = criarDestinatarioSnapshotVenda({ cliente });
+
+  cliente.nome = "Nome alterado";
+  cliente.documento = "222";
+  cliente.endereco = "Endereco alterado";
+
+  assert.equal(snapshot.nome, "Nome original");
+  assert.equal(snapshot.documento, "111");
+  assert.equal(snapshot.endereco, "Endereco original");
+});
+
+test("snapshot do destinatario nao inventa campos inexistentes", () => {
+  const snapshot = criarDestinatarioSnapshotVenda({
+    cliente: {
+      id: "cliente-fiscal",
+      nome: "Cliente Fiscal",
+      indicadorIE: "9",
+      contribuinteICMS: true,
+      codigoMunicipioIBGE: "5208707",
+    },
+  });
+
+  assert.equal(Object.hasOwn(snapshot, "indicadorIE"), false);
+  assert.equal(Object.hasOwn(snapshot, "contribuinteICMS"), false);
+  assert.equal(Object.hasOwn(snapshot, "codigoMunicipioIBGE"), false);
+});
+
+test("venda antiga sem snapshot permanece compativel na deteccao de destinatario", () => {
+  assert.equal(
+    destinatarioVendaMudou(
+      { clienteId: "", cliente: "Cliente antigo" },
+      { clienteId: "", cliente: "Cliente antigo" }
+    ),
+    false
+  );
+});
+
+test("edicao sem troca de destinatario nao exige novo snapshot", () => {
+  assert.equal(
+    destinatarioVendaMudou(
+      { clienteId: "cliente-1", clienteNome: "Cliente A" },
+      { clienteId: "cliente-1", clienteNome: "Cliente A" }
+    ),
+    false
+  );
+});
+
+test("edicao com troca de destinatario solicita novo snapshot", () => {
+  assert.equal(
+    destinatarioVendaMudou(
+      { clienteId: "cliente-1", clienteNome: "Cliente A" },
+      { clienteId: "cliente-2", clienteNome: "Cliente B" }
+    ),
+    true
+  );
 });

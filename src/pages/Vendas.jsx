@@ -17,8 +17,10 @@ import {
   ordenarPorConfig,
 } from "../utils/sortUtils";
 import {
+  criarDestinatarioSnapshotVenda,
   criarFiscalEmpresaSnapshot,
   criarFiscalSnapshotItemVenda,
+  destinatarioVendaMudou,
 } from "../utils/fiscalVenda";
 
 const NOME_SAAS = "Renovar ERP";
@@ -553,10 +555,14 @@ export default function Vendas() {
       }
     }
 
+    const vendaAtual = editIndex !== null ? vendas[editIndex] : null;
+    const clienteSelecionadoSnapshot = pedido.clienteId
+      ? clientesComerciais.find((cliente) => cliente.id === pedido.clienteId)
+      : null;
     const pedidoTratado = {
       numeroPedido:
         editIndex !== null
-          ? vendas[editIndex].numeroPedido
+          ? vendaAtual.numeroPedido
           : gerarNumeroPedido(),
 
       cliente: pedido.cliente,
@@ -583,10 +589,21 @@ export default function Vendas() {
 
     if (editIndex === null) {
       pedidoTratado.fiscalEmpresaSnapshot = criarFiscalEmpresaSnapshot(configuracoes?.fiscal);
+      pedidoTratado.destinatarioSnapshot = criarDestinatarioSnapshotVenda({
+        cliente: clienteSelecionadoSnapshot,
+        clienteId: pedido.clienteId || "",
+        nome: pedido.clienteNome || pedido.cliente || "",
+      });
+    } else if (destinatarioVendaMudou(vendaAtual, pedidoTratado)) {
+      pedidoTratado.destinatarioSnapshot = criarDestinatarioSnapshotVenda({
+        cliente: clienteSelecionadoSnapshot,
+        clienteId: pedido.clienteId || "",
+        nome: pedido.clienteNome || pedido.cliente || "",
+      });
     }
 
       if (editIndex !== null) {
-  const venda = vendas[editIndex];
+  const venda = vendaAtual;
 
     await updateItem("vendas", venda.id, pedidoTratado);
   } else {

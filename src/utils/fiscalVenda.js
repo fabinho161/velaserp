@@ -19,6 +19,18 @@ const FISCAL_EMPRESA_PADRAO = Object.freeze({
   ambienteFiscal: "",
 });
 
+const DESTINATARIO_PADRAO = Object.freeze({
+  versao: 1,
+  clienteId: "",
+  nome: "",
+  documento: "",
+  email: "",
+  telefone: "",
+  endereco: "",
+  cidade: "",
+  uf: "",
+});
+
 const valorTextoFiscal = (valor) => {
   if (valor === null || valor === undefined) return "";
   return String(valor);
@@ -58,4 +70,36 @@ export const criarFiscalEmpresaSnapshot = (configuracaoFiscal = {}) => {
     municipio: valorTextoFiscal(fiscal.municipio),
     ambienteFiscal: valorTextoFiscal(fiscal.ambienteFiscal),
   });
+};
+
+export const criarDestinatarioSnapshotVenda = ({
+  cliente = null,
+  clienteId = "",
+  nome = "",
+} = {}) => {
+  const clienteValido =
+    cliente && typeof cliente === "object" && !Array.isArray(cliente)
+      ? cliente
+      : {};
+
+  return Object.freeze({
+    ...DESTINATARIO_PADRAO,
+    clienteId: valorTextoFiscal(clienteValido.id || clienteId),
+    nome: valorTextoFiscal(clienteValido.nome || nome),
+    documento: valorTextoFiscal(clienteValido.documento),
+    email: valorTextoFiscal(clienteValido.email),
+    telefone: valorTextoFiscal(clienteValido.telefone),
+    endereco: valorTextoFiscal(clienteValido.endereco),
+    cidade: valorTextoFiscal(clienteValido.cidade),
+    uf: valorTextoFiscal(clienteValido.uf),
+  });
+};
+
+export const destinatarioVendaMudou = (venda = {}, dadosAtuais = {}) => {
+  const clienteIdAnterior = valorTextoFiscal(venda.clienteId);
+  const clienteIdAtual = valorTextoFiscal(dadosAtuais.clienteId);
+  const nomeAnterior = valorTextoFiscal(venda.clienteNome || venda.cliente);
+  const nomeAtual = valorTextoFiscal(dadosAtuais.clienteNome || dadosAtuais.cliente);
+
+  return clienteIdAnterior !== clienteIdAtual || nomeAnterior !== nomeAtual;
 };

@@ -11,8 +11,10 @@ import {
 } from "../utils/estoqueProdutos";
 import { extrairNumeroPedido } from "../utils/sortUtils";
 import {
+  criarDestinatarioSnapshotVenda,
   criarFiscalEmpresaSnapshot,
   criarFiscalSnapshotItemVenda,
+  destinatarioVendaMudou,
 } from "../utils/fiscalVenda";
 
 const CLIENTE_CONSUMIDOR_FINAL = "Consumidor Final";
@@ -539,6 +541,9 @@ export default function VendaPecas() {
     const vendaAtual = vendaEditandoId
       ? vendas.find((venda) => venda.id === vendaEditandoId)
       : null;
+    const clienteSelecionadoSnapshot = form.clienteId
+      ? clientesComerciais.find((cliente) => cliente.id === form.clienteId)
+      : null;
     const vendaTratada = {
       tipoVenda: "pecas",
       numeroPedido: vendaAtual?.numeroPedido || gerarNumeroPedido(),
@@ -567,6 +572,17 @@ export default function VendaPecas() {
 
     if (!vendaEditandoId) {
       vendaTratada.fiscalEmpresaSnapshot = criarFiscalEmpresaSnapshot(configuracoes?.fiscal);
+      vendaTratada.destinatarioSnapshot = criarDestinatarioSnapshotVenda({
+        cliente: clienteSelecionadoSnapshot,
+        clienteId: form.clienteId || "",
+        nome: form.clienteNome || CLIENTE_CONSUMIDOR_FINAL,
+      });
+    } else if (destinatarioVendaMudou(vendaAtual, vendaTratada)) {
+      vendaTratada.destinatarioSnapshot = criarDestinatarioSnapshotVenda({
+        cliente: clienteSelecionadoSnapshot,
+        clienteId: form.clienteId || "",
+        nome: form.clienteNome || CLIENTE_CONSUMIDOR_FINAL,
+      });
     }
 
     if (vendaEditandoId) {
