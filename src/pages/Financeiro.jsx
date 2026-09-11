@@ -632,21 +632,23 @@ const margemLiquida =
       <div className="card">
         <h3>Filtros por Período</h3>
 
-        <input
-          type="date"
-          value={filtro.inicio}
-          onChange={(e) => setFiltro({ ...filtro, inicio: e.target.value })}
-        />
+        <div className="finance-form-grid">
+          <input
+            type="date"
+            value={filtro.inicio}
+            onChange={(e) => setFiltro({ ...filtro, inicio: e.target.value })}
+          />
 
-        <input
-          type="date"
-          value={filtro.fim}
-          onChange={(e) => setFiltro({ ...filtro, fim: e.target.value })}
-        />
+          <input
+            type="date"
+            value={filtro.fim}
+            onChange={(e) => setFiltro({ ...filtro, fim: e.target.value })}
+          />
 
-        <button onClick={() => setFiltro({ inicio: "", fim: "" })}>
-          Limpar Filtro
-        </button>
+          <button onClick={() => setFiltro({ inicio: "", fim: "" })}>
+            Limpar Filtro
+          </button>
+        </div>
       </div>
 
       <br />
@@ -657,60 +659,62 @@ const margemLiquida =
       <div className="card">
         <h3>{editIndex !== null ? "Editar Despesa" : "Nova Despesa"}</h3>
 
-        <input
-          placeholder="Descrição"
-          value={form.descricao}
-          onChange={(e) => setForm({ ...form, descricao: e.target.value })}
-        />
+        <div className="finance-form-grid">
+          <input
+            placeholder="Descrição"
+            value={form.descricao}
+            onChange={(e) => setForm({ ...form, descricao: e.target.value })}
+          />
 
-        <select
-          value={form.categoria}
-          onChange={(e) => setForm({ ...form, categoria: e.target.value })}
-        >
-          <option value="">Selecione uma categoria</option>
+          <select
+            value={form.categoria}
+            onChange={(e) => setForm({ ...form, categoria: e.target.value })}
+          >
+            <option value="">Selecione uma categoria</option>
 
-          {categoriasDespesaAtivas.length > 0 ? (
-            categoriasDespesaAtivas.map((categoria) => (
-              <option key={categoria.id} value={categoria.nome}>
-                {categoria.nome}
+            {categoriasDespesaAtivas.length > 0 ? (
+              categoriasDespesaAtivas.map((categoria) => (
+                <option key={categoria.id} value={categoria.nome}>
+                  {categoria.nome}
+                </option>
+              ))
+            ) : (
+              <option value="" disabled>
+                Nenhuma categoria ativa
               </option>
-            ))
-          ) : (
-            <option value="" disabled>
-              Nenhuma categoria ativa
-            </option>
+            )}
+          </select>
+
+          <input
+            type="number"
+            step="0.01"
+            placeholder="Valor"
+            value={form.valor}
+            onChange={(e) => setForm({ ...form, valor: e.target.value })}
+          />
+
+          <input
+            type="date"
+            value={form.data}
+            onChange={(e) => setForm({ ...form, data: e.target.value })}
+          />
+
+          <select
+            value={form.status}
+            onChange={(e) => setForm({ ...form, status: e.target.value })}
+          >
+            <option>Pago</option>
+            <option>Pendente</option>
+          </select>
+
+          <button onClick={salvarDespesa}>
+            {editIndex !== null ? "Atualizar Despesa" : "Salvar Despesa"}
+          </button>
+
+          {editIndex !== null && (
+            <button onClick={limparFormulario}>Cancelar</button>
           )}
-        </select>
-
-        <input
-          type="number"
-          step="0.01"
-          placeholder="Valor"
-          value={form.valor}
-          onChange={(e) => setForm({ ...form, valor: e.target.value })}
-        />
-
-        <input
-          type="date"
-          value={form.data}
-          onChange={(e) => setForm({ ...form, data: e.target.value })}
-        />
-
-        <select
-          value={form.status}
-          onChange={(e) => setForm({ ...form, status: e.target.value })}
-        >
-          <option>Pago</option>
-          <option>Pendente</option>
-        </select>
-
-        <button onClick={salvarDespesa}>
-          {editIndex !== null ? "Atualizar Despesa" : "Salvar Despesa"}
-        </button>
-
-        {editIndex !== null && (
-          <button onClick={limparFormulario}>Cancelar</button>
-        )}
+        </div>
       </div>
 
       <br />

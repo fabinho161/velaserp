@@ -545,6 +545,21 @@ body {
   line-height: 1.5;
 }
 
+.finance-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.finance-form-grid input,
+.finance-form-grid select,
+.finance-form-grid button {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
 .section-card {
   margin-bottom: 20px;
   overflow-x: visible;

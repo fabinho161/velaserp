@@ -529,34 +529,36 @@ export default function Insumos() {
       <div className="card">
         <h3>{editInsumoIndex !== null ? "Editar Insumo" : "Novo Insumo"}</h3>
 
-        <input
-          placeholder="Nome do insumo"
-          value={novoInsumo.nome}
-          onChange={(e) =>
-            setNovoInsumo({ ...novoInsumo, nome: e.target.value })
-          }
-        />
+        <div className="form-grid">
+          <input
+            placeholder="Nome do insumo"
+            value={novoInsumo.nome}
+            onChange={(e) =>
+              setNovoInsumo({ ...novoInsumo, nome: e.target.value })
+            }
+          />
 
-        <select
-          value={novoInsumo.unidade}
-          onChange={(e) =>
-            setNovoInsumo({ ...novoInsumo, unidade: e.target.value })
-          }
-        >
-          {unidadesAtivas.map((unidade) => (
-            <option key={unidade.id} value={unidade.id}>
-              {unidade.nome}
-            </option>
-          ))}
-        </select>
+          <select
+            value={novoInsumo.unidade}
+            onChange={(e) =>
+              setNovoInsumo({ ...novoInsumo, unidade: e.target.value })
+            }
+          >
+            {unidadesAtivas.map((unidade) => (
+              <option key={unidade.id} value={unidade.id}>
+                {unidade.nome}
+              </option>
+            ))}
+          </select>
 
-        <button onClick={salvarInsumo}>
-          {editInsumoIndex !== null ? "Atualizar Insumo" : "Adicionar Insumo"}
-        </button>
+          <button onClick={salvarInsumo}>
+            {editInsumoIndex !== null ? "Atualizar Insumo" : "Adicionar Insumo"}
+          </button>
 
-        {editInsumoIndex !== null && (
-          <button onClick={limparInsumo}>Cancelar</button>
-        )}
+          {editInsumoIndex !== null && (
+            <button onClick={limparInsumo}>Cancelar</button>
+          )}
+        </div>
       </div>
 
       <br />
@@ -571,81 +573,83 @@ export default function Insumos() {
             : "Registrar Compra"}
         </h3>
 
-        <select
-          value={novaCompra.insumoIndex}
-          onChange={(e) => {
-            const insumoSelecionado = insumos[Number(e.target.value)];
-            const unidadeCompra = normalizarUnidade(insumoSelecionado?.unidade);
+        <div className="form-grid">
+          <select
+            value={novaCompra.insumoIndex}
+            onChange={(e) => {
+              const insumoSelecionado = insumos[Number(e.target.value)];
+              const unidadeCompra = normalizarUnidade(insumoSelecionado?.unidade);
 
-            setNovaCompra({
-              ...novaCompra,
-              insumoIndex: e.target.value,
-              unidadeCompra,
-            });
-          }}
-          disabled={editCompra.compraIndex !== null}
-        >
-          <option value="">Selecione o insumo</option>
+              setNovaCompra({
+                ...novaCompra,
+                insumoIndex: e.target.value,
+                unidadeCompra,
+              });
+            }}
+            disabled={editCompra.compraIndex !== null}
+          >
+            <option value="">Selecione o insumo</option>
 
-          {insumos.map((insumo, index) => (
-            <option key={index} value={index}>
-              {insumo.nome}
-            </option>
-          ))}
-        </select>
+            {insumos.map((insumo, index) => (
+              <option key={index} value={index}>
+                {insumo.nome}
+              </option>
+            ))}
+          </select>
 
-        <input
-          type="date"
-          value={novaCompra.data}
-          onChange={(e) =>
-            setNovaCompra({ ...novaCompra, data: e.target.value })
-          }
-        />
+          <input
+            type="date"
+            value={novaCompra.data}
+            onChange={(e) =>
+              setNovaCompra({ ...novaCompra, data: e.target.value })
+            }
+          />
 
-        <input
-          type="number"
-          step="0.001"
-          placeholder="Quantidade comprada"
-          value={novaCompra.quantidade}
-          onChange={(e) =>
-            setNovaCompra({ ...novaCompra, quantidade: e.target.value })
-          }
-        />
+          <input
+            type="number"
+            step="0.001"
+            placeholder="Quantidade comprada"
+            value={novaCompra.quantidade}
+            onChange={(e) =>
+              setNovaCompra({ ...novaCompra, quantidade: e.target.value })
+            }
+          />
 
-        <select
-          value={novaCompra.unidadeCompra}
-          onChange={(e) =>
-            setNovaCompra({ ...novaCompra, unidadeCompra: e.target.value })
-          }
-          disabled={!insumoCompraSelecionado}
-        >
-          <option value="">Unidade da compra</option>
-          {unidadesCompraDisponiveis.map((unidade) => (
-            <option key={unidade.id} value={normalizarUnidade(unidade.id)}>
-              {unidade.nome || unidade.id}
-            </option>
-          ))}
-        </select>
+          <select
+            value={novaCompra.unidadeCompra}
+            onChange={(e) =>
+              setNovaCompra({ ...novaCompra, unidadeCompra: e.target.value })
+            }
+            disabled={!insumoCompraSelecionado}
+          >
+            <option value="">Unidade da compra</option>
+            {unidadesCompraDisponiveis.map((unidade) => (
+              <option key={unidade.id} value={normalizarUnidade(unidade.id)}>
+                {unidade.nome || unidade.id}
+              </option>
+            ))}
+          </select>
 
-        <input
-          type="number"
-          step="0.01"
-          placeholder="Valor total da compra"
-          value={novaCompra.valorTotal}
-          onChange={(e) =>
-            setNovaCompra({ ...novaCompra, valorTotal: e.target.value })
-          }
-        />
+          <input
+            type="number"
+            step="0.01"
+            placeholder="Valor total da compra"
+            value={novaCompra.valorTotal}
+            onChange={(e) =>
+              setNovaCompra({ ...novaCompra, valorTotal: e.target.value })
+            }
+          />
 
-        <button onClick={salvarCompra}>
-          {editCompra.compraIndex !== null
-            ? "Atualizar Compra"
-            : "Adicionar Compra"}
-        </button>
+          <button onClick={salvarCompra}>
+            {editCompra.compraIndex !== null
+              ? "Atualizar Compra"
+              : "Adicionar Compra"}
+          </button>
 
-        {editCompra.compraIndex !== null && (
-          <button onClick={limparCompra}>Cancelar</button>
-        )}
+          {editCompra.compraIndex !== null && (
+            <button onClick={limparCompra}>Cancelar</button>
+          )}
+        </div>
       </div>
 
       <br />

@@ -338,38 +338,39 @@ export default function Producao() {
       <div className="card">
         <h3>Registrar Produção</h3>
 
-        <select
-          value={form.produtoIndex}
-          onChange={(e) =>
-            setForm({ ...form, produtoIndex: e.target.value })
-          }
-        >
-          <option value="">Selecione o produto</option>
+        <div className="form-grid">
+          <select
+            value={form.produtoIndex}
+            onChange={(e) =>
+              setForm({ ...form, produtoIndex: e.target.value })
+            }
+          >
+            <option value="">Selecione o produto</option>
 
-          {produtosOrdenadosPorCodigo.map(({ produto, index }) => (
-            <option key={index} value={index}>
-              {produto.codigo} - {produto.nome} {produto.tipo}
-            </option>
-          ))}
-        </select>
+            {produtosOrdenadosPorCodigo.map(({ produto, index }) => (
+              <option key={index} value={index}>
+                {produto.codigo} - {produto.nome} {produto.tipo}
+              </option>
+            ))}
+          </select>
 
-        <input
-          type="number"
-          placeholder="Quantidade produzida"
-          value={form.quantidade}
-          onChange={(e) =>
-            setForm({ ...form, quantidade: e.target.value })
-          }
-        />
+          <input
+            type="number"
+            placeholder="Quantidade produzida"
+            value={form.quantidade}
+            onChange={(e) =>
+              setForm({ ...form, quantidade: e.target.value })
+            }
+          />
 
-        <input
-          type="date"
-          value={form.data}
-          onChange={(e) => setForm({ ...form, data: e.target.value })}
-        />
+          <input
+            type="date"
+            value={form.data}
+            onChange={(e) => setForm({ ...form, data: e.target.value })}
+          />
 
-
-        <button onClick={registrarProducao}>Registrar Produção</button>
+          <button onClick={registrarProducao}>Registrar Produção</button>
+        </div>
       </div>
 
       <br />
