@@ -1,4 +1,9 @@
-import faturamento from "../../backend/src/shared/faturamento.cjs";
+import * as faturamentoModulo from "../../backend/src/shared/faturamento.cjs";
+
+const faturamento =
+  faturamentoModulo.default ||
+  globalThis.__RENOVAR_ERP_FATURAMENTO__ ||
+  faturamentoModulo;
 
 export const {
   DESTINOS_OPERACAO,

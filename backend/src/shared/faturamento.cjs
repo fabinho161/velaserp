@@ -636,7 +636,7 @@ const validarPreparacaoFaturamento = (faturamento = {}) => {
   });
 };
 
-module.exports = {
+const faturamentoApi = {
   DESTINOS_OPERACAO,
   FINALIDADES_OPERACAO,
   FINALIDADES_OPERACAO_SUPORTADAS,
@@ -649,3 +649,11 @@ module.exports = {
   derivarDestinoOperacao,
   validarPreparacaoFaturamento,
 };
+
+if (typeof globalThis !== "undefined") {
+  globalThis.__RENOVAR_ERP_FATURAMENTO__ = faturamentoApi;
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = faturamentoApi;
+}
