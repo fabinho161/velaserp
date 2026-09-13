@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import ActionMenu from "../components/ActionMenu";
 import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
@@ -16,6 +17,7 @@ import {
   criarFiscalSnapshotItemVenda,
   destinatarioVendaMudou,
 } from "../utils/fiscalVenda";
+import { criarFaturamento } from "../services/faturamentoApi";
 
 const CLIENTE_CONSUMIDOR_FINAL = "Consumidor Final";
 
@@ -106,9 +108,11 @@ export default function VendaPecas() {
     configuracoes = {},
     addItem,
     updateItem,
+    empresaId,
   } = useERP() || {};
   const { showToast } = useToast();
   const { confirmar } = useConfirmacao();
+  const navigate = useNavigate();
 
   const produtos = useMemo(
     () => (Array.isArray(produtosContexto) ? produtosContexto : []),
@@ -136,6 +140,7 @@ export default function VendaPecas() {
   );
 
   const [vendaEditandoId, setVendaEditandoId] = useState("");
+  const [faturamentoGerandoId, setFaturamentoGerandoId] = useState("");
   const [busca, setBusca] = useState("");
   const [form, setForm] = useState({
     clienteId: "",
@@ -631,6 +636,68 @@ export default function VendaPecas() {
     }
   };
 
+  const gerarFaturamentoVendaPecas = async (venda) => {
+    if (!empresaId || !venda?.id || faturamentoGerandoId) return;
+
+    if (vendaFoiCancelada(venda)) {
+      showToast("Venda cancelada não pode gerar faturamento.", "warning");
+      return;
+    }
+
+    setFaturamentoGerandoId(venda.id);
+    try {
+      const data = await criarFaturamento({ empresaId, vendaId: venda.id });
+      const faturamentoId = data.faturamentoId || data.faturamento?.id;
+
+      showToast(
+        data.reutilizado
+          ? "Faturamento existente reutilizado."
+          : "Faturamento criado com sucesso.",
+        "success"
+      );
+
+      if (faturamentoId) {
+        navigate(`/faturamentos/${encodeURIComponent(faturamentoId)}`);
+      } else {
+        navigate("/faturamentos");
+      }
+    } catch (error) {
+      showToast(error.message || "Não foi possível gerar faturamento.", "error");
+    } finally {
+      setFaturamentoGerandoId("");
+    }
+  };
+
+  const renderMenuAcoesVenda = (venda) => {
+    const items = [
+      {
+        label: "Editar venda",
+        disabled: vendaFoiCancelada(venda),
+        onClick: () => editarVenda(venda),
+      },
+    ];
+
+    if (!vendaFoiCancelada(venda)) {
+      items.push({
+        label:
+          faturamentoGerandoId === venda.id
+            ? "Gerando faturamento..."
+            : "Gerar faturamento",
+        disabled: Boolean(faturamentoGerandoId),
+        onClick: () => gerarFaturamentoVendaPecas(venda),
+      });
+    }
+
+    items.push({
+      label: "Cancelar venda",
+      danger: true,
+      disabled: vendaFoiCancelada(venda),
+      onClick: () => cancelarVenda(venda),
+    });
+
+    return <ActionMenu label="Abrir ações da venda" items={items} />;
+  };
+
   const renderPagamento = (venda) => (
     <span className={vendaFoiCancelada(venda) ? "badge-danger" : venda.statusPagamento === "pago" ? "badge-success" : "badge-warning"}>
       {vendaFoiCancelada(venda)
@@ -948,24 +1015,7 @@ export default function VendaPecas() {
                   <td>{moedaBR(venda.total)}</td>
                   <td>{renderPagamento(venda)}</td>
                   <td>{vendaFoiCancelada(venda) ? "Cancelada" : "Entregue"}</td>
-                  <td>
-                    <ActionMenu
-                      label="Abrir acoes da venda"
-                      items={[
-                        {
-                          label: "Editar venda",
-                          disabled: vendaFoiCancelada(venda),
-                          onClick: () => editarVenda(venda),
-                        },
-                        {
-                          label: "Cancelar venda",
-                          danger: true,
-                          disabled: vendaFoiCancelada(venda),
-                          onClick: () => cancelarVenda(venda),
-                        },
-                      ]}
-                    />
-                  </td>
+                  <td>{renderMenuAcoesVenda(venda)}</td>
                 </tr>
               ))}
 

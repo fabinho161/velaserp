@@ -4,6 +4,8 @@ const assert = require("node:assert/strict");
 const {
   criarHandlerCancelarFaturamento,
   criarHandlerCriarFaturamento,
+  criarHandlerListarFaturamentos,
+  criarHandlerObterFaturamento,
   criarHandlerPrepararFaturamento,
   criarHandlerSalvarContextoOperacionalFaturamento,
 } = require("../faturamentoRoutes");
@@ -43,6 +45,18 @@ class FakeCollectionRef {
 
   doc(id) {
     return new FakeDocRef(this._db, `${this.path}/${id || this._db.nextId()}`);
+  }
+
+  async get() {
+    const docs = [...this._db.store.entries()]
+      .filter(([path]) => path.startsWith(`${this.path}/`))
+      .filter(([path]) => path.split("/").length === this.path.split("/").length + 1)
+      .map(([path, data]) => new FakeDocSnapshot(
+        new FakeDocRef(this._db, path),
+        structuredClone(data)
+      ));
+
+    return { docs };
   }
 }
 
@@ -296,6 +310,12 @@ const criarAmbiente = ({
     getDb: () => db,
     criarTimestampServidor: () => SERVER_TIMESTAMP,
   });
+  const listarHandler = criarHandlerListarFaturamentos({
+    getDb: () => db,
+  });
+  const obterHandler = criarHandlerObterFaturamento({
+    getDb: () => db,
+  });
 
   db.set("users/owner-1", { email: "owner@erp.com", role: "cliente" });
   db.set(`users/${atorUid}`, { email: `${atorUid}@erp.com`, role: atorRole });
@@ -337,10 +357,13 @@ const criarAmbiente = ({
     prepararHandler,
     cancelarHandler,
     contextoHandler,
+    listarHandler,
+    obterHandler,
     req: (body = { empresaId: "empresa-1", vendaId }, params = {}) => ({
       user: { uid: atorUid, email: `${atorUid}@erp.com` },
       body,
       params,
+      query: body,
     }),
   };
 };
@@ -387,6 +410,34 @@ const executarContexto = async (
     ambiente.req(body, { faturamentoId }),
     res
   );
+  return res;
+};
+
+const executarListar = async (
+  ambiente,
+  query = { empresaId: "empresa-1" },
+  user = undefined
+) => {
+  const res = criarRes();
+  await ambiente.listarHandler({
+    user: user === undefined ? ambiente.req().user : user,
+    query,
+  }, res);
+  return res;
+};
+
+const executarObter = async (
+  ambiente,
+  faturamentoId = pathFaturamento().split("/").pop(),
+  query = { empresaId: "empresa-1" },
+  user = undefined
+) => {
+  const res = criarRes();
+  await ambiente.obterHandler({
+    user: user === undefined ? ambiente.req().user : user,
+    query,
+    params: { faturamentoId },
+  }, res);
   return res;
 };
 
@@ -650,6 +701,100 @@ test("rota nao expoe delete de faturamento", async () => {
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test("listagem de faturamentos exige autenticacao", async () => {
+  const ambiente = criarAmbiente();
+
+  const res = await executarListar(ambiente, { empresaId: "empresa-1" }, null);
+
+  assert.equal(res.statusCode, 401);
+  assert.equal(res.body.codigo, "token_ausente");
+});
+
+test("owner lista somente faturamentos da empresa autorizada", async () => {
+  const ambiente = criarAmbiente();
+
+  await executar(ambiente);
+  ambiente.db.set(pathEmpresa("owner-1", "empresa-2"), {
+    nome: "Empresa 2",
+    ownerUid: "owner-1",
+    segmento: "comercio",
+  });
+  ambiente.db.set(pathFaturamento("venda-2", "owner-1", "empresa-2"), {
+    status: "rascunho",
+    origem: { numeroDocumento: "PED-0002" },
+  });
+
+  const res = await executarListar(ambiente);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.faturamentos.length, 1);
+  assert.equal(res.body.faturamentos[0].origem.numeroDocumento, "PED-0001");
+});
+
+test("visualizacao pode listar sem permissao de mutacao", async () => {
+  const ambiente = criarAmbiente({
+    atorUid: "visualizacao-1",
+    usuarioEmpresa: { role: "visualizacao", status: "ativo" },
+  });
+
+  await executar(criarAmbiente());
+  ambiente.db.set(pathFaturamento(), {
+    status: "rascunho",
+    origem: { numeroDocumento: "PED-0001" },
+  });
+  const res = await executarListar(ambiente);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.faturamentos.length, 1);
+});
+
+test("usuario sem permissao nao lista faturamentos", async () => {
+  const ambiente = criarAmbiente({
+    atorUid: "estoque-1",
+    usuarioEmpresa: { role: "estoque", status: "ativo" },
+  });
+
+  const res = await executarListar(ambiente);
+
+  assert.equal(res.statusCode, 403);
+});
+
+test("listagem de empresa cruzada retorna 404", async () => {
+  const ambiente = criarAmbiente({ atorUid: "comercial-1" });
+  ambiente.db.set(pathEmpresa("owner-2", "empresa-2"), {
+    nome: "Outra Empresa",
+    ownerUid: "owner-2",
+    segmento: "comercio",
+  });
+  ambiente.db.set(pathFaturamento("venda-2", "owner-2", "empresa-2"), {
+    status: "rascunho",
+  });
+
+  const res = await executarListar(ambiente, { empresaId: "empresa-2" });
+
+  assert.equal(res.statusCode, 404);
+});
+
+test("detalhe retorna faturamento valido", async () => {
+  const ambiente = criarAmbiente();
+
+  await executar(ambiente);
+  const res = await executarObter(ambiente);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.faturamento.id, pathFaturamento().split("/").pop());
+  assert.equal(res.body.faturamento.origem.numeroDocumento, "PED-0001");
+});
+
+test("detalhe inexistente retorna 404", async () => {
+  const ambiente = criarAmbiente();
+
+  const res = await executarObter(ambiente);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body.codigo, "faturamento_nao_encontrado");
 });
 
 test("contexto operacional exige autenticacao", async () => {

@@ -9,6 +9,7 @@ export const PERMISSOES_EMPRESA = {
   agenda: "agenda",
   ordensServico: "ordensServico",
   vendas: "vendas",
+  faturamento: "faturamento",
   crm: "crm",
   financeiro: "financeiro",
   fornecedores: "fornecedores",
@@ -29,6 +30,7 @@ export const PERFIS_EMPRESA = {
     permissoes: [
       PERMISSOES_EMPRESA.dashboard,
       PERMISSOES_EMPRESA.financeiro,
+      PERMISSOES_EMPRESA.faturamento,
       PERMISSOES_EMPRESA.agenda,
       PERMISSOES_EMPRESA.veiculos,
       PERMISSOES_EMPRESA.servicos,
@@ -56,6 +58,7 @@ export const PERFIS_EMPRESA = {
     permissoes: [
       PERMISSOES_EMPRESA.dashboard,
       PERMISSOES_EMPRESA.vendas,
+      PERMISSOES_EMPRESA.faturamento,
       PERMISSOES_EMPRESA.crm,
       PERMISSOES_EMPRESA.agenda,
       PERMISSOES_EMPRESA.veiculos,
@@ -79,6 +82,7 @@ export const PERFIS_EMPRESA = {
     label: "Visualizacao",
     permissoes: [
       PERMISSOES_EMPRESA.dashboard,
+      PERMISSOES_EMPRESA.faturamento,
       PERMISSOES_EMPRESA.agenda,
       PERMISSOES_EMPRESA.veiculos,
       PERMISSOES_EMPRESA.servicos,

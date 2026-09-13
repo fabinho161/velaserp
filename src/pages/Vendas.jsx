@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
 import { useConfirmacao } from "../context/useConfirmacao";
@@ -22,6 +23,7 @@ import {
   criarFiscalSnapshotItemVenda,
   destinatarioVendaMudou,
 } from "../utils/fiscalVenda";
+import { criarFaturamento } from "../services/faturamentoApi";
 
 const NOME_SAAS = "Renovar ERP";
 
@@ -83,6 +85,7 @@ export default function Vendas() {
   } = useERP() || {};
   const { showToast } = useToast();
   const { confirmar } = useConfirmacao();
+  const navigate = useNavigate();
   const { isGratis, limiteVendasMes, podeGerarPDF, podeUsarCRMBasico } = usePlano();
 
   const producoes = Array.isArray(producoesContexto)
@@ -212,6 +215,7 @@ export default function Vendas() {
     index: null,
     dados: PAGAMENTO_PADRAO,
   });
+  const [faturamentoGerandoId, setFaturamentoGerandoId] = useState("");
 
   const clientesComerciaisAtivos = clientesComerciais
     .filter(
@@ -739,6 +743,43 @@ export default function Vendas() {
     cancelarEdicaoPagamento();
   };
 
+  const gerarFaturamentoVenda = async (venda) => {
+    if (!empresaId || !venda?.id || faturamentoGerandoId) return;
+
+    const pagamentoCancelado =
+      String(venda.statusPagamento || "").toLowerCase() === "cancelado";
+    const expedicaoCancelada =
+      String(venda.statusExpedicao || "").toLowerCase() === "cancelado";
+
+    if (pagamentoCancelado || expedicaoCancelada) {
+      showToast("Venda cancelada não pode gerar faturamento.", "warning");
+      return;
+    }
+
+    setFaturamentoGerandoId(venda.id);
+    try {
+      const data = await criarFaturamento({ empresaId, vendaId: venda.id });
+      const faturamentoId = data.faturamentoId || data.faturamento?.id;
+
+      showToast(
+        data.reutilizado
+          ? "Faturamento existente reutilizado."
+          : "Faturamento criado com sucesso.",
+        "success"
+      );
+
+      if (faturamentoId) {
+        navigate(`/faturamentos/${encodeURIComponent(faturamentoId)}`);
+      } else {
+        navigate("/faturamentos");
+      }
+    } catch (error) {
+      showToast(error.message || "Não foi possível gerar faturamento.", "error");
+    } finally {
+      setFaturamentoGerandoId("");
+    }
+  };
+
   // ================================
   // 🔹 GERAR PDF PROFISSIONAL DO PEDIDO
   // ================================
@@ -1089,6 +1130,9 @@ export default function Vendas() {
   };
 
   const renderMenuAcoes = (venda, index, origem = "historico") => {
+    const vendaCancelada =
+      String(venda.statusPagamento || "").toLowerCase() === "cancelado" ||
+      String(venda.statusExpedicao || "").toLowerCase() === "cancelado";
     const items = [
       {
         label: "Editar pedido",
@@ -1097,6 +1141,17 @@ export default function Vendas() {
     ];
 
     if (origem === "historico") {
+      if (!vendaCancelada) {
+        items.push({
+          label:
+            faturamentoGerandoId === venda.id
+              ? "Gerando faturamento..."
+              : "Gerar faturamento",
+          disabled: Boolean(faturamentoGerandoId),
+          onClick: () => gerarFaturamentoVenda(venda),
+        });
+      }
+
       items.push({
         label: "Baixar PDF",
         onClick: () => gerarPDFPedido(venda, index),

@@ -17,6 +17,7 @@ import {
   Wallet,
   Truck,
   FileText,
+  FileCheck2,
   LogOut,
   Settings,
   ShieldCheck,
@@ -107,6 +108,9 @@ export default function Sidebar() {
       items: itensVisiveis([
         ...(podeVerMenu(PERMISSOES_EMPRESA.vendas, podeUsarVendas)
           ? [{ path: "/vendas", label: "Vendas", icon: ShoppingCart, modulo: "vendas" }]
+          : []),
+        ...(podeVerMenu(PERMISSOES_EMPRESA.faturamento)
+          ? [{ path: "/faturamentos", label: "Faturamento", icon: FileCheck2, modulo: "faturamento" }]
           : []),
         ...(podeVerMenu(PERMISSOES_EMPRESA.crm, podeUsarCRMComercial)
           ? [{

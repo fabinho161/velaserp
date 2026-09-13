@@ -19,6 +19,7 @@ import Estoque from "./pages/Estoque";
 import PerdasDoacoes from "./pages/PerdasDoacoes";
 import Vendas from "./pages/Vendas";
 import VendaPecas from "./pages/VendaPecas";
+import Faturamentos from "./pages/Faturamentos";
 import Financeiro from "./pages/Financeiro";
 import Relatorios from "./pages/Relatorios";
 import Produtos from "./pages/Produtos";
@@ -116,6 +117,26 @@ function AuthenticatedApp() {
               <SegmentoRoute modulo="vendaPecas">
                 <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.vendas}>
                   <VendaPecas />
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
+            )}
+          />
+          <Route
+            path="/faturamentos"
+            element={(
+              <SegmentoRoute modulo="faturamento">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.faturamento}>
+                  <Faturamentos />
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
+            )}
+          />
+          <Route
+            path="/faturamentos/:faturamentoId"
+            element={(
+              <SegmentoRoute modulo="faturamento">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.faturamento}>
+                  <Faturamentos />
                 </EmpresaPermissionRoute>
               </SegmentoRoute>
             )}

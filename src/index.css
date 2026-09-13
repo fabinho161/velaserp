@@ -8040,3 +8040,256 @@ button,
     padding: 0 12px 12px;
   }
 }
+
+.billing-page {
+  display: grid;
+  gap: 18px;
+}
+
+.billing-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.billing-header p,
+.billing-card-header p {
+  margin: 4px 0 0;
+  color: #64748b;
+}
+
+.billing-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.billing-kpi-card {
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #2563eb;
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+  color: #1d4ed8;
+}
+
+.billing-kpi-card.warning {
+  border-left-color: #f59e0b;
+  color: #b45309;
+}
+
+.billing-kpi-card.success {
+  border-left-color: #16a34a;
+  color: #15803d;
+}
+
+.billing-kpi-card.danger {
+  border-left-color: #dc2626;
+  color: #b91c1c;
+}
+
+.billing-kpi-card span {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.billing-kpi-card strong {
+  color: #0f172a;
+  font-size: 24px;
+}
+
+.billing-filter-card {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.billing-filter-card label,
+.billing-context-grid label {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.billing-filter-card span,
+.billing-context-grid span {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.billing-card-header,
+.billing-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.billing-card-header h3,
+.billing-detail-header h2,
+.billing-detail-section h3 {
+  margin: 0;
+  color: #0f172a;
+}
+
+.billing-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.billing-status.preparado {
+  background: #ecfdf5;
+  color: #15803d;
+}
+
+.billing-status.cancelado {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.billing-icon-button,
+.billing-secondary-button,
+.billing-danger-button {
+  border: 0;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 12px;
+  font-weight: 900;
+}
+
+.billing-icon-button,
+.billing-secondary-button {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.billing-danger-button {
+  background: #dc2626;
+  color: #fff;
+}
+
+.billing-detail-modal {
+  width: min(980px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  border-radius: 10px;
+  background: #fff;
+  padding: 20px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+}
+
+.billing-detail-section {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 16px;
+  margin-top: 16px;
+}
+
+.billing-info-grid,
+.billing-context-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.billing-info-item {
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+}
+
+.billing-info-item span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.billing-info-item strong {
+  color: #0f172a;
+  font-size: 14px;
+  word-break: break-word;
+}
+
+.billing-context-nature {
+  grid-column: span 2;
+}
+
+.billing-state-note,
+.billing-empty-note {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.billing-pendency-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #b45309;
+  font-weight: 700;
+}
+
+.billing-detail-actions {
+  border-top: 1px solid #e2e8f0;
+  margin-top: 18px;
+  padding-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 1100px) {
+  .billing-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .billing-filter-card {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .billing-header,
+  .billing-card-header,
+  .billing-detail-header {
+    flex-direction: column;
+  }
+
+  .billing-kpi-grid,
+  .billing-filter-card,
+  .billing-info-grid,
+  .billing-context-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .billing-context-nature {
+    grid-column: auto;
+  }
+
+  .billing-filter-card button,
+  .billing-detail-actions button,
+  .billing-secondary-button,
+  .billing-danger-button {
+    width: 100%;
+  }
+}

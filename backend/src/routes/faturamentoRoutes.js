@@ -22,6 +22,12 @@ const ROLES_PREPARACAO_FATURAMENTO = new Set([
   "financeiro",
   "comercial",
 ]);
+const ROLES_LEITURA_FATURAMENTO = new Set([
+  "administrador_empresa",
+  "financeiro",
+  "comercial",
+  "visualizacao",
+]);
 const ROLES_CANCELAMENTO_FATURAMENTO = new Set([
   "administrador_empresa",
   "financeiro",
@@ -61,6 +67,15 @@ const validarPayloadCriacaoFaturamento = (body) => {
     vendaId: validarIdFirestore("vendaId", body.vendaId),
   };
 };
+
+const validarQueryListagemFaturamento = (query = {}) => ({
+  empresaId: validarIdFirestore("empresaId", query.empresaId),
+});
+
+const validarQueryDetalheFaturamento = ({ params = {}, query = {} } = {}) => ({
+  empresaId: validarIdFirestore("empresaId", query.empresaId),
+  faturamentoId: validarIdFirestore("faturamentoId", params.faturamentoId),
+});
 
 const sanitizarMotivoCancelamento = (motivo) => {
   if (motivo === null || motivo === undefined) return "";
@@ -144,6 +159,24 @@ const usuarioAtivoPodePrepararFaturamento = ({
   return uidAuth === atorUid &&
     status === "ativo" &&
     ROLES_PREPARACAO_FATURAMENTO.has(role);
+};
+
+const usuarioAtivoPodeLerFaturamento = ({
+  atorUid,
+  ownerUid,
+  atorData,
+  vinculoUsuarioEmpresa,
+}) => {
+  if (atorUid === ownerUid) return true;
+  if (atorData?.role === "admin_master") return true;
+
+  const uidAuth = normalizarId(vinculoUsuarioEmpresa?.uidAuth);
+  const status = String(vinculoUsuarioEmpresa?.status || "").trim().toLowerCase();
+  const role = normalizarRoleEmpresa(vinculoUsuarioEmpresa);
+
+  return uidAuth === atorUid &&
+    status === "ativo" &&
+    ROLES_LEITURA_FATURAMENTO.has(role);
 };
 
 const usuarioAtivoPodeCancelarFaturamento = ({
@@ -259,6 +292,189 @@ const montarRespostaErro = (res, error) => {
     error: error.message || "Erro interno.",
     codigo: error.codigo || "erro_interno",
   });
+};
+
+const obterMillisOrdenacao = (valor) => {
+  if (!valor) return 0;
+  if (typeof valor.toMillis === "function") return valor.toMillis();
+  if (valor instanceof Date) return valor.getTime();
+
+  const data = Date.parse(valor);
+  return Number.isFinite(data) ? data : 0;
+};
+
+const ordenarFaturamentosRecentes = (a = {}, b = {}) => {
+  const dataA = obterMillisOrdenacao(
+    a.contextoFiscal?.operacao?.dataOperacao || a.criadoEm || a.atualizadoEm
+  );
+  const dataB = obterMillisOrdenacao(
+    b.contextoFiscal?.operacao?.dataOperacao || b.criadoEm || b.atualizadoEm
+  );
+
+  if (dataA !== dataB) return dataB - dataA;
+  return String(b.id || "").localeCompare(String(a.id || ""));
+};
+
+const listarFaturamentosEmpresa = async (empresaRef) => {
+  const snapshot = await empresaRef.collection("faturamentos").get();
+
+  return snapshot.docs
+    .map((docSnapshot) => ({
+      id: docSnapshot.id,
+      ...dadosSnapshot(docSnapshot),
+    }))
+    .sort(ordenarFaturamentosRecentes);
+};
+
+const criarHandlerListarFaturamentos = ({
+  getDb: getDbDependencia = getDb,
+} = {}) => async (req, res) => {
+  const atorUid = normalizarId(req.user?.uid);
+
+  if (!atorUid) {
+    res.status(401).json({
+      ok: false,
+      error: "Token Firebase nao informado.",
+      codigo: "token_ausente",
+    });
+    return;
+  }
+
+  let payload;
+
+  try {
+    payload = validarQueryListagemFaturamento(req.query);
+  } catch (error) {
+    montarRespostaErro(res, error);
+    return;
+  }
+
+  const db = getDbDependencia();
+
+  try {
+    const acesso = await db.runTransaction(async (transaction) => {
+      const dadosAcesso = await resolverAcessoEmpresa({
+        db,
+        transaction,
+        atorUid,
+        empresaId: payload.empresaId,
+      });
+
+      if (!usuarioAtivoPodeLerFaturamento({
+        atorUid,
+        ownerUid: dadosAcesso.ownerUid,
+        atorData: dadosAcesso.atorData,
+        vinculoUsuarioEmpresa: dadosAcesso.vinculoUsuarioEmpresa,
+      })) {
+        throw criarErroHttp(
+          403,
+          "Voce nao tem permissao para acessar faturamentos.",
+          "sem_permissao"
+        );
+      }
+
+      return {
+        empresaRef: dadosAcesso.empresaRef,
+      };
+    });
+    const faturamentos = await listarFaturamentosEmpresa(acesso.empresaRef);
+
+    res.status(200).json({
+      ok: true,
+      faturamentos,
+    });
+  } catch (error) {
+    console.error("Erro ao listar faturamentos", {
+      atorUid,
+      empresaId: payload?.empresaId,
+      statusCode: error.statusCode || 500,
+      codigo: error.codigo || null,
+    });
+    montarRespostaErro(res, error);
+  }
+};
+
+const criarHandlerObterFaturamento = ({
+  getDb: getDbDependencia = getDb,
+} = {}) => async (req, res) => {
+  const atorUid = normalizarId(req.user?.uid);
+
+  if (!atorUid) {
+    res.status(401).json({
+      ok: false,
+      error: "Token Firebase nao informado.",
+      codigo: "token_ausente",
+    });
+    return;
+  }
+
+  let payload;
+
+  try {
+    payload = validarQueryDetalheFaturamento({
+      params: req.params,
+      query: req.query,
+    });
+  } catch (error) {
+    montarRespostaErro(res, error);
+    return;
+  }
+
+  const db = getDbDependencia();
+
+  try {
+    const resultado = await db.runTransaction(async (transaction) => {
+      const {
+        atorData,
+        ownerUid,
+        empresaRef,
+        vinculoUsuarioEmpresa,
+      } = await resolverAcessoEmpresa({
+        db,
+        transaction,
+        atorUid,
+        empresaId: payload.empresaId,
+      });
+      const faturamentoRef = empresaRef.collection("faturamentos").doc(payload.faturamentoId);
+      const faturamentoSnapshot = await transaction.get(faturamentoRef);
+
+      if (!usuarioAtivoPodeLerFaturamento({
+        atorUid,
+        ownerUid,
+        atorData,
+        vinculoUsuarioEmpresa,
+      })) {
+        throw criarErroHttp(
+          403,
+          "Voce nao tem permissao para acessar faturamentos.",
+          "sem_permissao"
+        );
+      }
+
+      if (!snapshotExiste(faturamentoSnapshot)) {
+        throw criarErroHttp(404, "Faturamento nao encontrado.", "faturamento_nao_encontrado");
+      }
+
+      return {
+        id: faturamentoSnapshot.id,
+        ...dadosSnapshot(faturamentoSnapshot),
+      };
+    });
+
+    res.status(200).json({
+      ok: true,
+      faturamento: resultado,
+    });
+  } catch (error) {
+    console.error("Erro ao obter faturamento", {
+      atorUid,
+      empresaId: payload?.empresaId,
+      faturamentoId: payload?.faturamentoId,
+      statusCode: error.statusCode || 500,
+      codigo: error.codigo || null,
+    });
+    montarRespostaErro(res, error);
+  }
 };
 
 const criarHandlerCriarFaturamento = ({
@@ -776,6 +992,8 @@ const criarHandlerCancelarFaturamento = ({
   }
 };
 
+router.get("/", authFirebase, criarHandlerListarFaturamentos());
+router.get("/:faturamentoId", authFirebase, criarHandlerObterFaturamento());
 router.post("/", authFirebase, criarHandlerCriarFaturamento());
 router.put(
   "/:faturamentoId/contexto-operacional",
@@ -786,6 +1004,8 @@ router.post("/:faturamentoId/preparar", authFirebase, criarHandlerPrepararFatura
 router.post("/:faturamentoId/cancelar", authFirebase, criarHandlerCancelarFaturamento());
 
 module.exports = router;
+module.exports.criarHandlerListarFaturamentos = criarHandlerListarFaturamentos;
+module.exports.criarHandlerObterFaturamento = criarHandlerObterFaturamento;
 module.exports.criarHandlerCriarFaturamento = criarHandlerCriarFaturamento;
 module.exports.criarHandlerPrepararFaturamento = criarHandlerPrepararFaturamento;
 module.exports.criarHandlerSalvarContextoOperacionalFaturamento =
@@ -798,5 +1018,7 @@ module.exports._internals = {
   validarPayloadOperacaoFaturamento,
   validarPayloadContextoOperacionalFaturamento,
   validarPayloadCriacaoFaturamento,
+  validarQueryDetalheFaturamento,
+  validarQueryListagemFaturamento,
   vendaEstaCancelada,
 };
