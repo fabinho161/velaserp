@@ -725,6 +725,15 @@ service cloud.firestore {
           allow delete: if false;
         }
 
+        match /faturamentos/{faturamentoId} {
+          allow read: if hasCompanyRole(userId, empresaId, [
+            "administrador_empresa",
+            "financeiro",
+            "comercial"
+          ]);
+          allow create, update, delete: if false;
+        }
+
         match /despesas/{documentId} {
           allow read: if hasCompanyRole(userId, empresaId, [
             "administrador_empresa",
