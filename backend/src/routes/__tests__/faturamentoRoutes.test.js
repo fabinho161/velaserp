@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const {
   criarHandlerCancelarFaturamento,
   criarHandlerCriarFaturamento,
+  criarHandlerDeterminarFiscalFaturamento,
   criarHandlerListarFaturamentos,
   criarHandlerObterFaturamento,
   criarHandlerPrepararFaturamento,
@@ -233,6 +234,11 @@ const fiscalItemSnapshot = () => ({
   unidadeTributavel: "un",
 });
 
+const fiscalItemSnapshotClassificado = (origemProduto) => ({
+  ...fiscalItemSnapshot(),
+  origemProduto,
+});
+
 const criarVenda = (dados = {}) => ({
   numeroPedido: "PED-0001",
   cliente: "Cliente Teste",
@@ -306,6 +312,10 @@ const criarAmbiente = ({
     getDb: () => db,
     criarTimestampServidor: () => SERVER_TIMESTAMP,
   });
+  const determinarFiscalHandler = criarHandlerDeterminarFiscalFaturamento({
+    getDb: () => db,
+    criarTimestampServidor: () => SERVER_TIMESTAMP,
+  });
   const contextoHandler = criarHandlerSalvarContextoOperacionalFaturamento({
     getDb: () => db,
     criarTimestampServidor: () => SERVER_TIMESTAMP,
@@ -356,6 +366,7 @@ const criarAmbiente = ({
     handler,
     prepararHandler,
     cancelarHandler,
+    determinarFiscalHandler,
     contextoHandler,
     listarHandler,
     obterHandler,
@@ -407,6 +418,19 @@ const executarContexto = async (
 ) => {
   const res = criarRes();
   await ambiente.contextoHandler(
+    ambiente.req(body, { faturamentoId }),
+    res
+  );
+  return res;
+};
+
+const executarDeterminarFiscal = async (
+  ambiente,
+  faturamentoId = pathFaturamento().split("/").pop(),
+  body = { empresaId: "empresa-1" }
+) => {
+  const res = criarRes();
+  await ambiente.determinarFiscalHandler(
     ambiente.req(body, { faturamentoId }),
     res
   );
@@ -1280,4 +1304,174 @@ test("preparar e cancelar simultaneamente mantem estado final valido", async () 
   if (faturamento.status === "cancelado") {
     assert.equal(Object.hasOwn(faturamento, "canceladoEm"), true);
   }
+});
+
+test("determinar fiscal exige autenticacao", async () => {
+  const ambiente = criarAmbiente();
+  await executar(ambiente);
+  const res = criarRes();
+
+  await ambiente.determinarFiscalHandler({
+    user: null,
+    body: { empresaId: "empresa-1" },
+    params: { faturamentoId: pathFaturamento().split("/").pop() },
+  }, res);
+
+  assert.equal(res.statusCode, 401);
+  assert.equal(res.body.codigo, "token_ausente");
+});
+
+test("determinar fiscal persiste resultado em rascunho autorizado", async () => {
+  const ambiente = criarAmbiente({
+    atorUid: "financeiro-1",
+    usuarioEmpresa: { role: "financeiro", status: "ativo" },
+    venda: criarVenda({
+      itens: [
+        {
+          ...criarVenda().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("revenda"),
+        },
+      ],
+    }),
+  });
+
+  await executar(ambiente);
+  await executarContexto(ambiente);
+  const res = await executarDeterminarFiscal(ambiente);
+  const faturamento = ambiente.db.get(pathFaturamento());
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.determinacaoFiscal.itens[0].cfopEfetivo, "5102");
+  assert.deepEqual(faturamento.determinacaoFiscalAtualizadaEm, SERVER_TIMESTAMP);
+  assert.equal(faturamento.determinacaoFiscalAtualizadaPor, "financeiro-1");
+  assert.equal(faturamento.determinacaoFiscal.itens[0].cfopEfetivo, "5102");
+});
+
+test("comercial nao executa determinacao fiscal", async () => {
+  const ambiente = criarAmbiente({
+    atorUid: "comercial-1",
+    usuarioEmpresa: { role: "comercial", status: "ativo" },
+  });
+
+  await executar(ambiente);
+  await executarContexto(ambiente);
+  const res = await executarDeterminarFiscal(ambiente);
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body.codigo, "sem_permissao");
+  assert.equal(Object.hasOwn(ambiente.db.get(pathFaturamento()), "determinacaoFiscal"), false);
+});
+
+test("determinar fiscal de empresa cruzada e negado", async () => {
+  const ambiente = criarAmbiente({ atorUid: "financeiro-1" });
+  ambiente.db.set(pathEmpresa("owner-2", "empresa-2"), {
+    nome: "Outra Empresa",
+    ownerUid: "owner-2",
+    segmento: "comercio",
+  });
+  ambiente.db.set(
+    pathFaturamento("venda-2", "owner-2", "empresa-2"),
+    { status: "rascunho" }
+  );
+
+  const res = await executarDeterminarFiscal(
+    ambiente,
+    "venda_venda-2_preparacao_v1",
+    { empresaId: "empresa-2" }
+  );
+
+  assert.equal(res.statusCode, 404);
+});
+
+test("determinar fiscal de faturamento inexistente retorna 404", async () => {
+  const ambiente = criarAmbiente({ venda: null });
+
+  const res = await executarDeterminarFiscal(ambiente);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body.codigo, "faturamento_nao_encontrado");
+});
+
+test("determinar fiscal rejeita faturamento cancelado", async () => {
+  const ambiente = criarAmbiente();
+
+  await executar(ambiente);
+  await executarCancelar(ambiente);
+  const res = await executarDeterminarFiscal(ambiente);
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.codigo, "status_invalido");
+});
+
+test("determinar fiscal rejeita faturamento preparado", async () => {
+  const ambiente = criarAmbiente({
+    venda: criarVenda({
+      itens: [
+        {
+          ...criarVenda().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("revenda"),
+        },
+      ],
+    }),
+  });
+
+  await executar(ambiente);
+  await executarContexto(ambiente);
+  await executarPreparar(ambiente);
+  const antes = ambiente.db.get(pathFaturamento());
+  const res = await executarDeterminarFiscal(ambiente);
+  const depois = ambiente.db.get(pathFaturamento());
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.codigo, "status_invalido");
+  assert.deepEqual(depois, antes);
+});
+
+test("determinar fiscal nao altera snapshots venda estoque ou financeiro", async () => {
+  const venda = criarVenda({
+    itens: [
+      {
+        ...criarVenda().itens[0],
+        fiscalSnapshot: fiscalItemSnapshotClassificado("fabricado"),
+      },
+    ],
+  });
+  const ambiente = criarAmbiente({ venda });
+
+  await executar(ambiente);
+  await executarContexto(ambiente);
+  const faturamentoAntes = ambiente.db.get(pathFaturamento());
+  const vendaAntes = ambiente.db.get(pathVenda());
+  await executarDeterminarFiscal(ambiente);
+  const faturamentoDepois = ambiente.db.get(pathFaturamento());
+  const vendaDepois = ambiente.db.get(pathVenda());
+
+  assert.deepEqual(faturamentoDepois.origem, faturamentoAntes.origem);
+  assert.deepEqual(faturamentoDepois.contextoFiscal, faturamentoAntes.contextoFiscal);
+  assert.deepEqual(faturamentoDepois.itens, faturamentoAntes.itens);
+  assert.deepEqual(faturamentoDepois.totais, faturamentoAntes.totais);
+  assert.deepEqual(vendaDepois, vendaAntes);
+});
+
+test("reexecucao de determinacao fiscal e idempotente para mesma regra", async () => {
+  const ambiente = criarAmbiente({
+    venda: criarVenda({
+      itens: [
+        {
+          ...criarVenda().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("revenda"),
+        },
+      ],
+    }),
+  });
+
+  await executar(ambiente);
+  await executarContexto(ambiente);
+  await executarDeterminarFiscal(ambiente);
+  const primeira = ambiente.db.get(pathFaturamento()).determinacaoFiscal;
+  await executarDeterminarFiscal(ambiente);
+  const segunda = ambiente.db.get(pathFaturamento()).determinacaoFiscal;
+
+  assert.deepEqual(segunda, primeira);
 });

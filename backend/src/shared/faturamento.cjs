@@ -32,6 +32,15 @@ const PENDENCIAS_PREPARACAO_FATURAMENTO = Object.freeze({
   NATUREZA_OPERACAO_AUSENTE: "natureza_operacao_ausente",
 });
 
+const PENDENCIAS_DETERMINACAO_FISCAL = Object.freeze({
+  CLASSIFICACAO_ITEM_INSUFICIENTE: "classificacao_item_insuficiente",
+  CFOP_NAO_DETERMINADO: "cfop_nao_determinado",
+  DESTINO_OPERACAO_NAO_SUPORTADO: "destino_operacao_nao_suportado",
+  FINALIDADE_OPERACAO_NAO_SUPORTADA: "finalidade_operacao_nao_suportada",
+  ORIGEM_FATURAMENTO_NAO_SUPORTADA: "origem_faturamento_nao_suportada",
+  REGIME_TRIBUTARIO_AUSENTE: "regime_tributario_ausente",
+});
+
 const ORDEM_PENDENCIAS_PREPARACAO = Object.freeze([
   PENDENCIAS_PREPARACAO_FATURAMENTO.EMITENTE_SNAPSHOT_AUSENTE,
   PENDENCIAS_PREPARACAO_FATURAMENTO.EMITENTE_CNPJ_AUSENTE,
@@ -90,6 +99,8 @@ const DESTINOS_OPERACAO = Object.freeze({
 });
 
 const VERSAO_FATURAMENTO = 1;
+const VERSAO_DETERMINACAO_FISCAL = 1;
+const REGRA_DETERMINACAO_FISCAL = "fiscal_v1";
 const STATUS_INICIAL = "rascunho";
 const TIPO_VENDA_PECAS = "pecas";
 const LIMITE_NATUREZA_OPERACAO = 120;
@@ -99,6 +110,14 @@ const INDICADORES_IE_DESTINATARIO_SET = new Set(
   Object.values(INDICADORES_IE_DESTINATARIO)
 );
 const DESTINOS_OPERACAO_SET = new Set(Object.values(DESTINOS_OPERACAO));
+const ORIGENS_FATURAMENTO_DETERMINACAO_SUPORTADAS = new Set([
+  "venda",
+  "venda_pecas",
+]);
+const ORIGENS_PRODUTO_OPERACIONAIS = Object.freeze({
+  FABRICADO: "fabricado",
+  REVENDA: "revenda",
+});
 const UFS_BRASIL = new Set([
   "AC",
   "AL",
@@ -636,16 +655,180 @@ const validarPreparacaoFaturamento = (faturamento = {}) => {
   });
 };
 
+const obterContextoOperacaoFiscal = (faturamento = {}) => {
+  const operacao = ehObjeto(faturamento.contextoFiscal?.operacao)
+    ? faturamento.contextoFiscal.operacao
+    : {};
+
+  return {
+    destinoOperacao: textoSeguro(operacao.destinoOperacao),
+    finalidadeOperacao: textoSeguro(operacao.finalidadeOperacao),
+    consumidorFinal:
+      typeof operacao.consumidorFinal === "boolean"
+        ? operacao.consumidorFinal
+        : null,
+    indicadorIEDestinatario: textoSeguro(operacao.indicadorIEDestinatario),
+  };
+};
+
+const obterClassificacaoFiscalItem = (item = {}) => {
+  const fiscalSnapshot = ehObjeto(item.fiscalSnapshot) ? item.fiscalSnapshot : {};
+  const classificacao =
+    fiscalSnapshot.origemProduto ||
+    fiscalSnapshot.classificacaoProduto ||
+    item.origemProduto ||
+    item.classificacaoProduto ||
+    item.classificacaoFiscal;
+
+  return textoSeguro(classificacao).trim().toLowerCase();
+};
+
+const criarFonteCfop = (regra) => ({
+  regra,
+  regraVersao: REGRA_DETERMINACAO_FISCAL,
+});
+
+const determinarCfopItem = ({ item = {}, operacao = {}, origemFaturamento = "" } = {}) => {
+  const pendencias = new Set();
+  const destinoOperacao = textoSeguro(operacao.destinoOperacao);
+  const finalidadeOperacao = textoSeguro(operacao.finalidadeOperacao);
+
+  if (!ORIGENS_FATURAMENTO_DETERMINACAO_SUPORTADAS.has(origemFaturamento)) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_DETERMINACAO_FISCAL.ORIGEM_FATURAMENTO_NAO_SUPORTADA
+    );
+  }
+
+  if (finalidadeOperacao !== FINALIDADES_OPERACAO.NORMAL) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_DETERMINACAO_FISCAL.FINALIDADE_OPERACAO_NAO_SUPORTADA
+    );
+  }
+
+  if (
+    destinoOperacao !== DESTINOS_OPERACAO.INTERNA &&
+    destinoOperacao !== DESTINOS_OPERACAO.INTERESTADUAL
+  ) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_DETERMINACAO_FISCAL.DESTINO_OPERACAO_NAO_SUPORTADO
+    );
+  }
+
+  const classificacao = obterClassificacaoFiscalItem(item);
+  const itemFabricado = classificacao === ORIGENS_PRODUTO_OPERACIONAIS.FABRICADO;
+  const itemRevenda = classificacao === ORIGENS_PRODUTO_OPERACIONAIS.REVENDA;
+
+  if (!itemFabricado && !itemRevenda) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_DETERMINACAO_FISCAL.CLASSIFICACAO_ITEM_INSUFICIENTE
+    );
+  }
+
+  if (pendencias.size > 0) {
+    adicionarPendencia(pendencias, PENDENCIAS_DETERMINACAO_FISCAL.CFOP_NAO_DETERMINADO);
+    return {
+      cfopEfetivo: null,
+      fonteCfop: null,
+      pendencias: [...pendencias].sort(),
+    };
+  }
+
+  if (itemFabricado && destinoOperacao === DESTINOS_OPERACAO.INTERNA) {
+    return {
+      cfopEfetivo: "5101",
+      fonteCfop: criarFonteCfop("venda_producao_interna"),
+      pendencias: [],
+    };
+  }
+
+  if (itemFabricado && destinoOperacao === DESTINOS_OPERACAO.INTERESTADUAL) {
+    return {
+      cfopEfetivo: "6101",
+      fonteCfop: criarFonteCfop("venda_producao_interestadual"),
+      pendencias: [],
+    };
+  }
+
+  if (itemRevenda && destinoOperacao === DESTINOS_OPERACAO.INTERNA) {
+    return {
+      cfopEfetivo: "5102",
+      fonteCfop: criarFonteCfop("venda_revenda_interna"),
+      pendencias: [],
+    };
+  }
+
+  if (itemRevenda && destinoOperacao === DESTINOS_OPERACAO.INTERESTADUAL) {
+    return {
+      cfopEfetivo: "6102",
+      fonteCfop: criarFonteCfop("venda_revenda_interestadual"),
+      pendencias: [],
+    };
+  }
+
+  return {
+    cfopEfetivo: null,
+    fonteCfop: null,
+    pendencias: [PENDENCIAS_DETERMINACAO_FISCAL.CFOP_NAO_DETERMINADO],
+  };
+};
+
+const determinarFiscalFaturamento = (faturamento = {}) => {
+  const operacao = obterContextoOperacaoFiscal(faturamento);
+  const origemFaturamento = textoSeguro(faturamento.origem?.tipo);
+  const itens = Array.isArray(faturamento.itens) ? faturamento.itens : [];
+  const pendencias = new Set();
+
+  if (!textoPreenchido(faturamento.contextoFiscal?.emitente?.regimeTributario)) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_DETERMINACAO_FISCAL.REGIME_TRIBUTARIO_AUSENTE
+    );
+  }
+
+  const itensDeterminados = itens.map((item, indice) => {
+    const resultado = determinarCfopItem({
+      item,
+      operacao,
+      origemFaturamento,
+    });
+
+    resultado.pendencias.forEach((pendencia) => adicionarPendencia(pendencias, pendencia));
+
+    return {
+      origemItemId: textoSeguro(item?.origemItemId),
+      indice,
+      cfopEfetivo: resultado.cfopEfetivo,
+      fonteCfop: resultado.fonteCfop,
+      pendencias: resultado.pendencias,
+    };
+  });
+
+  return congelarProfundo({
+    versao: VERSAO_DETERMINACAO_FISCAL,
+    regraVersao: REGRA_DETERMINACAO_FISCAL,
+    operacao,
+    itens: itensDeterminados,
+    pendencias: [...pendencias].sort(),
+  });
+};
+
 const faturamentoApi = {
   DESTINOS_OPERACAO,
   FINALIDADES_OPERACAO,
   FINALIDADES_OPERACAO_SUPORTADAS,
   INDICADORES_IE_DESTINATARIO,
+  PENDENCIAS_DETERMINACAO_FISCAL,
   PENDENCIAS_FATURAMENTO,
   PENDENCIAS_PREPARACAO_FATURAMENTO,
   PRESENCAS_COMPRADOR,
   criarContextoOperacionalFaturamento,
   criarFaturamentoVenda,
+  determinarCfopItem,
+  determinarFiscalFaturamento,
   derivarDestinoOperacao,
   validarPreparacaoFaturamento,
 };

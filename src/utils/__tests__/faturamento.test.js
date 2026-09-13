@@ -3,11 +3,13 @@ import test from "node:test";
 
 import {
   INDICADORES_IE_DESTINATARIO,
+  PENDENCIAS_DETERMINACAO_FISCAL,
   PENDENCIAS_FATURAMENTO,
   PENDENCIAS_PREPARACAO_FATURAMENTO,
   PRESENCAS_COMPRADOR,
   criarContextoOperacionalFaturamento,
   criarFaturamentoVenda,
+  determinarFiscalFaturamento,
   derivarDestinoOperacao,
   validarPreparacaoFaturamento,
 } from "../faturamento.js";
@@ -43,6 +45,11 @@ const fiscalItemSnapshot = () => ({
   cfopPadrao: "5102",
   origem: "0",
   unidadeTributavel: "un",
+});
+
+const fiscalItemSnapshotClassificado = (origemProduto) => ({
+  ...fiscalItemSnapshot(),
+  origemProduto,
 });
 
 const vendaBase = (sobrescritas = {}) => ({
@@ -659,4 +666,324 @@ test("derivacao de destino nao classifica exterior sem estrutura internacional",
     }),
     null
   );
+});
+
+test("determina CFOP 5101 para produto proprio em operacao interna", () => {
+  const faturamento = faturamentoComContextoOperacional({
+    segmento: "industria",
+    venda: vendaBase({
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("fabricado"),
+        },
+      ],
+    }),
+  });
+
+  const determinacao = determinarFiscalFaturamento(faturamento);
+
+  assert.equal(determinacao.versao, 1);
+  assert.equal(determinacao.regraVersao, "fiscal_v1");
+  assert.equal(determinacao.itens[0].cfopEfetivo, "5101");
+  assert.deepEqual(determinacao.itens[0].fonteCfop, {
+    regra: "venda_producao_interna",
+    regraVersao: "fiscal_v1",
+  });
+  assert.deepEqual(determinacao.pendencias, []);
+});
+
+test("determina CFOP 6101 para produto proprio em operacao interestadual", () => {
+  const faturamento = faturamentoComContextoOperacional({
+    segmento: "industria",
+    venda: vendaBase({
+      destinatarioSnapshot: {
+        ...destinatarioSnapshot(),
+        uf: "SP",
+      },
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("fabricado"),
+        },
+      ],
+    }),
+  });
+
+  assert.equal(determinarFiscalFaturamento(faturamento).itens[0].cfopEfetivo, "6101");
+});
+
+test("determina CFOP 5102 para revenda em operacao interna", () => {
+  const faturamento = faturamentoComContextoOperacional({
+    venda: vendaBase({
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("revenda"),
+        },
+      ],
+    }),
+  });
+
+  assert.equal(determinarFiscalFaturamento(faturamento).itens[0].cfopEfetivo, "5102");
+});
+
+test("determina CFOP 6102 para revenda em operacao interestadual", () => {
+  const faturamento = faturamentoComContextoOperacional({
+    venda: vendaBase({
+      destinatarioSnapshot: {
+        ...destinatarioSnapshot(),
+        uf: "SP",
+      },
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("revenda"),
+        },
+      ],
+    }),
+  });
+
+  assert.equal(determinarFiscalFaturamento(faturamento).itens[0].cfopEfetivo, "6102");
+});
+
+test("classificacao ausente nao determina CFOP e registra pendencia", () => {
+  const faturamento = faturamentoComContextoOperacional();
+  const determinacao = determinarFiscalFaturamento(faturamento);
+
+  assert.equal(determinacao.itens[0].cfopEfetivo, null);
+  assert.deepEqual(determinacao.itens[0].pendencias, [
+    PENDENCIAS_DETERMINACAO_FISCAL.CFOP_NAO_DETERMINADO,
+    PENDENCIAS_DETERMINACAO_FISCAL.CLASSIFICACAO_ITEM_INSUFICIENTE,
+  ]);
+});
+
+test("destino ausente nao determina CFOP", () => {
+  const faturamento = faturamentoComContextoOperacional({
+    venda: vendaBase({
+      destinatarioSnapshot: {
+        ...destinatarioSnapshot(),
+        uf: "",
+      },
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("revenda"),
+        },
+      ],
+    }),
+  });
+  const determinacao = determinarFiscalFaturamento(faturamento);
+
+  assert.equal(determinacao.itens[0].cfopEfetivo, null);
+  assert.equal(
+    determinacao.itens[0].pendencias.includes(
+      PENDENCIAS_DETERMINACAO_FISCAL.DESTINO_OPERACAO_NAO_SUPORTADO
+    ),
+    true
+  );
+});
+
+test("finalidade diferente de normal nao determina CFOP", () => {
+  const faturamento = faturamentoComContextoOperacional({
+    venda: vendaBase({
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("revenda"),
+        },
+      ],
+    }),
+  });
+  const determinacao = determinarFiscalFaturamento({
+    ...faturamento,
+    contextoFiscal: {
+      ...faturamento.contextoFiscal,
+      operacao: {
+        ...faturamento.contextoFiscal.operacao,
+        finalidadeOperacao: "devolucao",
+      },
+    },
+  });
+
+  assert.equal(determinacao.itens[0].cfopEfetivo, null);
+  assert.equal(
+    determinacao.itens[0].pendencias.includes(
+      PENDENCIAS_DETERMINACAO_FISCAL.FINALIDADE_OPERACAO_NAO_SUPORTADA
+    ),
+    true
+  );
+});
+
+test("determina multiplos itens com classificacoes distintas", () => {
+  const itemBase = vendaBase().itens[0];
+  const faturamento = faturamentoComContextoOperacional({
+    venda: vendaBase({
+      itens: [
+        {
+          ...itemBase,
+          produtoId: "produto-fabricado",
+          fiscalSnapshot: fiscalItemSnapshotClassificado("fabricado"),
+        },
+        {
+          ...itemBase,
+          produtoId: "produto-revenda",
+          fiscalSnapshot: fiscalItemSnapshotClassificado("revenda"),
+        },
+      ],
+    }),
+  });
+  const determinacao = determinarFiscalFaturamento(faturamento);
+
+  assert.deepEqual(
+    determinacao.itens.map((item) => item.cfopEfetivo),
+    ["5101", "5102"]
+  );
+});
+
+test("determinacao fiscal nao muta faturamento original", () => {
+  const faturamento = faturamentoComContextoOperacional({
+    venda: vendaBase({
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("fabricado"),
+        },
+      ],
+    }),
+  });
+  const cloneAntes = structuredClone(faturamento);
+
+  determinarFiscalFaturamento(faturamento);
+
+  assert.deepEqual(faturamento, cloneAntes);
+});
+
+test("determinacao fiscal e deterministica", () => {
+  const faturamento = faturamentoComContextoOperacional({
+    venda: vendaBase({
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("revenda"),
+        },
+      ],
+    }),
+  });
+
+  assert.deepEqual(
+    determinarFiscalFaturamento(faturamento),
+    determinarFiscalFaturamento(faturamento)
+  );
+});
+
+test("cfopPadrao nao vira CFOP efetivo sem classificacao operacional", () => {
+  const faturamento = faturamentoComContextoOperacional({
+    venda: vendaBase({
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: {
+            ...fiscalItemSnapshot(),
+            cfopPadrao: "5102",
+          },
+        },
+      ],
+    }),
+  });
+  const determinacao = determinarFiscalFaturamento(faturamento);
+
+  assert.equal(determinacao.itens[0].cfopEfetivo, null);
+  assert.equal(
+    determinacao.itens[0].pendencias.includes(
+      PENDENCIAS_DETERMINACAO_FISCAL.CLASSIFICACAO_ITEM_INSUFICIENTE
+    ),
+    true
+  );
+});
+
+test("consumidor final nao altera CFOP nesta V1", () => {
+  const faturamentoBase = faturamentoComContextoOperacional({
+    venda: vendaBase({
+      destinatarioSnapshot: {
+        ...destinatarioSnapshot(),
+        uf: "SP",
+      },
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("revenda"),
+        },
+      ],
+    }),
+  });
+
+  assert.equal(
+    determinarFiscalFaturamento({
+      ...faturamentoBase,
+      contextoFiscal: {
+        ...faturamentoBase.contextoFiscal,
+        operacao: {
+          ...faturamentoBase.contextoFiscal.operacao,
+          consumidorFinal: false,
+        },
+      },
+    }).itens[0].cfopEfetivo,
+    "6102"
+  );
+  assert.equal(determinarFiscalFaturamento(faturamentoBase).itens[0].cfopEfetivo, "6102");
+});
+
+test("indicador IE nao altera CFOP isoladamente nesta V1", () => {
+  const faturamentoBase = faturamentoComContextoOperacional({
+    venda: vendaBase({
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("fabricado"),
+        },
+      ],
+    }),
+  });
+
+  assert.equal(
+    determinarFiscalFaturamento({
+      ...faturamentoBase,
+      contextoFiscal: {
+        ...faturamentoBase.contextoFiscal,
+        operacao: {
+          ...faturamentoBase.contextoFiscal.operacao,
+          indicadorIEDestinatario: INDICADORES_IE_DESTINATARIO.CONTRIBUINTE,
+        },
+      },
+    }).itens[0].cfopEfetivo,
+    "5101"
+  );
+});
+
+test("regime tributario ausente gera pendencia sem calcular CST ou CSOSN", () => {
+  const faturamento = faturamentoComContextoOperacional({
+    venda: vendaBase({
+      fiscalEmpresaSnapshot: {
+        ...fiscalEmpresaSnapshot(),
+        regimeTributario: "",
+      },
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("revenda"),
+        },
+      ],
+    }),
+  });
+  const determinacao = determinarFiscalFaturamento(faturamento);
+
+  assert.equal(
+    determinacao.pendencias.includes(
+      PENDENCIAS_DETERMINACAO_FISCAL.REGIME_TRIBUTARIO_AUSENTE
+    ),
+    true
+  );
+  assert.equal(Object.hasOwn(determinacao, "cst"), false);
+  assert.equal(Object.hasOwn(determinacao, "csosn"), false);
 });
