@@ -31,6 +31,13 @@ test("identifica modulos por segmento", () => {
   assert.equal(segmentoPossuiModulo("comercio", "agenda"), false);
 });
 
+test("producao pertence somente ao segmento industria", () => {
+  assert.equal(segmentoPossuiModulo("industria", "producao"), true);
+  assert.equal(segmentoPossuiModulo("comercio", "producao"), false);
+  assert.equal(segmentoPossuiModulo("oficina", "producao"), false);
+  assert.equal(segmentoPossuiModulo("clientes", "producao"), false);
+});
+
 test("relatorios pertence aos quatro segmentos", () => {
   for (const segmento of ["comercio", "industria", "oficina", "clientes"]) {
     assert.equal(segmentoPossuiModulo(segmento, "relatorios"), true);

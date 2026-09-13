@@ -17,6 +17,7 @@ import {
   calcularEstoqueInsumos,
   calcularEstoqueProdutos,
 } from "../utils/estoqueProdutos";
+import { segmentoPossuiModulo } from "../config/segmentosEmpresa";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import saasLogo from "../assets/saas-logo.png";
@@ -390,6 +391,10 @@ export default function Relatorios() {
   const empresaAtiva = (empresas || []).find(
     (empresa) => empresa.id === empresaId
   );
+  const segmentoPossuiProducao = segmentoPossuiModulo(
+    empresaAtiva?.segmento,
+    "producao"
+  );
 
   const dadosEmpresaPDF = {
   nome:
@@ -457,13 +462,15 @@ export default function Relatorios() {
       Icone: PackageSearch,
       cor: "purple",
     },
-    {
-      tipo: "producao",
-      titulo: "Relatório de Produção",
-      descricao: "Produções realizadas, custo real e quantidade produzida.",
-      Icone: Factory,
-      cor: "slate",
-    },
+    ...(segmentoPossuiProducao
+      ? [{
+          tipo: "producao",
+          titulo: "Relatório de Produção",
+          descricao: "Produções realizadas, custo real e quantidade produzida.",
+          Icone: Factory,
+          cor: "slate",
+        }]
+      : []),
     {
       tipo: "insumos",
       titulo: "Relatório de Insumos",
@@ -1289,8 +1296,9 @@ export default function Relatorios() {
 
         {clienteSelecionado && (
           <p className="reports-filter-note">
-            Vendas, Financeiro e DRE respeitam o cliente selecionado. Produção,
-            Estoque e Insumos continuam como relatórios operacionais da empresa.
+            Vendas, Financeiro e DRE respeitam o cliente selecionado.{" "}
+            {segmentoPossuiProducao ? "Produção, Estoque e Insumos" : "Estoque e Insumos"}{" "}
+            continuam como relatórios operacionais da empresa.
           </p>
         )}
       </div>
@@ -1348,14 +1356,16 @@ export default function Relatorios() {
           <small>Lucro bruto sobre vendas</small>
         </div>
 
-        <div className="reports-kpi-card reports-kpi-slate">
-          <span className="reports-kpi-icon">
-            <Factory size={18} />
-          </span>
-          <p>Produção</p>
-          <strong>{inteiroBR(totalProduzido)}</strong>
-          <small>Quantidade produzida no período</small>
-        </div>
+        {segmentoPossuiProducao && (
+          <div className="reports-kpi-card reports-kpi-slate">
+            <span className="reports-kpi-icon">
+              <Factory size={18} />
+            </span>
+            <p>Produção</p>
+            <strong>{inteiroBR(totalProduzido)}</strong>
+            <small>Quantidade produzida no período</small>
+          </div>
+        )}
       </div>
 
       {/* ================================

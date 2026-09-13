@@ -806,25 +806,63 @@ export default function Vendas() {
     const elemento = document.createElement("div");
     const logoPDF = dadosEmpresaPDF.logoBase64 || saasLogo;
     const pagamentoPDF = normalizarPagamento(venda);
+    const numeroPedidoPDF =
+      venda.numeroPedido || `PED-${String(index + 1).padStart(4, "0")}`;
+    const dataGeracaoPDF = new Date();
+    const dataEmissaoPDF = dataGeracaoPDF.toLocaleDateString("pt-BR");
+    const rodapeGeracaoPDF = dataGeracaoPDF.toLocaleString("pt-BR");
+    const destinatarioSnapshot = venda.destinatarioSnapshot || {};
+    const clienteNomePDF = textoSeguro(
+      destinatarioSnapshot.nome ||
+        venda.clienteNome ||
+        venda.nomeCliente ||
+        venda.cliente,
+      "Cliente não informado"
+    );
+    const telefoneClientePDF = textoSeguro(
+      destinatarioSnapshot.telefone || venda.clienteTelefone,
+      ""
+    );
+    const documentoClientePDF = textoSeguro(destinatarioSnapshot.documento, "");
+    const emailClientePDF = textoSeguro(destinatarioSnapshot.email, "");
+    const enderecoClientePDF = textoSeguro(destinatarioSnapshot.endereco, "");
+    const cidadeUfClientePDF = [
+      destinatarioSnapshot.cidade,
+      destinatarioSnapshot.uf,
+    ].filter(Boolean).join("/");
+    const observacoesPedido = textoSeguro(
+      venda.observacoes || venda.observacao,
+      ""
+    );
+    const linhaClienteOpcional = (label, valor) =>
+      valor ? `<p style="margin:4px 0;"><strong>${label}:</strong> ${valor}</p>` : "";
     const dataPagamentoPDF = pagamentoPDF.dataPagamento
-      ? `<p><strong>Data do pagamento:</strong> ${dataBR(pagamentoPDF.dataPagamento)}</p>`
+      ? `<p style="margin:4px 0;"><strong>Data do pagamento:</strong> ${dataBR(pagamentoPDF.dataPagamento)}</p>`
       : "";
     const observacaoPagamentoPDF = pagamentoPDF.observacaoPagamento
-      ? `<p><strong>Observação do pagamento:</strong> ${textoSeguro(
+      ? `<p style="margin:4px 0;"><strong>Observação do pagamento:</strong> ${textoSeguro(
           pagamentoPDF.observacaoPagamento
         )}</p>`
       : "";
+    const observacoesPDF = observacoesPedido
+      ? `
+        <div style="margin-top:18px; border:1px solid #e5e7eb; border-radius:10px; padding:14px;">
+          <h2 style="margin:0 0 8px; font-size:14px; letter-spacing:.04em; color:#111827;">OBSERVAÇÕES</h2>
+          <p style="margin:0; line-height:1.5;">${observacoesPedido}</p>
+        </div>
+      `
+      : "";
 
     elemento.innerHTML = `
-      <div style="font-family: Arial, sans-serif; padding: 25px; color: #111827;">
-        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #111827; padding-bottom:15px; margin-bottom:20px;">
-          <div style="display:flex; gap:14px; align-items:center;">
-            <div style="background:#f8fafc; padding:8px; border:1px solid #e5e7eb; border-radius:8px;">
-              <img src="${logoPDF}" style="width:160px; max-height:58px; object-fit:contain;" />
+      <div style="font-family: Arial, sans-serif; padding: 22px; color: #111827; font-size: 12px;">
+        <div style="display:flex; justify-content:space-between; gap:18px; border:1px solid #d1d5db; border-radius:12px; padding:16px; margin-bottom:18px;">
+          <div style="display:flex; gap:14px; align-items:flex-start; min-width:0;">
+            <div style="background:#f8fafc; padding:8px; border:1px solid #e5e7eb; border-radius:8px; flex:0 0 auto;">
+              <img src="${logoPDF}" style="width:128px; max-height:56px; object-fit:contain;" />
             </div>
 
-            <div style="line-height:1.35;">
-              <h2 style="margin:0; font-size:18px;">${textoSeguro(dadosEmpresaPDF.nome, NOME_SAAS)}</h2>
+            <div style="line-height:1.4; min-width:0;">
+              <h2 style="margin:0 0 6px; font-size:18px; color:#0f172a;">${textoSeguro(dadosEmpresaPDF.nome, NOME_SAAS)}</h2>
               <p style="margin:3px 0;">CNPJ: ${textoSeguro(dadosEmpresaPDF.cnpj)}</p>
               <p style="margin:3px 0;">Cidade: ${textoSeguro(dadosEmpresaPDF.cidade)}</p>
               ${
@@ -840,33 +878,44 @@ export default function Vendas() {
             </div>
           </div>
 
-          <div style="text-align:right;">
-            <h1 style="margin:0; font-size:26px;">PEDIDO DE VENDA</h1>
-            <p style="margin:5px 0;">Nº ${
-              venda.numeroPedido || `PED-${String(index + 1).padStart(4, "0")}`
-            }</p>
+          <div style="text-align:right; flex:0 0 170px;">
+            <h1 style="margin:0; font-size:22px; color:#0f172a;">PEDIDO DE VENDA</h1>
+            <p style="margin:8px 0 4px; font-size:14px;"><strong>Nº ${numeroPedidoPDF}</strong></p>
+            <p style="margin:4px 0;">Emissão: ${dataEmissaoPDF}</p>
           </div>
         </div>
 
-        <div style="margin-bottom:20px; line-height:1.6;">
-          <p><strong>Cliente:</strong> ${textoSeguro(venda.cliente)}</p>
-          <p><strong>Data:</strong> ${dataBR(venda.data)}</p>
-          <p><strong>Status:</strong> ${venda.statusExpedicao || "Pendente"}</p>
-          <p><strong>Status do pagamento:</strong> ${formatarStatusPagamento(pagamentoPDF.statusPagamento)}</p>
-          <p><strong>Forma de pagamento:</strong> ${formatarFormaPagamento(pagamentoPDF.formaPagamento)}</p>
-          ${dataPagamentoPDF}
-          ${observacaoPagamentoPDF}
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:18px;">
+          <div style="border:1px solid #e5e7eb; border-radius:10px; padding:14px; line-height:1.5;">
+            <h2 style="margin:0 0 8px; font-size:14px; letter-spacing:.04em; color:#111827;">DADOS DO CLIENTE</h2>
+            <p style="margin:4px 0;"><strong>Cliente:</strong> ${clienteNomePDF}</p>
+            ${linhaClienteOpcional("CPF/CNPJ", documentoClientePDF)}
+            ${linhaClienteOpcional("Telefone", telefoneClientePDF)}
+            ${linhaClienteOpcional("E-mail", emailClientePDF)}
+            ${linhaClienteOpcional("Endereço", enderecoClientePDF)}
+            ${linhaClienteOpcional("Cidade/UF", cidadeUfClientePDF)}
+          </div>
+
+          <div style="border:1px solid #e5e7eb; border-radius:10px; padding:14px; line-height:1.5;">
+            <h2 style="margin:0 0 8px; font-size:14px; letter-spacing:.04em; color:#111827;">INFORMAÇÕES DO PEDIDO</h2>
+            <p style="margin:4px 0;"><strong>Data do pedido:</strong> ${dataBR(venda.data)}</p>
+            <p style="margin:4px 0;"><strong>Status do pedido:</strong> ${venda.statusExpedicao || "Pendente"}</p>
+            <p style="margin:4px 0;"><strong>Status do pagamento:</strong> ${formatarStatusPagamento(pagamentoPDF.statusPagamento)}</p>
+            <p style="margin:4px 0;"><strong>Forma de pagamento:</strong> ${formatarFormaPagamento(pagamentoPDF.formaPagamento)}</p>
+            ${dataPagamentoPDF}
+            ${observacaoPagamentoPDF}
+          </div>
         </div>
 
-        <table style="width:100%; border-collapse:collapse; margin-top:15px;">
+        <table style="width:100%; border-collapse:collapse; margin-top:15px; page-break-inside:auto;">
           <thead>
             <tr>
-              <th style="border:1px solid #d1d5db; padding:10px; background:#f1f5f9;">Produto</th>
-              <th style="border:1px solid #d1d5db; padding:10px; background:#f1f5f9;">Qtd</th>
-              <th style="border:1px solid #d1d5db; padding:10px; background:#f1f5f9;">Valor Unit.</th>
-              <th style="border:1px solid #d1d5db; padding:10px; background:#f1f5f9;">Bruto</th>
-              <th style="border:1px solid #d1d5db; padding:10px; background:#f1f5f9;">Desconto</th>
-              <th style="border:1px solid #d1d5db; padding:10px; background:#f1f5f9;">Total</th>
+              <th style="border:1px solid #d1d5db; padding:9px; background:#f1f5f9; text-align:left;">Produto</th>
+              <th style="border:1px solid #d1d5db; padding:9px; background:#f1f5f9; text-align:right;">Qtd</th>
+              <th style="border:1px solid #d1d5db; padding:9px; background:#f1f5f9; text-align:right;">Valor Unit.</th>
+              <th style="border:1px solid #d1d5db; padding:9px; background:#f1f5f9; text-align:right;">Bruto</th>
+              <th style="border:1px solid #d1d5db; padding:9px; background:#f1f5f9; text-align:right;">Desconto</th>
+              <th style="border:1px solid #d1d5db; padding:9px; background:#f1f5f9; text-align:right;">Total</th>
             </tr>
           </thead>
 
@@ -874,13 +923,13 @@ export default function Vendas() {
             ${itensPedido
               .map(
                 (item) => `
-                  <tr>
-                    <td style="border:1px solid #d1d5db; padding:10px;">${textoSeguro(item?.produto)}</td>
-                    <td style="border:1px solid #d1d5db; padding:10px;">${item?.quantidade || 0}</td>
-                    <td style="border:1px solid #d1d5db; padding:10px;">R$ ${numeroBR(item?.valorUnitario || 0, 2)}</td>
-                    <td style="border:1px solid #d1d5db; padding:10px;">R$ ${numeroBR(item?.valorBruto || 0, 2)}</td>
-                    <td style="border:1px solid #d1d5db; padding:10px;">R$ ${numeroBR(item?.desconto || 0, 2)}</td>
-                    <td style="border:1px solid #d1d5db; padding:10px;">R$ ${numeroBR(item?.total || 0, 2)}</td>
+                  <tr style="page-break-inside:avoid;">
+                    <td style="border:1px solid #d1d5db; padding:9px;">${textoSeguro(item?.produtoNome || item?.produto)}</td>
+                    <td style="border:1px solid #d1d5db; padding:9px; text-align:right;">${item?.quantidade || 0}</td>
+                    <td style="border:1px solid #d1d5db; padding:9px; text-align:right;">R$ ${numeroBR(item?.valorUnitario || 0, 2)}</td>
+                    <td style="border:1px solid #d1d5db; padding:9px; text-align:right;">R$ ${numeroBR(item?.valorBruto || 0, 2)}</td>
+                    <td style="border:1px solid #d1d5db; padding:9px; text-align:right;">R$ ${numeroBR(item?.desconto || 0, 2)}</td>
+                    <td style="border:1px solid #d1d5db; padding:9px; text-align:right;">R$ ${numeroBR(item?.total || 0, 2)}</td>
                   </tr>
                 `
               )
@@ -888,34 +937,34 @@ export default function Vendas() {
           </tbody>
         </table>
 
-        <div style="margin-top:25px; width:320px; margin-left:auto; border:1px solid #d1d5db; padding:15px;">
-          <p style="display:flex; justify-content:space-between;">
+        <div style="margin-top:22px; width:320px; margin-left:auto; border:1px solid #d1d5db; border-radius:10px; padding:14px;">
+          <p style="display:flex; justify-content:space-between; margin:4px 0 8px;">
             <span>Valor bruto:</span>
             <strong>R$ ${numeroBR(venda.valorBruto || 0, 2)}</strong>
           </p>
 
-          <p style="display:flex; justify-content:space-between;">
+          <p style="display:flex; justify-content:space-between; margin:4px 0 8px;">
             <span>Desconto:</span>
             <strong>R$ ${numeroBR(venda.desconto || 0, 2)}</strong>
           </p>
 
-          <p style="display:flex; justify-content:space-between; font-size:18px; font-weight:bold; border-top:1px solid #d1d5db; padding-top:10px;">
-            <span>Total:</span>
+          <p style="display:flex; justify-content:space-between; font-size:17px; font-weight:bold; border-top:1px solid #d1d5db; padding-top:10px; margin:10px 0 0;">
+            <span>Total do pedido:</span>
             <strong>R$ ${numeroBR(venda.total || 0, 2)}</strong>
           </p>
         </div>
 
+        ${observacoesPDF}
+
         <div style="margin-top:45px; font-size:12px; color:#555; text-align:center;">
-          <p>Gerado pelo ${NOME_SAAS}</p>
+          <p>Gerado pelo ${NOME_SAAS} em ${rodapeGeracaoPDF}</p>
         </div>
       </div>
     `;
 
     const opcoes = {
       margin: 8,
-      filename: `${
-        venda.numeroPedido || `PED-${String(index + 1).padStart(4, "0")}`
-      }_${textoSeguro(venda.cliente, "cliente")}.pdf`,
+      filename: `${numeroPedidoPDF}_${textoSeguro(venda.cliente, "cliente")}.pdf`,
       image: { type: "jpeg", quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
