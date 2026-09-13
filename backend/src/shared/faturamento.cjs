@@ -19,6 +19,17 @@ const PENDENCIAS_PREPARACAO_FATURAMENTO = Object.freeze({
   ITEM_TOTAL_INVALIDO: "item_total_invalido",
   ITEM_NCM_AUSENTE: "item_ncm_ausente",
   ITEM_UNIDADE_TRIBUTAVEL_AUSENTE: "item_unidade_tributavel_ausente",
+  FINALIDADE_OPERACAO_AUSENTE: "finalidade_operacao_ausente",
+  FINALIDADE_OPERACAO_INVALIDA: "finalidade_operacao_invalida",
+  PRESENCA_COMPRADOR_AUSENTE: "presenca_comprador_ausente",
+  PRESENCA_COMPRADOR_INVALIDA: "presenca_comprador_invalida",
+  CONSUMIDOR_FINAL_NAO_INFORMADO: "consumidor_final_nao_informado",
+  CONSUMIDOR_FINAL_INVALIDO: "consumidor_final_invalido",
+  INDICADOR_IE_DESTINATARIO_AUSENTE: "indicador_ie_destinatario_ausente",
+  INDICADOR_IE_DESTINATARIO_INVALIDO: "indicador_ie_destinatario_invalido",
+  DESTINO_OPERACAO_INDETERMINADO: "destino_operacao_indeterminado",
+  DESTINO_OPERACAO_INVALIDO: "destino_operacao_invalido",
+  NATUREZA_OPERACAO_AUSENTE: "natureza_operacao_ausente",
 });
 
 const ORDEM_PENDENCIAS_PREPARACAO = Object.freeze([
@@ -38,11 +49,85 @@ const ORDEM_PENDENCIAS_PREPARACAO = Object.freeze([
   PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_TOTAL_INVALIDO,
   PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_NCM_AUSENTE,
   PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_UNIDADE_TRIBUTAVEL_AUSENTE,
+  PENDENCIAS_PREPARACAO_FATURAMENTO.FINALIDADE_OPERACAO_AUSENTE,
+  PENDENCIAS_PREPARACAO_FATURAMENTO.FINALIDADE_OPERACAO_INVALIDA,
+  PENDENCIAS_PREPARACAO_FATURAMENTO.PRESENCA_COMPRADOR_AUSENTE,
+  PENDENCIAS_PREPARACAO_FATURAMENTO.PRESENCA_COMPRADOR_INVALIDA,
+  PENDENCIAS_PREPARACAO_FATURAMENTO.CONSUMIDOR_FINAL_NAO_INFORMADO,
+  PENDENCIAS_PREPARACAO_FATURAMENTO.CONSUMIDOR_FINAL_INVALIDO,
+  PENDENCIAS_PREPARACAO_FATURAMENTO.INDICADOR_IE_DESTINATARIO_AUSENTE,
+  PENDENCIAS_PREPARACAO_FATURAMENTO.INDICADOR_IE_DESTINATARIO_INVALIDO,
+  PENDENCIAS_PREPARACAO_FATURAMENTO.DESTINO_OPERACAO_INDETERMINADO,
+  PENDENCIAS_PREPARACAO_FATURAMENTO.DESTINO_OPERACAO_INVALIDO,
+  PENDENCIAS_PREPARACAO_FATURAMENTO.NATUREZA_OPERACAO_AUSENTE,
 ]);
+
+const FINALIDADES_OPERACAO = Object.freeze({
+  NORMAL: "normal",
+  DEVOLUCAO: "devolucao",
+  COMPLEMENTAR: "complementar",
+  AJUSTE: "ajuste",
+});
+const FINALIDADES_OPERACAO_SUPORTADAS = Object.freeze([
+  FINALIDADES_OPERACAO.NORMAL,
+]);
+const PRESENCAS_COMPRADOR = Object.freeze({
+  PRESENCIAL: "presencial",
+  INTERNET: "internet",
+  TELEFONE: "telefone",
+  ENTREGA_DOMICILIO: "entrega_domicilio",
+  NAO_PRESENCIAL_OUTROS: "nao_presencial_outros",
+});
+const INDICADORES_IE_DESTINATARIO = Object.freeze({
+  CONTRIBUINTE: "contribuinte",
+  CONTRIBUINTE_ISENTO: "contribuinte_isento",
+  NAO_CONTRIBUINTE: "nao_contribuinte",
+});
+const DESTINOS_OPERACAO = Object.freeze({
+  INTERNA: "interna",
+  INTERESTADUAL: "interestadual",
+  EXTERIOR: "exterior",
+});
 
 const VERSAO_FATURAMENTO = 1;
 const STATUS_INICIAL = "rascunho";
 const TIPO_VENDA_PECAS = "pecas";
+const LIMITE_NATUREZA_OPERACAO = 120;
+const FINALIDADES_OPERACAO_SUPORTADAS_SET = new Set(FINALIDADES_OPERACAO_SUPORTADAS);
+const PRESENCAS_COMPRADOR_SET = new Set(Object.values(PRESENCAS_COMPRADOR));
+const INDICADORES_IE_DESTINATARIO_SET = new Set(
+  Object.values(INDICADORES_IE_DESTINATARIO)
+);
+const DESTINOS_OPERACAO_SET = new Set(Object.values(DESTINOS_OPERACAO));
+const UFS_BRASIL = new Set([
+  "AC",
+  "AL",
+  "AP",
+  "AM",
+  "BA",
+  "CE",
+  "DF",
+  "ES",
+  "GO",
+  "MA",
+  "MT",
+  "MS",
+  "MG",
+  "PA",
+  "PB",
+  "PR",
+  "PE",
+  "PI",
+  "RJ",
+  "RN",
+  "RS",
+  "RO",
+  "RR",
+  "SC",
+  "SP",
+  "SE",
+  "TO",
+]);
 
 const ehObjeto = (valor) =>
   valor !== null && typeof valor === "object" && !Array.isArray(valor);
@@ -85,9 +170,17 @@ const textoSeguro = (valor) => {
 
 const textoPreenchido = (valor) => textoSeguro(valor).trim().length > 0;
 
+const textoTratado = (valor) => textoSeguro(valor).replace(/\s+/g, " ").trim();
+
 const numeroSeguro = (valor) => {
   const numero = Number(valor);
   return Number.isFinite(numero) ? numero : 0;
+};
+
+const criarErroDominio = (codigo, mensagem) => {
+  const erro = new Error(mensagem);
+  erro.codigo = codigo;
+  return erro;
 };
 
 const obterTipoOrigem = (venda = {}) =>
@@ -171,6 +264,137 @@ const criarFaturamentoVenda = ({ venda = {}, segmento = "" } = {}) => {
   };
 
   return congelarProfundo(faturamento);
+};
+
+const normalizarUf = (uf) => {
+  const ufTratada = textoTratado(uf).toUpperCase();
+  return UFS_BRASIL.has(ufTratada) ? ufTratada : "";
+};
+
+const derivarDestinoOperacao = ({ emitente = null, destinatario = null } = {}) => {
+  const ufEmitente = normalizarUf(emitente?.uf);
+  const ufDestinatario = normalizarUf(destinatario?.uf);
+
+  if (!ufEmitente || !ufDestinatario) return null;
+
+  return ufEmitente === ufDestinatario
+    ? DESTINOS_OPERACAO.INTERNA
+    : DESTINOS_OPERACAO.INTERESTADUAL;
+};
+
+const validarEnumOperacional = ({ valor, valores, codigo, mensagem }) => {
+  if (valor === null || valor === undefined || valor === "") return null;
+  if (typeof valor !== "string" || !valores.has(valor)) {
+    throw criarErroDominio(codigo, mensagem);
+  }
+
+  return valor;
+};
+
+const validarFinalidadeOperacao = (finalidadeOperacao) => {
+  if (
+    finalidadeOperacao !== null &&
+    finalidadeOperacao !== undefined &&
+    finalidadeOperacao !== "" &&
+    !FINALIDADES_OPERACAO_SUPORTADAS_SET.has(finalidadeOperacao)
+  ) {
+    throw criarErroDominio(
+      "finalidade_operacao_invalida",
+      "Finalidade da operacao invalida."
+    );
+  }
+
+  return validarEnumOperacional({
+    valor: finalidadeOperacao,
+    valores: FINALIDADES_OPERACAO_SUPORTADAS_SET,
+    codigo: "finalidade_operacao_invalida",
+    mensagem: "Finalidade da operacao invalida.",
+  });
+};
+
+const validarConsumidorFinal = (consumidorFinal) => {
+  if (consumidorFinal === null || consumidorFinal === undefined) return null;
+  if (typeof consumidorFinal !== "boolean") {
+    throw criarErroDominio(
+      "consumidor_final_invalido",
+      "Consumidor final deve ser booleano."
+    );
+  }
+
+  return consumidorFinal;
+};
+
+const validarNaturezaOperacao = (naturezaOperacao) => {
+  if (naturezaOperacao === null || naturezaOperacao === undefined) return "";
+  if (typeof naturezaOperacao !== "string") {
+    throw criarErroDominio(
+      "natureza_operacao_invalida",
+      "Natureza da operacao invalida."
+    );
+  }
+
+  const naturezaTratada = textoTratado(naturezaOperacao);
+
+  if (naturezaTratada.length > LIMITE_NATUREZA_OPERACAO) {
+    throw criarErroDominio(
+      "natureza_operacao_invalida",
+      "Natureza da operacao muito longa."
+    );
+  }
+
+  return naturezaTratada;
+};
+
+const normalizarPayloadContextoOperacional = (payload = {}) => {
+  if (!ehObjeto(payload)) {
+    throw criarErroDominio("payload_invalido", "Payload do contexto fiscal invalido.");
+  }
+
+  return {
+    finalidadeOperacao: validarFinalidadeOperacao(payload.finalidadeOperacao),
+    presencaComprador: validarEnumOperacional({
+      valor: payload.presencaComprador,
+      valores: PRESENCAS_COMPRADOR_SET,
+      codigo: "presenca_comprador_invalida",
+      mensagem: "Presenca do comprador invalida.",
+    }),
+    consumidorFinal: validarConsumidorFinal(payload.consumidorFinal),
+    indicadorIEDestinatario: validarEnumOperacional({
+      valor: payload.indicadorIEDestinatario,
+      valores: INDICADORES_IE_DESTINATARIO_SET,
+      codigo: "indicador_ie_destinatario_invalido",
+      mensagem: "Indicador de IE do destinatario invalido.",
+    }),
+    naturezaOperacao: validarNaturezaOperacao(payload.naturezaOperacao),
+  };
+};
+
+const criarContextoOperacionalFaturamento = ({
+  faturamento = {},
+  payload = {},
+} = {}) => {
+  const contextoFiscal = ehObjeto(faturamento.contextoFiscal)
+    ? faturamento.contextoFiscal
+    : {};
+  const operacaoAtual = ehObjeto(contextoFiscal.operacao)
+    ? contextoFiscal.operacao
+    : {};
+  const dadosOperacionais = normalizarPayloadContextoOperacional(payload);
+
+  return congelarProfundo({
+    tipoOperacao: textoSeguro(operacaoAtual.tipoOperacao),
+    segmento: textoSeguro(operacaoAtual.segmento),
+    dataOperacao: clonarProfundo(operacaoAtual.dataOperacao || ""),
+    finalidadeOperacao: dadosOperacionais.finalidadeOperacao,
+    presencaComprador: dadosOperacionais.presencaComprador,
+    consumidorFinal: dadosOperacionais.consumidorFinal,
+    indicadorIEDestinatario: dadosOperacionais.indicadorIEDestinatario,
+    destinoOperacao: derivarDestinoOperacao({
+      emitente: contextoFiscal.emitente,
+      destinatario: contextoFiscal.destinatario,
+    }),
+    naturezaOperacao: dadosOperacionais.naturezaOperacao,
+  });
 };
 
 const adicionarPendencia = (pendencias, codigo) => {
@@ -277,6 +501,105 @@ const validarItemPreparacao = (item, pendencias) => {
   }
 };
 
+const validarOperacaoPreparacao = (faturamento, pendencias) => {
+  const operacao = faturamento?.contextoFiscal?.operacao;
+
+  if (!ehObjeto(operacao)) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.FINALIDADE_OPERACAO_AUSENTE
+    );
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.PRESENCA_COMPRADOR_AUSENTE
+    );
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.CONSUMIDOR_FINAL_NAO_INFORMADO
+    );
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.INDICADOR_IE_DESTINATARIO_AUSENTE
+    );
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.DESTINO_OPERACAO_INDETERMINADO
+    );
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.NATUREZA_OPERACAO_AUSENTE
+    );
+    return;
+  }
+
+  if (!textoPreenchido(operacao.finalidadeOperacao)) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.FINALIDADE_OPERACAO_AUSENTE
+    );
+  } else if (!FINALIDADES_OPERACAO_SUPORTADAS_SET.has(operacao.finalidadeOperacao)) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.FINALIDADE_OPERACAO_INVALIDA
+    );
+  }
+
+  if (!textoPreenchido(operacao.presencaComprador)) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.PRESENCA_COMPRADOR_AUSENTE
+    );
+  } else if (!PRESENCAS_COMPRADOR_SET.has(operacao.presencaComprador)) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.PRESENCA_COMPRADOR_INVALIDA
+    );
+  }
+
+  if (operacao.consumidorFinal === null || operacao.consumidorFinal === undefined) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.CONSUMIDOR_FINAL_NAO_INFORMADO
+    );
+  } else if (typeof operacao.consumidorFinal !== "boolean") {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.CONSUMIDOR_FINAL_INVALIDO
+    );
+  }
+
+  if (!textoPreenchido(operacao.indicadorIEDestinatario)) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.INDICADOR_IE_DESTINATARIO_AUSENTE
+    );
+  } else if (!INDICADORES_IE_DESTINATARIO_SET.has(operacao.indicadorIEDestinatario)) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.INDICADOR_IE_DESTINATARIO_INVALIDO
+    );
+  }
+
+  if (!textoPreenchido(operacao.destinoOperacao)) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.DESTINO_OPERACAO_INDETERMINADO
+    );
+  } else if (!DESTINOS_OPERACAO_SET.has(operacao.destinoOperacao)) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.DESTINO_OPERACAO_INVALIDO
+    );
+  }
+
+  if (!textoPreenchido(operacao.naturezaOperacao)) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.NATUREZA_OPERACAO_AUSENTE
+    );
+  }
+};
+
 const ordenarPendenciasPreparacao = (pendencias) => {
   const pendenciasSet = new Set(pendencias);
   const ordenadas = ORDEM_PENDENCIAS_PREPARACAO.filter((codigo) =>
@@ -303,6 +626,7 @@ const validarPreparacaoFaturamento = (faturamento = {}) => {
   }
 
   itens.forEach((item) => validarItemPreparacao(item, pendencias));
+  validarOperacaoPreparacao(faturamento, pendencias);
 
   const pendenciasOrdenadas = ordenarPendenciasPreparacao(pendencias);
 
@@ -313,8 +637,15 @@ const validarPreparacaoFaturamento = (faturamento = {}) => {
 };
 
 module.exports = {
+  DESTINOS_OPERACAO,
+  FINALIDADES_OPERACAO,
+  FINALIDADES_OPERACAO_SUPORTADAS,
+  INDICADORES_IE_DESTINATARIO,
   PENDENCIAS_FATURAMENTO,
   PENDENCIAS_PREPARACAO_FATURAMENTO,
+  PRESENCAS_COMPRADOR,
+  criarContextoOperacionalFaturamento,
   criarFaturamentoVenda,
+  derivarDestinoOperacao,
   validarPreparacaoFaturamento,
 };

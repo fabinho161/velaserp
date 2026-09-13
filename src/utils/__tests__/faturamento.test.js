@@ -2,9 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  INDICADORES_IE_DESTINATARIO,
   PENDENCIAS_FATURAMENTO,
   PENDENCIAS_PREPARACAO_FATURAMENTO,
+  PRESENCAS_COMPRADOR,
+  criarContextoOperacionalFaturamento,
   criarFaturamentoVenda,
+  derivarDestinoOperacao,
   validarPreparacaoFaturamento,
 } from "../faturamento.js";
 
@@ -69,6 +73,35 @@ const vendaBase = (sobrescritas = {}) => ({
   destinatarioSnapshot: destinatarioSnapshot(),
   ...sobrescritas,
 });
+
+const contextoOperacionalPayload = (sobrescritas = {}) => ({
+  finalidadeOperacao: "normal",
+  presencaComprador: PRESENCAS_COMPRADOR.PRESENCIAL,
+  consumidorFinal: true,
+  indicadorIEDestinatario: INDICADORES_IE_DESTINATARIO.NAO_CONTRIBUINTE,
+  naturezaOperacao: "Venda de mercadoria",
+  ...sobrescritas,
+});
+
+const faturamentoComContextoOperacional = ({
+  venda = vendaBase(),
+  segmento = "comercio",
+  payload = {},
+} = {}) => {
+  const faturamento = criarFaturamentoVenda({ venda, segmento });
+  const operacao = criarContextoOperacionalFaturamento({
+    faturamento,
+    payload: contextoOperacionalPayload(payload),
+  });
+
+  return {
+    ...faturamento,
+    contextoFiscal: {
+      ...faturamento.contextoFiscal,
+      operacao,
+    },
+  };
+};
 
 test("cria faturamento conceitual para venda normal", () => {
   const faturamento = criarFaturamentoVenda({
@@ -291,11 +324,27 @@ test("nao cria identificadores persistentes ou fiscais", () => {
   assert.equal(Object.hasOwn(faturamento, "atualizadoEm"), false);
 });
 
-test("validacao de preparacao aceita faturamento cadastralmente completo", () => {
+test("validacao de preparacao exige contexto operacional alem do cadastro", () => {
   const faturamento = criarFaturamentoVenda({
     venda: vendaBase(),
     segmento: "comercio",
   });
+
+  assert.deepEqual(validarPreparacaoFaturamento(faturamento), {
+    valido: false,
+    pendencias: [
+      PENDENCIAS_PREPARACAO_FATURAMENTO.FINALIDADE_OPERACAO_AUSENTE,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.PRESENCA_COMPRADOR_AUSENTE,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.CONSUMIDOR_FINAL_NAO_INFORMADO,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.INDICADOR_IE_DESTINATARIO_AUSENTE,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.DESTINO_OPERACAO_INDETERMINADO,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.NATUREZA_OPERACAO_AUSENTE,
+    ],
+  });
+});
+
+test("validacao de preparacao aceita faturamento com contexto operacional completo", () => {
+  const faturamento = faturamentoComContextoOperacional();
 
   assert.deepEqual(validarPreparacaoFaturamento(faturamento), {
     valido: true,
@@ -308,12 +357,12 @@ test("validacao de preparacao aponta emitente ausente", () => {
     venda: vendaBase({ fiscalEmpresaSnapshot: null }),
   });
 
-  assert.deepEqual(validarPreparacaoFaturamento(faturamento), {
-    valido: false,
-    pendencias: [
-      PENDENCIAS_PREPARACAO_FATURAMENTO.EMITENTE_SNAPSHOT_AUSENTE,
-    ],
-  });
+  assert.equal(
+    validarPreparacaoFaturamento(faturamento).pendencias.includes(
+      PENDENCIAS_PREPARACAO_FATURAMENTO.EMITENTE_SNAPSHOT_AUSENTE
+    ),
+    true
+  );
 });
 
 test("validacao de preparacao aponta destinatario ausente", () => {
@@ -321,12 +370,12 @@ test("validacao de preparacao aponta destinatario ausente", () => {
     venda: vendaBase({ destinatarioSnapshot: null }),
   });
 
-  assert.deepEqual(validarPreparacaoFaturamento(faturamento), {
-    valido: false,
-    pendencias: [
-      PENDENCIAS_PREPARACAO_FATURAMENTO.DESTINATARIO_SNAPSHOT_AUSENTE,
-    ],
-  });
+  assert.equal(
+    validarPreparacaoFaturamento(faturamento).pendencias.includes(
+      PENDENCIAS_PREPARACAO_FATURAMENTO.DESTINATARIO_SNAPSHOT_AUSENTE
+    ),
+    true
+  );
 });
 
 test("validacao de preparacao aponta item sem fiscalSnapshot", () => {
@@ -334,9 +383,12 @@ test("validacao de preparacao aponta item sem fiscalSnapshot", () => {
   delete venda.itens[0].fiscalSnapshot;
   const faturamento = criarFaturamentoVenda({ venda });
 
-  assert.deepEqual(validarPreparacaoFaturamento(faturamento).pendencias, [
-    PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_FISCAL_SNAPSHOT_AUSENTE,
-  ]);
+  assert.equal(
+    validarPreparacaoFaturamento(faturamento).pendencias.includes(
+      PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_FISCAL_SNAPSHOT_AUSENTE
+    ),
+    true
+  );
 });
 
 test("validacao de preparacao aponta ausencia de itens", () => {
@@ -344,9 +396,12 @@ test("validacao de preparacao aponta ausencia de itens", () => {
     venda: vendaBase({ itens: [] }),
   });
 
-  assert.deepEqual(validarPreparacaoFaturamento(faturamento).pendencias, [
-    PENDENCIAS_PREPARACAO_FATURAMENTO.ITENS_AUSENTES,
-  ]);
+  assert.equal(
+    validarPreparacaoFaturamento(faturamento).pendencias.includes(
+      PENDENCIAS_PREPARACAO_FATURAMENTO.ITENS_AUSENTES
+    ),
+    true
+  );
 });
 
 test("validacao de preparacao aponta item sem NCM", () => {
@@ -363,9 +418,12 @@ test("validacao de preparacao aponta item sem NCM", () => {
   });
   const faturamento = criarFaturamentoVenda({ venda });
 
-  assert.deepEqual(validarPreparacaoFaturamento(faturamento).pendencias, [
-    PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_NCM_AUSENTE,
-  ]);
+  assert.equal(
+    validarPreparacaoFaturamento(faturamento).pendencias.includes(
+      PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_NCM_AUSENTE
+    ),
+    true
+  );
 });
 
 test("validacao de preparacao aponta item sem unidade tributavel", () => {
@@ -382,9 +440,12 @@ test("validacao de preparacao aponta item sem unidade tributavel", () => {
   });
   const faturamento = criarFaturamentoVenda({ venda });
 
-  assert.deepEqual(validarPreparacaoFaturamento(faturamento).pendencias, [
-    PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_UNIDADE_TRIBUTAVEL_AUSENTE,
-  ]);
+  assert.equal(
+    validarPreparacaoFaturamento(faturamento).pendencias.includes(
+      PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_UNIDADE_TRIBUTAVEL_AUSENTE
+    ),
+    true
+  );
 });
 
 test("validacao de preparacao consolida multiplas pendencias sem duplicidade", () => {
@@ -428,6 +489,12 @@ test("validacao de preparacao consolida multiplas pendencias sem duplicidade", (
     PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_QUANTIDADE_INVALIDA,
     PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_NCM_AUSENTE,
     PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_UNIDADE_TRIBUTAVEL_AUSENTE,
+    PENDENCIAS_PREPARACAO_FATURAMENTO.FINALIDADE_OPERACAO_AUSENTE,
+    PENDENCIAS_PREPARACAO_FATURAMENTO.PRESENCA_COMPRADOR_AUSENTE,
+    PENDENCIAS_PREPARACAO_FATURAMENTO.CONSUMIDOR_FINAL_NAO_INFORMADO,
+    PENDENCIAS_PREPARACAO_FATURAMENTO.INDICADOR_IE_DESTINATARIO_AUSENTE,
+    PENDENCIAS_PREPARACAO_FATURAMENTO.DESTINO_OPERACAO_INDETERMINADO,
+    PENDENCIAS_PREPARACAO_FATURAMENTO.NATUREZA_OPERACAO_AUSENTE,
   ]);
   assert.equal(new Set(validacao.pendencias).size, validacao.pendencias.length);
 });
@@ -444,6 +511,10 @@ test("validacao de preparacao tem ordenacao deterministica", () => {
         cnpj: "",
       },
       destinatario: destinatarioSnapshot(),
+      operacao: criarContextoOperacionalFaturamento({
+        faturamento: criarFaturamentoVenda({ venda: vendaBase() }),
+        payload: contextoOperacionalPayload(),
+      }),
     },
     itens: [
       {
@@ -463,10 +534,129 @@ test("validacao de preparacao tem ordenacao deterministica", () => {
 });
 
 test("validacao de preparacao nao muta objeto original", () => {
-  const faturamento = criarFaturamentoVenda({ venda: vendaBase() });
+  const faturamento = faturamentoComContextoOperacional();
   const cloneAntes = structuredClone(faturamento);
 
   validarPreparacaoFaturamento(faturamento);
 
   assert.deepEqual(faturamento, cloneAntes);
+});
+
+test("contexto operacional deriva destino interno por UF congelada", () => {
+  const faturamento = criarFaturamentoVenda({ venda: vendaBase() });
+  const operacao = criarContextoOperacionalFaturamento({
+    faturamento,
+    payload: contextoOperacionalPayload(),
+  });
+
+  assert.equal(operacao.destinoOperacao, "interna");
+});
+
+test("contexto operacional deriva destino interestadual por UF congelada", () => {
+  const faturamento = criarFaturamentoVenda({
+    venda: vendaBase({
+      destinatarioSnapshot: {
+        ...destinatarioSnapshot(),
+        uf: "SP",
+      },
+    }),
+  });
+  const operacao = criarContextoOperacionalFaturamento({
+    faturamento,
+    payload: contextoOperacionalPayload(),
+  });
+
+  assert.equal(operacao.destinoOperacao, "interestadual");
+});
+
+test("contexto operacional deixa destino indeterminado quando UF falta", () => {
+  const faturamento = criarFaturamentoVenda({
+    venda: vendaBase({
+      destinatarioSnapshot: {
+        ...destinatarioSnapshot(),
+        uf: "",
+      },
+    }),
+  });
+  const operacao = criarContextoOperacionalFaturamento({
+    faturamento,
+    payload: contextoOperacionalPayload(),
+  });
+
+  assert.equal(operacao.destinoOperacao, null);
+  assert.deepEqual(validarPreparacaoFaturamento({
+    ...faturamento,
+    contextoFiscal: {
+      ...faturamento.contextoFiscal,
+      operacao,
+    },
+  }).pendencias, [
+    PENDENCIAS_PREPARACAO_FATURAMENTO.DESTINO_OPERACAO_INDETERMINADO,
+  ]);
+});
+
+test("contexto operacional rejeita enum invalido", () => {
+  const faturamento = criarFaturamentoVenda({ venda: vendaBase() });
+
+  assert.throws(
+    () => criarContextoOperacionalFaturamento({
+      faturamento,
+      payload: contextoOperacionalPayload({ presencaComprador: "Presencial" }),
+    }),
+    /Presenca do comprador invalida/
+  );
+});
+
+test("contexto operacional rejeita consumidorFinal nao booleano", () => {
+  const faturamento = criarFaturamentoVenda({ venda: vendaBase() });
+
+  assert.throws(
+    () => criarContextoOperacionalFaturamento({
+      faturamento,
+      payload: contextoOperacionalPayload({ consumidorFinal: "true" }),
+    }),
+    /Consumidor final deve ser booleano/
+  );
+});
+
+test("validacao aponta campos operacionais ausentes isoladamente", () => {
+  const faturamento = faturamentoComContextoOperacional({
+    payload: {
+      finalidadeOperacao: "",
+      presencaComprador: "",
+      consumidorFinal: null,
+      indicadorIEDestinatario: "",
+      naturezaOperacao: "",
+    },
+  });
+
+  assert.deepEqual(validarPreparacaoFaturamento(faturamento).pendencias, [
+    PENDENCIAS_PREPARACAO_FATURAMENTO.FINALIDADE_OPERACAO_AUSENTE,
+    PENDENCIAS_PREPARACAO_FATURAMENTO.PRESENCA_COMPRADOR_AUSENTE,
+    PENDENCIAS_PREPARACAO_FATURAMENTO.CONSUMIDOR_FINAL_NAO_INFORMADO,
+    PENDENCIAS_PREPARACAO_FATURAMENTO.INDICADOR_IE_DESTINATARIO_AUSENTE,
+    PENDENCIAS_PREPARACAO_FATURAMENTO.NATUREZA_OPERACAO_AUSENTE,
+  ]);
+});
+
+test("contexto operacional nao muta faturamento original", () => {
+  const faturamento = criarFaturamentoVenda({ venda: vendaBase() });
+  const cloneAntes = structuredClone(faturamento);
+
+  criarContextoOperacionalFaturamento({
+    faturamento,
+    payload: contextoOperacionalPayload(),
+  });
+
+  assert.deepEqual(faturamento, cloneAntes);
+});
+
+test("derivacao de destino nao classifica exterior sem estrutura internacional", () => {
+  assert.equal(
+    derivarDestinoOperacao({
+      emitente: { uf: "GO" },
+      destinatario: { uf: "EX" },
+    }),
+    null
+  );
 });

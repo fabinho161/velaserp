@@ -2,6 +2,7 @@ const express = require("express");
 const authFirebase = require("../middlewares/authFirebase");
 const { FieldValue, getDb } = require("../firebaseAdmin");
 const {
+  criarContextoOperacionalFaturamento,
   criarFaturamentoVenda,
   validarPreparacaoFaturamento,
 } = require("../shared/faturamento.cjs");
@@ -85,6 +86,18 @@ const validarPayloadOperacaoFaturamento = ({ params = {}, body = {} } = {}) => {
     empresaId: validarIdFirestore("empresaId", body.empresaId),
     faturamentoId: validarIdFirestore("faturamentoId", params.faturamentoId),
     motivoCancelamento: sanitizarMotivoCancelamento(body.motivoCancelamento),
+  };
+};
+
+const validarPayloadContextoOperacionalFaturamento = ({ params = {}, body = {} } = {}) => {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw criarErroHttp(400, "Requisicao invalida.", "payload_invalido");
+  }
+
+  return {
+    empresaId: validarIdFirestore("empresaId", body.empresaId),
+    faturamentoId: validarIdFirestore("faturamentoId", params.faturamentoId),
+    dadosContexto: body,
   };
 };
 
@@ -523,6 +536,130 @@ const criarHandlerPrepararFaturamento = ({
   }
 };
 
+const criarHandlerSalvarContextoOperacionalFaturamento = ({
+  getDb: getDbDependencia = getDb,
+  criarTimestampServidor = () => FieldValue.serverTimestamp(),
+} = {}) => async (req, res) => {
+  const atorUid = normalizarId(req.user?.uid);
+
+  if (!atorUid) {
+    res.status(401).json({
+      ok: false,
+      error: "Token Firebase nao informado.",
+      codigo: "token_ausente",
+    });
+    return;
+  }
+
+  let payload;
+
+  try {
+    payload = validarPayloadContextoOperacionalFaturamento({
+      params: req.params,
+      body: req.body,
+    });
+  } catch (error) {
+    montarRespostaErro(res, error);
+    return;
+  }
+
+  const db = getDbDependencia();
+
+  try {
+    const resultado = await db.runTransaction(async (transaction) => {
+      const {
+        atorData,
+        ownerUid,
+        empresaRef,
+        vinculoUsuarioEmpresa,
+      } = await resolverAcessoEmpresa({
+        db,
+        transaction,
+        atorUid,
+        empresaId: payload.empresaId,
+      });
+      const faturamentoRef = empresaRef.collection("faturamentos").doc(payload.faturamentoId);
+      const faturamentoSnapshot = await transaction.get(faturamentoRef);
+
+      if (!usuarioAtivoPodePrepararFaturamento({
+        atorUid,
+        ownerUid,
+        atorData,
+        vinculoUsuarioEmpresa,
+      })) {
+        throw criarErroHttp(
+          403,
+          "Voce nao tem permissao para preencher contexto fiscal.",
+          "sem_permissao"
+        );
+      }
+
+      if (!snapshotExiste(faturamentoSnapshot)) {
+        throw criarErroHttp(404, "Faturamento nao encontrado.", "faturamento_nao_encontrado");
+      }
+
+      const faturamento = dadosSnapshot(faturamentoSnapshot);
+      const statusAtual = String(faturamento.status || "rascunho").trim().toLowerCase();
+
+      if (statusAtual !== "rascunho") {
+        throw criarErroHttp(
+          409,
+          "Status do faturamento nao permite alterar contexto fiscal.",
+          "status_invalido"
+        );
+      }
+
+      let operacao;
+
+      try {
+        operacao = criarContextoOperacionalFaturamento({
+          faturamento,
+          payload: payload.dadosContexto,
+        });
+      } catch (error) {
+        throw criarErroHttp(
+          400,
+          error.message || "Contexto fiscal operacional invalido.",
+          error.codigo || "contexto_operacional_invalido"
+        );
+      }
+
+      const timestamp = criarTimestampServidor();
+
+      transaction.update(faturamentoRef, {
+        "contextoFiscal.operacao": operacao,
+        contextoOperacionalAtualizadoEm: timestamp,
+        contextoOperacionalAtualizadoPor: atorUid,
+        atualizadoEm: timestamp,
+      });
+
+      return {
+        faturamentoId: faturamentoRef.id,
+        status: statusAtual,
+        operacao,
+      };
+    });
+
+    res.status(200).json({
+      ok: true,
+      faturamentoId: resultado.faturamentoId,
+      status: resultado.status,
+      contextoFiscal: {
+        operacao: resultado.operacao,
+      },
+    });
+  } catch (error) {
+    console.error("Erro ao salvar contexto operacional do faturamento", {
+      atorUid,
+      empresaId: payload?.empresaId,
+      faturamentoId: payload?.faturamentoId,
+      statusCode: error.statusCode || 500,
+      codigo: error.codigo || null,
+    });
+    montarRespostaErro(res, error);
+  }
+};
+
 const criarHandlerCancelarFaturamento = ({
   getDb: getDbDependencia = getDb,
   criarTimestampServidor = () => FieldValue.serverTimestamp(),
@@ -640,18 +777,26 @@ const criarHandlerCancelarFaturamento = ({
 };
 
 router.post("/", authFirebase, criarHandlerCriarFaturamento());
+router.put(
+  "/:faturamentoId/contexto-operacional",
+  authFirebase,
+  criarHandlerSalvarContextoOperacionalFaturamento()
+);
 router.post("/:faturamentoId/preparar", authFirebase, criarHandlerPrepararFaturamento());
 router.post("/:faturamentoId/cancelar", authFirebase, criarHandlerCancelarFaturamento());
 
 module.exports = router;
 module.exports.criarHandlerCriarFaturamento = criarHandlerCriarFaturamento;
 module.exports.criarHandlerPrepararFaturamento = criarHandlerPrepararFaturamento;
+module.exports.criarHandlerSalvarContextoOperacionalFaturamento =
+  criarHandlerSalvarContextoOperacionalFaturamento;
 module.exports.criarHandlerCancelarFaturamento = criarHandlerCancelarFaturamento;
 module.exports._internals = {
   criarIdFaturamento,
   criarIdempotencyKey,
   sanitizarMotivoCancelamento,
   validarPayloadOperacaoFaturamento,
+  validarPayloadContextoOperacionalFaturamento,
   validarPayloadCriacaoFaturamento,
   vendaEstaCancelada,
 };
