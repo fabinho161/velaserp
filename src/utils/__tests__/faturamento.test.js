@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   PENDENCIAS_FATURAMENTO,
+  PENDENCIAS_PREPARACAO_FATURAMENTO,
   criarFaturamentoVenda,
+  validarPreparacaoFaturamento,
 } from "../faturamento.js";
 
 const fiscalEmpresaSnapshot = () => ({
@@ -287,4 +289,184 @@ test("nao cria identificadores persistentes ou fiscais", () => {
   assert.equal(Object.hasOwn(faturamento, "protocolo"), false);
   assert.equal(Object.hasOwn(faturamento, "criadoEm"), false);
   assert.equal(Object.hasOwn(faturamento, "atualizadoEm"), false);
+});
+
+test("validacao de preparacao aceita faturamento cadastralmente completo", () => {
+  const faturamento = criarFaturamentoVenda({
+    venda: vendaBase(),
+    segmento: "comercio",
+  });
+
+  assert.deepEqual(validarPreparacaoFaturamento(faturamento), {
+    valido: true,
+    pendencias: [],
+  });
+});
+
+test("validacao de preparacao aponta emitente ausente", () => {
+  const faturamento = criarFaturamentoVenda({
+    venda: vendaBase({ fiscalEmpresaSnapshot: null }),
+  });
+
+  assert.deepEqual(validarPreparacaoFaturamento(faturamento), {
+    valido: false,
+    pendencias: [
+      PENDENCIAS_PREPARACAO_FATURAMENTO.EMITENTE_SNAPSHOT_AUSENTE,
+    ],
+  });
+});
+
+test("validacao de preparacao aponta destinatario ausente", () => {
+  const faturamento = criarFaturamentoVenda({
+    venda: vendaBase({ destinatarioSnapshot: null }),
+  });
+
+  assert.deepEqual(validarPreparacaoFaturamento(faturamento), {
+    valido: false,
+    pendencias: [
+      PENDENCIAS_PREPARACAO_FATURAMENTO.DESTINATARIO_SNAPSHOT_AUSENTE,
+    ],
+  });
+});
+
+test("validacao de preparacao aponta item sem fiscalSnapshot", () => {
+  const venda = vendaBase();
+  delete venda.itens[0].fiscalSnapshot;
+  const faturamento = criarFaturamentoVenda({ venda });
+
+  assert.deepEqual(validarPreparacaoFaturamento(faturamento).pendencias, [
+    PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_FISCAL_SNAPSHOT_AUSENTE,
+  ]);
+});
+
+test("validacao de preparacao aponta ausencia de itens", () => {
+  const faturamento = criarFaturamentoVenda({
+    venda: vendaBase({ itens: [] }),
+  });
+
+  assert.deepEqual(validarPreparacaoFaturamento(faturamento).pendencias, [
+    PENDENCIAS_PREPARACAO_FATURAMENTO.ITENS_AUSENTES,
+  ]);
+});
+
+test("validacao de preparacao aponta item sem NCM", () => {
+  const venda = vendaBase({
+    itens: [
+      {
+        ...vendaBase().itens[0],
+        fiscalSnapshot: {
+          ...fiscalItemSnapshot(),
+          ncm: "",
+        },
+      },
+    ],
+  });
+  const faturamento = criarFaturamentoVenda({ venda });
+
+  assert.deepEqual(validarPreparacaoFaturamento(faturamento).pendencias, [
+    PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_NCM_AUSENTE,
+  ]);
+});
+
+test("validacao de preparacao aponta item sem unidade tributavel", () => {
+  const venda = vendaBase({
+    itens: [
+      {
+        ...vendaBase().itens[0],
+        fiscalSnapshot: {
+          ...fiscalItemSnapshot(),
+          unidadeTributavel: "",
+        },
+      },
+    ],
+  });
+  const faturamento = criarFaturamentoVenda({ venda });
+
+  assert.deepEqual(validarPreparacaoFaturamento(faturamento).pendencias, [
+    PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_UNIDADE_TRIBUTAVEL_AUSENTE,
+  ]);
+});
+
+test("validacao de preparacao consolida multiplas pendencias sem duplicidade", () => {
+  const venda = vendaBase({
+    fiscalEmpresaSnapshot: {
+      ...fiscalEmpresaSnapshot(),
+      cnpj: "",
+      uf: "",
+    },
+    destinatarioSnapshot: {
+      ...destinatarioSnapshot(),
+      nome: "",
+    },
+    itens: [
+      {
+        ...vendaBase().itens[0],
+        produtoNome: "",
+        produto: "",
+        quantidade: 0,
+        fiscalSnapshot: {
+          ...fiscalItemSnapshot(),
+          ncm: "",
+          unidadeTributavel: "",
+        },
+      },
+    ],
+  });
+  const faturamento = criarFaturamentoVenda({ venda });
+  const validacao = validarPreparacaoFaturamento({
+    ...faturamento,
+    pendencias: [
+      PENDENCIAS_PREPARACAO_FATURAMENTO.EMITENTE_CNPJ_AUSENTE,
+    ],
+  });
+
+  assert.deepEqual(validacao.pendencias, [
+    PENDENCIAS_PREPARACAO_FATURAMENTO.EMITENTE_CNPJ_AUSENTE,
+    PENDENCIAS_PREPARACAO_FATURAMENTO.EMITENTE_UF_AUSENTE,
+    PENDENCIAS_PREPARACAO_FATURAMENTO.DESTINATARIO_NOME_AUSENTE,
+    PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_DESCRICAO_AUSENTE,
+    PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_QUANTIDADE_INVALIDA,
+    PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_NCM_AUSENTE,
+    PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_UNIDADE_TRIBUTAVEL_AUSENTE,
+  ]);
+  assert.equal(new Set(validacao.pendencias).size, validacao.pendencias.length);
+});
+
+test("validacao de preparacao tem ordenacao deterministica", () => {
+  const validacao = validarPreparacaoFaturamento({
+    pendencias: [
+      PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_NCM_AUSENTE,
+      PENDENCIAS_PREPARACAO_FATURAMENTO.EMITENTE_CNPJ_AUSENTE,
+    ],
+    contextoFiscal: {
+      emitente: {
+        ...fiscalEmpresaSnapshot(),
+        cnpj: "",
+      },
+      destinatario: destinatarioSnapshot(),
+    },
+    itens: [
+      {
+        ...criarFaturamentoVenda({ venda: vendaBase() }).itens[0],
+        fiscalSnapshot: {
+          ...fiscalItemSnapshot(),
+          ncm: "",
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(validacao.pendencias, [
+    PENDENCIAS_PREPARACAO_FATURAMENTO.EMITENTE_CNPJ_AUSENTE,
+    PENDENCIAS_PREPARACAO_FATURAMENTO.ITEM_NCM_AUSENTE,
+  ]);
+});
+
+test("validacao de preparacao nao muta objeto original", () => {
+  const faturamento = criarFaturamentoVenda({ venda: vendaBase() });
+  const cloneAntes = structuredClone(faturamento);
+
+  validarPreparacaoFaturamento(faturamento);
+
+  assert.deepEqual(faturamento, cloneAntes);
 });

@@ -2,7 +2,9 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  criarHandlerCancelarFaturamento,
   criarHandlerCriarFaturamento,
+  criarHandlerPrepararFaturamento,
 } = require("../faturamentoRoutes");
 
 const SERVER_TIMESTAMP = { __serverTimestamp: true };
@@ -68,6 +70,15 @@ class FakeTransaction {
       data,
     });
   }
+
+  update(ref, data) {
+    this._writeStarted = true;
+    this.writes.push({
+      tipo: "update",
+      path: ref.path,
+      data,
+    });
+  }
 }
 
 class FakeDb {
@@ -112,6 +123,18 @@ class FakeDb {
       transaction.writes.forEach((write) => {
         if (write.tipo === "create" && this.store.has(write.path)) {
           throw new Error("Documento ja existe.");
+        }
+
+        if (write.tipo === "update") {
+          if (!this.store.has(write.path)) {
+            throw new Error("Documento nao existe.");
+          }
+
+          this.store.set(write.path, {
+            ...this.store.get(write.path),
+            ...structuredClone(write.data),
+          });
+          return;
         }
 
         this.store.set(write.path, structuredClone(write.data));
@@ -231,6 +254,14 @@ const criarAmbiente = ({
     getDb: () => db,
     criarTimestampServidor: () => SERVER_TIMESTAMP,
   });
+  const prepararHandler = criarHandlerPrepararFaturamento({
+    getDb: () => db,
+    criarTimestampServidor: () => SERVER_TIMESTAMP,
+  });
+  const cancelarHandler = criarHandlerCancelarFaturamento({
+    getDb: () => db,
+    criarTimestampServidor: () => SERVER_TIMESTAMP,
+  });
 
   db.set("users/owner-1", { email: "owner@erp.com", role: "cliente" });
   db.set(`users/${atorUid}`, { email: `${atorUid}@erp.com`, role: atorRole });
@@ -269,9 +300,12 @@ const criarAmbiente = ({
   return {
     db,
     handler,
-    req: (body = { empresaId: "empresa-1", vendaId }) => ({
+    prepararHandler,
+    cancelarHandler,
+    req: (body = { empresaId: "empresa-1", vendaId }, params = {}) => ({
       user: { uid: atorUid, email: `${atorUid}@erp.com` },
       body,
+      params,
     }),
   };
 };
@@ -279,6 +313,32 @@ const criarAmbiente = ({
 const executar = async (ambiente, body) => {
   const res = criarRes();
   await ambiente.handler(ambiente.req(body), res);
+  return res;
+};
+
+const executarPreparar = async (
+  ambiente,
+  faturamentoId = pathFaturamento().split("/").pop(),
+  body = { empresaId: "empresa-1" }
+) => {
+  const res = criarRes();
+  await ambiente.prepararHandler(
+    ambiente.req(body, { faturamentoId }),
+    res
+  );
+  return res;
+};
+
+const executarCancelar = async (
+  ambiente,
+  faturamentoId = pathFaturamento().split("/").pop(),
+  body = { empresaId: "empresa-1", motivoCancelamento: "Erro operacional" }
+) => {
+  const res = criarRes();
+  await ambiente.cancelarHandler(
+    ambiente.req(body, { faturamentoId }),
+    res
+  );
   return res;
 };
 
@@ -541,5 +601,252 @@ test("rota nao expoe delete de faturamento", async () => {
     assert.equal(listarFaturamentos(ambiente.db).length, 0);
   } finally {
     await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("preparar faturamento inexistente retorna 404", async () => {
+  const ambiente = criarAmbiente({ venda: null });
+
+  const res = await executarPreparar(ambiente);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body.codigo, "faturamento_nao_encontrado");
+});
+
+test("preparar faturamento de empresa nao autorizada nao acessa outro owner", async () => {
+  const ambiente = criarAmbiente({ atorUid: "comercial-1" });
+  ambiente.db.set(pathEmpresa("owner-2", "empresa-2"), {
+    nome: "Outra Empresa",
+    ownerUid: "owner-2",
+    segmento: "comercio",
+  });
+  ambiente.db.set(
+    pathFaturamento("venda-2", "owner-2", "empresa-2"),
+    { status: "rascunho" }
+  );
+
+  const res = await executarPreparar(
+    ambiente,
+    "venda_venda-2_preparacao_v1",
+    { empresaId: "empresa-2" }
+  );
+
+  assert.equal(res.statusCode, 404);
+});
+
+test("usuario sem permissao nao prepara faturamento", async () => {
+  const ambiente = criarAmbiente({
+    atorUid: "estoque-1",
+    usuarioEmpresa: { role: "estoque", status: "ativo" },
+  });
+
+  ambiente.db.set(pathFaturamento(), { status: "rascunho" });
+  const res = await executarPreparar(ambiente);
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(ambiente.db.get(pathFaturamento()).status, "rascunho");
+});
+
+test("rascunho valido vira preparado com metadados", async () => {
+  const ambiente = criarAmbiente({
+    atorUid: "financeiro-1",
+    usuarioEmpresa: { role: "financeiro", status: "ativo" },
+  });
+
+  await executar(ambiente);
+  const res = await executarPreparar(ambiente);
+  const faturamento = ambiente.db.get(pathFaturamento());
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.status, "preparado");
+  assert.equal(res.body.reutilizado, false);
+  assert.equal(faturamento.status, "preparado");
+  assert.deepEqual(faturamento.pendencias, []);
+  assert.deepEqual(faturamento.preparadoEm, SERVER_TIMESTAMP);
+  assert.equal(faturamento.preparadoPor, "financeiro-1");
+});
+
+test("rascunho com pendencia continua rascunho", async () => {
+  const venda = criarVenda();
+  delete venda.fiscalEmpresaSnapshot;
+  const ambiente = criarAmbiente({ venda });
+
+  await executar(ambiente);
+  const res = await executarPreparar(ambiente);
+  const faturamento = ambiente.db.get(pathFaturamento());
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.codigo, "faturamento_com_pendencias");
+  assert.deepEqual(res.body.pendencias, ["emitente_snapshot_ausente"]);
+  assert.equal(faturamento.status, "rascunho");
+  assert.equal(Object.hasOwn(faturamento, "preparadoEm"), false);
+});
+
+test("preparar faturamento ja preparado e idempotente", async () => {
+  const ambiente = criarAmbiente();
+
+  await executar(ambiente);
+  await executarPreparar(ambiente);
+  const antes = ambiente.db.get(pathFaturamento());
+  const res = await executarPreparar(ambiente);
+  const depois = ambiente.db.get(pathFaturamento());
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.reutilizado, true);
+  assert.deepEqual(depois, antes);
+});
+
+test("cancelado nao pode ser preparado", async () => {
+  const ambiente = criarAmbiente();
+
+  await executar(ambiente);
+  await executarCancelar(ambiente);
+  const res = await executarPreparar(ambiente);
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.codigo, "faturamento_cancelado");
+});
+
+test("preparacao nao altera snapshots", async () => {
+  const ambiente = criarAmbiente();
+
+  await executar(ambiente);
+  const antes = ambiente.db.get(pathFaturamento());
+  await executarPreparar(ambiente);
+  const depois = ambiente.db.get(pathFaturamento());
+
+  assert.deepEqual(depois.origem, antes.origem);
+  assert.deepEqual(depois.contextoFiscal, antes.contextoFiscal);
+  assert.deepEqual(depois.itens, antes.itens);
+  assert.deepEqual(depois.totais, antes.totais);
+});
+
+test("rascunho pode ser cancelado", async () => {
+  const ambiente = criarAmbiente({
+    atorUid: "financeiro-1",
+    usuarioEmpresa: { role: "financeiro", status: "ativo" },
+  });
+
+  await executar(ambiente);
+  const res = await executarCancelar(ambiente);
+  const faturamento = ambiente.db.get(pathFaturamento());
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.status, "cancelado");
+  assert.equal(faturamento.status, "cancelado");
+  assert.deepEqual(faturamento.canceladoEm, SERVER_TIMESTAMP);
+  assert.equal(faturamento.canceladoPor, "financeiro-1");
+  assert.equal(faturamento.motivoCancelamento, "Erro operacional");
+});
+
+test("preparado pode ser cancelado", async () => {
+  const ambiente = criarAmbiente();
+
+  await executar(ambiente);
+  await executarPreparar(ambiente);
+  const res = await executarCancelar(ambiente);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(ambiente.db.get(pathFaturamento()).status, "cancelado");
+});
+
+test("cancelar faturamento inexistente retorna 404", async () => {
+  const ambiente = criarAmbiente({ venda: null });
+
+  const res = await executarCancelar(ambiente);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body.codigo, "faturamento_nao_encontrado");
+});
+
+test("usuario sem permissao nao cancela faturamento", async () => {
+  const ambiente = criarAmbiente({
+    atorUid: "comercial-1",
+    usuarioEmpresa: { role: "comercial", status: "ativo" },
+  });
+
+  await executar(ambiente);
+  const res = await executarCancelar(ambiente);
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(ambiente.db.get(pathFaturamento()).status, "rascunho");
+});
+
+test("cancelar faturamento de empresa cruzada e negado", async () => {
+  const ambiente = criarAmbiente({ atorUid: "financeiro-1" });
+  ambiente.db.set(pathEmpresa("owner-2", "empresa-2"), {
+    nome: "Outra Empresa",
+    ownerUid: "owner-2",
+    segmento: "comercio",
+  });
+  ambiente.db.set(
+    pathFaturamento("venda-2", "owner-2", "empresa-2"),
+    { status: "rascunho" }
+  );
+
+  const res = await executarCancelar(
+    ambiente,
+    "venda_venda-2_preparacao_v1",
+    { empresaId: "empresa-2" }
+  );
+
+  assert.equal(res.statusCode, 404);
+});
+
+test("cancelamento repetido e idempotente e preserva metadados", async () => {
+  const ambiente = criarAmbiente({
+    atorUid: "financeiro-1",
+    usuarioEmpresa: { role: "financeiro", status: "ativo" },
+  });
+
+  await executar(ambiente);
+  await executarCancelar(ambiente, pathFaturamento().split("/").pop(), {
+    empresaId: "empresa-1",
+    motivoCancelamento: "Primeiro motivo",
+  });
+  const antes = ambiente.db.get(pathFaturamento());
+  const res = await executarCancelar(ambiente, pathFaturamento().split("/").pop(), {
+    empresaId: "empresa-1",
+    motivoCancelamento: "Segundo motivo",
+  });
+  const depois = ambiente.db.get(pathFaturamento());
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.reutilizado, true);
+  assert.equal(depois.motivoCancelamento, "Primeiro motivo");
+  assert.deepEqual(depois.canceladoEm, antes.canceladoEm);
+  assert.equal(depois.canceladoPor, antes.canceladoPor);
+});
+
+test("cancelamento nao altera venda original", async () => {
+  const ambiente = criarAmbiente();
+
+  await executar(ambiente);
+  const vendaAntes = ambiente.db.get(pathVenda());
+  await executarCancelar(ambiente);
+  const vendaDepois = ambiente.db.get(pathVenda());
+
+  assert.deepEqual(vendaDepois, vendaAntes);
+});
+
+test("preparar e cancelar simultaneamente mantem estado final valido", async () => {
+  const ambiente = criarAmbiente({
+    atorUid: "financeiro-1",
+    usuarioEmpresa: { role: "financeiro", status: "ativo" },
+  });
+
+  await executar(ambiente);
+  const [preparar, cancelar] = await Promise.all([
+    executarPreparar(ambiente),
+    executarCancelar(ambiente),
+  ]);
+  const faturamento = ambiente.db.get(pathFaturamento());
+
+  assert.equal([200, 409].includes(preparar.statusCode), true);
+  assert.equal(cancelar.statusCode, 200);
+  assert.equal(["preparado", "cancelado"].includes(faturamento.status), true);
+
+  if (faturamento.status === "cancelado") {
+    assert.equal(Object.hasOwn(faturamento, "canceladoEm"), true);
   }
 });
