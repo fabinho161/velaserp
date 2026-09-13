@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   calcularKpisFaturamento,
   descreverPendenciaFaturamento,
+  descreverPendenciasFaturamento,
   filtrarFaturamentos,
   formatarDestinoOperacao,
   formatarOrigemFaturamento,
@@ -54,6 +55,21 @@ test("calcula kpis por status e pendencias", () => {
       cancelados: 1,
       comPendencias: 1,
     }
+  );
+});
+
+test("converte lista de codigos de pendencia em mensagens amigaveis", () => {
+  assert.deepEqual(
+    descreverPendenciasFaturamento([
+      "emitente_snapshot_ausente",
+      "destinatario_snapshot_ausente",
+      "item_fiscal_snapshot_ausente",
+    ]),
+    [
+      "Snapshot fiscal do emitente ausente.",
+      "Snapshot do destinatário ausente.",
+      "Um ou mais itens não possuem snapshot fiscal.",
+    ]
   );
 });
 

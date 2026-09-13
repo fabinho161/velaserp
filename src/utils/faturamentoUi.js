@@ -101,6 +101,11 @@ export const formatarDestinoOperacao = (destino) => {
 export const descreverPendenciaFaturamento = (codigo) =>
   LABELS_PENDENCIAS_FATURAMENTO[codigo] || `Pendência não mapeada: ${codigo}`;
 
+export const descreverPendenciasFaturamento = (pendencias = []) =>
+  (Array.isArray(pendencias) ? pendencias : []).map((pendencia) =>
+    descreverPendenciaFaturamento(pendencia)
+  );
+
 export const calcularKpisFaturamento = (faturamentos = []) => {
   const lista = Array.isArray(faturamentos) ? faturamentos : [];
 

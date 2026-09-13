@@ -28,6 +28,7 @@ import {
   STATUS_FATURAMENTO_OPCOES,
   calcularKpisFaturamento,
   descreverPendenciaFaturamento,
+  descreverPendenciasFaturamento,
   filtrarFaturamentos,
   formatarDestinoOperacao,
   formatarOrigemFaturamento,
@@ -302,6 +303,29 @@ export default function Faturamentos() {
     </div>
   );
 
+  const renderPendenciasTabela = (pendencias = []) => {
+    const pendenciasLista = Array.isArray(pendencias) ? pendencias : [];
+
+    if (pendenciasLista.length === 0) {
+      return <span className="billing-pendency-empty">Sem pendências</span>;
+    }
+
+    const descricoes = descreverPendenciasFaturamento(pendenciasLista);
+    const tooltip = descricoes.join("\n");
+
+    return (
+      <span
+        className="billing-pendency-tooltip"
+        tabIndex={0}
+        title={tooltip}
+        aria-label={tooltip}
+        data-tooltip={tooltip}
+      >
+        {pendenciasLista.length} pendência(s)
+      </span>
+    );
+  };
+
   return (
     <div className="billing-page">
       <div className="billing-header">
@@ -426,11 +450,7 @@ export default function Faturamentos() {
                       {formatarStatusFaturamento(faturamento.status)}
                     </span>
                   </td>
-                  <td>
-                    {Array.isArray(faturamento.pendencias) && faturamento.pendencias.length > 0
-                      ? `${faturamento.pendencias.length} pendência(s)`
-                      : "-"}
-                  </td>
+                  <td>{renderPendenciasTabela(faturamento.pendencias)}</td>
                   <td>{dataBR(faturamento.criadoEm)}</td>
                   <td>
                     <button
