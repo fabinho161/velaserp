@@ -18,6 +18,7 @@ test("cria snapshot fiscal de item com todos os campos cadastrados", () => {
       unidadeTributavel: "un",
       aliquotaIcms: 18,
     },
+    origemProduto: "fabricado",
   });
 
   assert.deepEqual(snapshot, {
@@ -27,6 +28,7 @@ test("cria snapshot fiscal de item com todos os campos cadastrados", () => {
     cfopPadrao: "5102",
     origem: "0",
     unidadeTributavel: "un",
+    origemProduto: "fabricado",
   });
 });
 
@@ -36,6 +38,7 @@ test("cria snapshot fiscal de item com campos parciais", () => {
       ncm: "33074900",
       unidadeTributavel: "kg",
     },
+    origemProduto: "revenda",
   });
 
   assert.deepEqual(snapshot, {
@@ -45,6 +48,7 @@ test("cria snapshot fiscal de item com campos parciais", () => {
     cfopPadrao: "",
     origem: "",
     unidadeTributavel: "kg",
+    origemProduto: "revenda",
   });
 });
 
@@ -58,11 +62,56 @@ test("produto legado sem fiscal recebe snapshot vazio versionado", () => {
     cfopPadrao: "",
     origem: "",
     unidadeTributavel: "",
+    origemProduto: "",
   });
+});
+
+test("produto fabricado gera snapshot com origemProduto fabricado", () => {
+  const snapshot = criarFiscalSnapshotItemVenda({
+    origemProduto: "fabricado",
+    fiscal: {
+      ncm: "34060000",
+    },
+  });
+
+  assert.equal(snapshot.origemProduto, "fabricado");
+});
+
+test("produto de revenda gera snapshot com origemProduto revenda", () => {
+  const snapshot = criarFiscalSnapshotItemVenda({
+    origemProduto: "revenda",
+    fiscal: {
+      ncm: "34060000",
+    },
+  });
+
+  assert.equal(snapshot.origemProduto, "revenda");
+});
+
+test("produto sem origemProduto nao inventa classificacao", () => {
+  const snapshot = criarFiscalSnapshotItemVenda({
+    fiscal: {
+      ncm: "34060000",
+    },
+  });
+
+  assert.equal(snapshot.origemProduto, "");
+});
+
+test("origemProduto invalida nao e aceita como classificacao valida", () => {
+  const snapshot = criarFiscalSnapshotItemVenda({
+    origemProduto: "proprio",
+    fiscal: {
+      ncm: "34060000",
+    },
+  });
+
+  assert.equal(snapshot.origemProduto, "");
 });
 
 test("snapshot de item nao depende de mutacao posterior do produto original", () => {
   const produto = {
+    origemProduto: "fabricado",
     fiscal: {
       ncm: "11111111",
       cfopPadrao: "5102",
@@ -75,6 +124,7 @@ test("snapshot de item nao depende de mutacao posterior do produto original", ()
 
   assert.equal(snapshot.ncm, "11111111");
   assert.equal(snapshot.cfopPadrao, "5102");
+  assert.equal(snapshot.origemProduto, "fabricado");
 });
 
 test("cria snapshot fiscal da empresa com configuracao completa", () => {

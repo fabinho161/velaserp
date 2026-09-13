@@ -5,6 +5,7 @@ const FISCAL_ITEM_PADRAO = Object.freeze({
   cfopPadrao: "",
   origem: "",
   unidadeTributavel: "",
+  origemProduto: "",
 });
 
 const FISCAL_EMPRESA_PADRAO = Object.freeze({
@@ -36,6 +37,11 @@ const valorTextoFiscal = (valor) => {
   return String(valor);
 };
 
+const normalizarOrigemProduto = (origemProduto) => {
+  const valor = valorTextoFiscal(origemProduto).trim().toLowerCase();
+  return ["fabricado", "revenda"].includes(valor) ? valor : "";
+};
+
 export const criarFiscalSnapshotItemVenda = (produto = {}) => {
   const fiscal = produto && typeof produto.fiscal === "object" && !Array.isArray(produto.fiscal)
     ? produto.fiscal
@@ -48,6 +54,7 @@ export const criarFiscalSnapshotItemVenda = (produto = {}) => {
     cfopPadrao: valorTextoFiscal(fiscal.cfopPadrao),
     origem: valorTextoFiscal(fiscal.origem),
     unidadeTributavel: valorTextoFiscal(fiscal.unidadeTributavel),
+    origemProduto: normalizarOrigemProduto(produto?.origemProduto),
   });
 };
 

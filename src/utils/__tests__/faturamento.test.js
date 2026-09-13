@@ -13,6 +13,7 @@ import {
   derivarDestinoOperacao,
   validarPreparacaoFaturamento,
 } from "../faturamento.js";
+import { criarFiscalSnapshotItemVenda } from "../fiscalVenda.js";
 
 const fiscalEmpresaSnapshot = () => ({
   versao: 1,
@@ -216,6 +217,59 @@ test("mapeia itens com fiscalSnapshot", () => {
     total: 45,
     fiscalSnapshot: fiscalItemSnapshot(),
   });
+});
+
+test("faturamento preserva origemProduto fabricado congelada no fiscalSnapshot", () => {
+  const faturamento = criarFaturamentoVenda({
+    venda: vendaBase({
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: criarFiscalSnapshotItemVenda({
+            origemProduto: "fabricado",
+            fiscal: fiscalItemSnapshot(),
+          }),
+        },
+      ],
+    }),
+  });
+
+  assert.equal(faturamento.itens[0].fiscalSnapshot.origemProduto, "fabricado");
+});
+
+test("faturamento preserva origemProduto revenda congelada no fiscalSnapshot", () => {
+  const faturamento = criarFaturamentoVenda({
+    venda: vendaBase({
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: criarFiscalSnapshotItemVenda({
+            origemProduto: "revenda",
+            fiscal: fiscalItemSnapshot(),
+          }),
+        },
+      ],
+    }),
+  });
+
+  assert.equal(faturamento.itens[0].fiscalSnapshot.origemProduto, "revenda");
+});
+
+test("faturamento preserva ausencia de classificacao do item", () => {
+  const faturamento = criarFaturamentoVenda({
+    venda: vendaBase({
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: criarFiscalSnapshotItemVenda({
+            fiscal: fiscalItemSnapshot(),
+          }),
+        },
+      ],
+    }),
+  });
+
+  assert.equal(faturamento.itens[0].fiscalSnapshot.origemProduto, "");
 });
 
 test("venda antiga sem snapshots registra pendencias sem inventar dados", () => {
@@ -693,6 +747,28 @@ test("determina CFOP 5101 para produto proprio em operacao interna", () => {
   assert.deepEqual(determinacao.pendencias, []);
 });
 
+test("fluxo completo usa origemProduto do snapshot para CFOP 5101", () => {
+  const produto = {
+    origemProduto: "fabricado",
+    fiscal: fiscalItemSnapshot(),
+  };
+  const faturamento = faturamentoComContextoOperacional({
+    venda: vendaBase({
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: criarFiscalSnapshotItemVenda(produto),
+          produtoCadastroAtual: {
+            origemProduto: "revenda",
+          },
+        },
+      ],
+    }),
+  });
+
+  assert.equal(determinarFiscalFaturamento(faturamento).itens[0].cfopEfetivo, "5101");
+});
+
 test("determina CFOP 6101 para produto proprio em operacao interestadual", () => {
   const faturamento = faturamentoComContextoOperacional({
     segmento: "industria",
@@ -705,6 +781,29 @@ test("determina CFOP 6101 para produto proprio em operacao interestadual", () =>
         {
           ...vendaBase().itens[0],
           fiscalSnapshot: fiscalItemSnapshotClassificado("fabricado"),
+        },
+      ],
+    }),
+  });
+
+  assert.equal(determinarFiscalFaturamento(faturamento).itens[0].cfopEfetivo, "6101");
+});
+
+test("fluxo completo usa origemProduto do snapshot para CFOP 6101", () => {
+  const faturamento = faturamentoComContextoOperacional({
+    segmento: "industria",
+    venda: vendaBase({
+      destinatarioSnapshot: {
+        ...destinatarioSnapshot(),
+        uf: "SP",
+      },
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: criarFiscalSnapshotItemVenda({
+            origemProduto: "fabricado",
+            fiscal: fiscalItemSnapshot(),
+          }),
         },
       ],
     }),
@@ -728,6 +827,24 @@ test("determina CFOP 5102 para revenda em operacao interna", () => {
   assert.equal(determinarFiscalFaturamento(faturamento).itens[0].cfopEfetivo, "5102");
 });
 
+test("fluxo completo usa origemProduto do snapshot para CFOP 5102", () => {
+  const faturamento = faturamentoComContextoOperacional({
+    venda: vendaBase({
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: criarFiscalSnapshotItemVenda({
+            origemProduto: "revenda",
+            fiscal: fiscalItemSnapshot(),
+          }),
+        },
+      ],
+    }),
+  });
+
+  assert.equal(determinarFiscalFaturamento(faturamento).itens[0].cfopEfetivo, "5102");
+});
+
 test("determina CFOP 6102 para revenda em operacao interestadual", () => {
   const faturamento = faturamentoComContextoOperacional({
     venda: vendaBase({
@@ -739,6 +856,28 @@ test("determina CFOP 6102 para revenda em operacao interestadual", () => {
         {
           ...vendaBase().itens[0],
           fiscalSnapshot: fiscalItemSnapshotClassificado("revenda"),
+        },
+      ],
+    }),
+  });
+
+  assert.equal(determinarFiscalFaturamento(faturamento).itens[0].cfopEfetivo, "6102");
+});
+
+test("fluxo completo usa origemProduto do snapshot para CFOP 6102", () => {
+  const faturamento = faturamentoComContextoOperacional({
+    venda: vendaBase({
+      destinatarioSnapshot: {
+        ...destinatarioSnapshot(),
+        uf: "SP",
+      },
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: criarFiscalSnapshotItemVenda({
+            origemProduto: "revenda",
+            fiscal: fiscalItemSnapshot(),
+          }),
         },
       ],
     }),
