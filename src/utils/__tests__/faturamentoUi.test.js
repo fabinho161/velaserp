@@ -3,12 +3,22 @@ import test from "node:test";
 
 import {
   calcularKpisFaturamento,
+  descreverPendenciaDeterminacaoFiscal,
   descreverPendenciaFaturamento,
+  descreverPendenciasDeterminacaoFiscal,
   descreverPendenciasFaturamento,
   filtrarFaturamentos,
+  formatarConsumidorFinalFiscal,
   formatarDestinoOperacao,
+  formatarDestinoFiscal,
+  formatarFinalidadeFiscal,
+  formatarFonteCfop,
+  formatarIndicadorIEFiscal,
   formatarOrigemFaturamento,
+  formatarOrigemProdutoFiscal,
+  formatarSituacaoDeterminacaoItem,
   formatarStatusFaturamento,
+  obterSituacaoDeterminacaoItem,
 } from "../faturamentoUi.js";
 
 const faturamento = (dados = {}) => ({
@@ -117,4 +127,70 @@ test("filtra periodo com timestamp serializado do backend", () => {
     }).map((item) => item.id),
     ["fat-timestamp"]
   );
+});
+
+test("formata labels da determinacao fiscal", () => {
+  assert.equal(formatarDestinoFiscal("interna"), "Interna");
+  assert.equal(formatarDestinoFiscal("interestadual"), "Interestadual");
+  assert.equal(formatarDestinoFiscal("exterior"), "Não determinado");
+  assert.equal(formatarFinalidadeFiscal("normal"), "Normal");
+  assert.equal(formatarConsumidorFinalFiscal(true), "Sim");
+  assert.equal(formatarConsumidorFinalFiscal(false), "Não");
+  assert.equal(formatarConsumidorFinalFiscal(null), "Não informado");
+  assert.equal(formatarIndicadorIEFiscal("contribuinte"), "Contribuinte");
+  assert.equal(formatarIndicadorIEFiscal("contribuinte_isento"), "Contribuinte isento");
+  assert.equal(formatarIndicadorIEFiscal("nao_contribuinte"), "Não contribuinte");
+  assert.equal(formatarOrigemProdutoFiscal("fabricado"), "Fabricado");
+  assert.equal(formatarOrigemProdutoFiscal("revenda"), "Revenda");
+});
+
+test("descreve pendencias fiscais com fallback seguro", () => {
+  assert.equal(
+    descreverPendenciaDeterminacaoFiscal("cfop_nao_determinado"),
+    "CFOP não determinado."
+  );
+  assert.equal(
+    descreverPendenciaDeterminacaoFiscal("codigo_novo"),
+    "Pendência fiscal não mapeada: codigo_novo"
+  );
+  assert.deepEqual(
+    descreverPendenciasDeterminacaoFiscal([
+      "classificacao_item_insuficiente",
+      "regime_tributario_ausente",
+    ]),
+    [
+      "Classificação fiscal do item insuficiente.",
+      "Regime tributário do emitente ausente.",
+    ]
+  );
+});
+
+test("determina situacao visual do item fiscal", () => {
+  assert.equal(
+    obterSituacaoDeterminacaoItem({ cfopEfetivo: "5101", pendencias: [] }),
+    "determinado"
+  );
+  assert.equal(
+    obterSituacaoDeterminacaoItem({ cfopEfetivo: null, pendencias: [] }),
+    "pendente"
+  );
+  assert.equal(
+    obterSituacaoDeterminacaoItem({
+      cfopEfetivo: "5101",
+      pendencias: ["cfop_nao_determinado"],
+    }),
+    "pendente"
+  );
+  assert.equal(formatarSituacaoDeterminacaoItem("determinado"), "Determinado");
+  assert.equal(formatarSituacaoDeterminacaoItem("pendente"), "Pendente");
+});
+
+test("formata fonte de cfop sem duplicar regra fiscal", () => {
+  assert.equal(formatarFonteCfop("venda_revenda_interna"), "Revenda interna");
+  assert.equal(formatarFonteCfop("manual"), "manual");
+  assert.equal(
+    formatarFonteCfop({ regra: "venda_producao_interna", regraVersao: "fiscal_v1" }),
+    "Produção interna (fiscal_v1)"
+  );
+  assert.equal(formatarFonteCfop(null), "-");
 });

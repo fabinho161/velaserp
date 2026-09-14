@@ -13,6 +13,7 @@ import { useToast } from "../context/useToast";
 import { useConfirmacao } from "../context/useConfirmacao";
 import {
   cancelarFaturamento,
+  determinarFiscalFaturamento as solicitarDeterminacaoFiscal,
   listarFaturamentos,
   obterFaturamento,
   prepararFaturamento,
@@ -27,12 +28,21 @@ import {
   ORIGEM_FATURAMENTO_OPCOES,
   STATUS_FATURAMENTO_OPCOES,
   calcularKpisFaturamento,
+  descreverPendenciasDeterminacaoFiscal,
   descreverPendenciaFaturamento,
   descreverPendenciasFaturamento,
   filtrarFaturamentos,
+  formatarConsumidorFinalFiscal,
   formatarDestinoOperacao,
+  formatarDestinoFiscal,
+  formatarFinalidadeFiscal,
+  formatarFonteCfop,
+  formatarIndicadorIEFiscal,
   formatarOrigemFaturamento,
+  formatarOrigemProdutoFiscal,
+  formatarSituacaoDeterminacaoItem,
   formatarStatusFaturamento,
+  obterSituacaoDeterminacaoItem,
 } from "../utils/faturamentoUi";
 
 const CONTEXTO_FORM_INICIAL = {
@@ -145,6 +155,7 @@ export default function Faturamentos() {
     (isOwnerEmpresa ||
       isAdminMaster ||
       ["administrador_empresa", "financeiro"].includes(perfilEmpresaAtual));
+  const podeDeterminarFiscal = podeCancelar;
 
   const carregarLista = useCallback(async () => {
     if (!empresaId) return;
@@ -208,6 +219,16 @@ export default function Faturamentos() {
   const operacaoSelecionada = faturamentoSelecionado?.contextoFiscal?.operacao || {};
   const pendenciasSelecionadas = Array.isArray(faturamentoSelecionado?.pendencias)
     ? faturamentoSelecionado.pendencias
+    : [];
+  const determinacaoFiscalSelecionada =
+    faturamentoSelecionado?.determinacaoFiscal &&
+    typeof faturamentoSelecionado.determinacaoFiscal === "object"
+      ? faturamentoSelecionado.determinacaoFiscal
+      : null;
+  const pendenciasFiscaisSelecionadas = Array.isArray(
+    determinacaoFiscalSelecionada?.pendencias
+  )
+    ? determinacaoFiscalSelecionada.pendencias
     : [];
 
   const atualizarFiltro = (campo, valor) => {
@@ -296,6 +317,25 @@ export default function Faturamentos() {
     }
   };
 
+  const determinarFiscal = async () => {
+    if (!empresaId || !faturamentoSelecionado?.id || acaoEmAndamento) return;
+
+    setAcaoEmAndamento("determinar-fiscal");
+    try {
+      await solicitarDeterminacaoFiscal({
+        empresaId,
+        faturamentoId: faturamentoSelecionado.id,
+      });
+      showToast("Determinação fiscal realizada com sucesso.", "success");
+      await carregarLista();
+      await carregarDetalhe(faturamentoSelecionado.id);
+    } catch (error) {
+      showToast(error.message || "Não foi possível determinar fiscalmente o faturamento.", "error");
+    } finally {
+      setAcaoEmAndamento("");
+    }
+  };
+
   const renderInfo = (label, valor) => (
     <div className="billing-info-item">
       <span>{label}</span>
@@ -323,6 +363,34 @@ export default function Faturamentos() {
       >
         {pendenciasLista.length} pendência(s)
       </span>
+    );
+  };
+
+  const obterItemOrigemDeterminacao = (itemDeterminado = {}) => {
+    const itens = Array.isArray(faturamentoSelecionado?.itens)
+      ? faturamentoSelecionado.itens
+      : [];
+    const indice = Number(itemDeterminado.indice);
+
+    if (Number.isInteger(indice) && itens[indice]) return itens[indice];
+
+    return itens.find((item) =>
+      item?.origemItemId &&
+      item.origemItemId === itemDeterminado.origemItemId
+    ) || {};
+  };
+
+  const renderPendenciasFiscais = (pendencias = []) => {
+    const lista = Array.isArray(pendencias) ? pendencias : [];
+
+    if (lista.length === 0) return null;
+
+    return (
+      <ul className="billing-tax-pendency-list">
+        {descreverPendenciasDeterminacaoFiscal(lista).map((descricao) => (
+          <li key={descricao}>{descricao}</li>
+        ))}
+      </ul>
     );
   };
 
@@ -641,6 +709,114 @@ export default function Faturamentos() {
                 </section>
 
                 <section className="billing-detail-section">
+                  <h3>Determinação Fiscal</h3>
+                  {determinacaoFiscalSelecionada ? (
+                    <>
+                      <div className="billing-info-grid billing-tax-summary">
+                        {renderInfo("Versão", determinacaoFiscalSelecionada.versao)}
+                        {renderInfo("Regra", determinacaoFiscalSelecionada.regraVersao)}
+                        {renderInfo(
+                          "Destino",
+                          formatarDestinoFiscal(
+                            determinacaoFiscalSelecionada.operacao?.destinoOperacao
+                          )
+                        )}
+                        {renderInfo(
+                          "Finalidade",
+                          formatarFinalidadeFiscal(
+                            determinacaoFiscalSelecionada.operacao?.finalidadeOperacao
+                          )
+                        )}
+                        {renderInfo(
+                          "Consumidor final",
+                          formatarConsumidorFinalFiscal(
+                            determinacaoFiscalSelecionada.operacao?.consumidorFinal
+                          )
+                        )}
+                        {renderInfo(
+                          "Indicador IE",
+                          formatarIndicadorIEFiscal(
+                            determinacaoFiscalSelecionada.operacao?.indicadorIEDestinatario
+                          )
+                        )}
+                      </div>
+
+                      <div className="table-wrapper billing-tax-table-wrapper">
+                        <table className="billing-tax-table">
+                          <thead>
+                            <tr>
+                              <th>Item</th>
+                              <th>Classificação</th>
+                              <th>CFOP</th>
+                              <th>Regra/Fonte</th>
+                              <th>Situação</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(determinacaoFiscalSelecionada.itens || []).map((itemDeterminado, index) => {
+                              const itemOrigem = obterItemOrigemDeterminacao(itemDeterminado);
+                              const situacao = obterSituacaoDeterminacaoItem(itemDeterminado);
+                              const pendenciasItem = Array.isArray(itemDeterminado.pendencias)
+                                ? itemDeterminado.pendencias
+                                : [];
+
+                              return (
+                                <tr key={`${itemDeterminado.origemItemId || "item"}-${index}`}>
+                                  <td data-label="Item">
+                                    <span className="billing-tax-item-name">
+                                      {itemOrigem.descricao || `Item ${index + 1}`}
+                                    </span>
+                                  </td>
+                                  <td data-label="Classificação">
+                                    {formatarOrigemProdutoFiscal(
+                                      itemOrigem.fiscalSnapshot?.origemProduto
+                                    )}
+                                  </td>
+                                  <td data-label="CFOP">{itemDeterminado.cfopEfetivo || "-"}</td>
+                                  <td data-label="Regra/Fonte">
+                                    {formatarFonteCfop(itemDeterminado.fonteCfop)}
+                                  </td>
+                                  <td data-label="Situação">
+                                    <span className={`billing-tax-status ${situacao}`}>
+                                      {formatarSituacaoDeterminacaoItem(situacao)}
+                                    </span>
+                                    {renderPendenciasFiscais(pendenciasItem)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {(determinacaoFiscalSelecionada.itens || []).length === 0 && (
+                              <tr>
+                                <td colSpan="5">Nenhum item determinado.</td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="billing-tax-pendencies">
+                        <h4>Pendências fiscais</h4>
+                        {pendenciasFiscaisSelecionadas.length > 0 ? (
+                          <ul className="billing-pendency-list">
+                            {descreverPendenciasDeterminacaoFiscal(
+                              pendenciasFiscaisSelecionadas
+                            ).map((descricao) => (
+                              <li key={descricao}>{descricao}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="billing-empty-note">Sem pendências fiscais.</p>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="billing-empty-note">
+                      Determinação fiscal ainda não realizada.
+                    </p>
+                  )}
+                </section>
+
+                <section className="billing-detail-section">
                   <h3>Pendências</h3>
                   {pendenciasSelecionadas.length > 0 ? (
                     <ul className="billing-pendency-list">
@@ -667,14 +843,25 @@ export default function Faturamentos() {
 
                 <div className="billing-detail-actions">
                   {statusSelecionado === "rascunho" && podeEditarContexto && (
-                    <>
-                      <button type="button" onClick={salvarContexto} disabled={Boolean(acaoEmAndamento)}>
-                        Salvar contexto
-                      </button>
-                      <button type="button" onClick={preparar} disabled={Boolean(acaoEmAndamento)}>
-                        Preparar faturamento
-                      </button>
-                    </>
+                    <button type="button" onClick={salvarContexto} disabled={Boolean(acaoEmAndamento)}>
+                      Salvar contexto
+                    </button>
+                  )}
+                  {statusSelecionado === "rascunho" && podeDeterminarFiscal && (
+                    <button
+                      type="button"
+                      onClick={determinarFiscal}
+                      disabled={Boolean(acaoEmAndamento)}
+                    >
+                      {acaoEmAndamento === "determinar-fiscal"
+                        ? "Determinando..."
+                        : "Determinar fiscal"}
+                    </button>
+                  )}
+                  {statusSelecionado === "rascunho" && podeEditarContexto && (
+                    <button type="button" onClick={preparar} disabled={Boolean(acaoEmAndamento)}>
+                      Preparar faturamento
+                    </button>
                   )}
                   {["rascunho", "preparado"].includes(statusSelecionado) && podeCancelar && (
                     <button

@@ -42,6 +42,15 @@ export const LABELS_PENDENCIAS_FATURAMENTO = Object.freeze({
   natureza_operacao_ausente: "Natureza da operação ausente.",
 });
 
+export const LABELS_PENDENCIAS_DETERMINACAO_FISCAL = Object.freeze({
+  classificacao_item_insuficiente: "Classificação fiscal do item insuficiente.",
+  cfop_nao_determinado: "CFOP não determinado.",
+  destino_operacao_nao_suportado: "Destino da operação ainda não suportado.",
+  finalidade_operacao_nao_suportada: "Finalidade da operação ainda não suportada.",
+  origem_faturamento_nao_suportada: "Origem do faturamento ainda não suportada.",
+  regime_tributario_ausente: "Regime tributário do emitente ausente.",
+});
+
 const texto = (valor) => String(valor || "").trim();
 
 const textoBusca = (valor) =>
@@ -98,6 +107,70 @@ export const formatarDestinoOperacao = (destino) => {
   return labels[texto(destino)] || "Não determinado";
 };
 
+export const formatarDestinoFiscal = (destino) => {
+  const labels = {
+    interna: "Interna",
+    interestadual: "Interestadual",
+  };
+
+  return labels[texto(destino)] || "Não determinado";
+};
+
+export const formatarFinalidadeFiscal = (finalidade) => {
+  const labels = {
+    normal: "Normal",
+  };
+
+  return labels[texto(finalidade)] || "Não determinada";
+};
+
+export const formatarConsumidorFinalFiscal = (valor) => {
+  if (valor === true) return "Sim";
+  if (valor === false) return "Não";
+  return "Não informado";
+};
+
+export const formatarIndicadorIEFiscal = (indicador) => {
+  const labels = {
+    contribuinte: "Contribuinte",
+    contribuinte_isento: "Contribuinte isento",
+    nao_contribuinte: "Não contribuinte",
+  };
+
+  return labels[texto(indicador)] || "Não informado";
+};
+
+export const formatarOrigemProdutoFiscal = (origemProduto) => {
+  const labels = {
+    fabricado: "Fabricado",
+    revenda: "Revenda",
+  };
+
+  return labels[texto(origemProduto)] || "Não informada";
+};
+
+export const formatarFonteCfop = (fonteCfop) => {
+  const labels = {
+    venda_producao_interna: "Produção interna",
+    venda_producao_interestadual: "Produção interestadual",
+    venda_revenda_interna: "Revenda interna",
+    venda_revenda_interestadual: "Revenda interestadual",
+  };
+
+  if (typeof fonteCfop === "string") {
+    const fonte = texto(fonteCfop);
+    return labels[fonte] || fonte || "-";
+  }
+  if (!fonteCfop || typeof fonteCfop !== "object") return "-";
+
+  const regra = texto(fonteCfop.regra);
+  const regraVersao = texto(fonteCfop.regraVersao);
+  const regraFormatada = labels[regra] || regra;
+
+  if (regraFormatada && regraVersao) return `${regraFormatada} (${regraVersao})`;
+  return regraFormatada || regraVersao || "-";
+};
+
 export const descreverPendenciaFaturamento = (codigo) =>
   LABELS_PENDENCIAS_FATURAMENTO[codigo] || `Pendência não mapeada: ${codigo}`;
 
@@ -105,6 +178,23 @@ export const descreverPendenciasFaturamento = (pendencias = []) =>
   (Array.isArray(pendencias) ? pendencias : []).map((pendencia) =>
     descreverPendenciaFaturamento(pendencia)
   );
+
+export const descreverPendenciaDeterminacaoFiscal = (codigo) =>
+  LABELS_PENDENCIAS_DETERMINACAO_FISCAL[codigo] ||
+  `Pendência fiscal não mapeada: ${codigo}`;
+
+export const descreverPendenciasDeterminacaoFiscal = (pendencias = []) =>
+  (Array.isArray(pendencias) ? pendencias : []).map((pendencia) =>
+    descreverPendenciaDeterminacaoFiscal(pendencia)
+  );
+
+export const obterSituacaoDeterminacaoItem = (item = {}) => {
+  const pendencias = Array.isArray(item.pendencias) ? item.pendencias : [];
+  return item.cfopEfetivo && pendencias.length === 0 ? "determinado" : "pendente";
+};
+
+export const formatarSituacaoDeterminacaoItem = (situacao) =>
+  situacao === "determinado" ? "Determinado" : "Pendente";
 
 export const calcularKpisFaturamento = (faturamentos = []) => {
   const lista = Array.isArray(faturamentos) ? faturamentos : [];
