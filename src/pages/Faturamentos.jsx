@@ -135,6 +135,7 @@ export default function Faturamentos() {
   const [loadingDetalhe, setLoadingDetalhe] = useState(false);
   const [acaoEmAndamento, setAcaoEmAndamento] = useState("");
   const [motivoCancelamento, setMotivoCancelamento] = useState("");
+  const [tooltipPendencias, setTooltipPendencias] = useState(null);
   const [filtros, setFiltros] = useState({
     status: "todos",
     origem: "todos",
@@ -343,6 +344,31 @@ export default function Faturamentos() {
     </div>
   );
 
+  const esconderTooltipPendencias = () => {
+    setTooltipPendencias(null);
+  };
+
+  const mostrarTooltipPendencias = (event, conteudo) => {
+    if (!conteudo || typeof window === "undefined") return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const largura = Math.min(360, Math.max(240, window.innerWidth - 32));
+    const margem = 16;
+    const left = Math.min(
+      Math.max(margem, rect.right - largura),
+      Math.max(margem, window.innerWidth - largura - margem)
+    );
+    const abrirAbaixo = rect.top < 180;
+
+    setTooltipPendencias({
+      conteudo,
+      left,
+      top: abrirAbaixo ? rect.bottom + 8 : rect.top - 8,
+      width: largura,
+      posicao: abrirAbaixo ? "below" : "above",
+    });
+  };
+
   const renderPendenciasTabela = (pendencias = []) => {
     const pendenciasLista = Array.isArray(pendencias) ? pendencias : [];
 
@@ -359,7 +385,10 @@ export default function Faturamentos() {
         tabIndex={0}
         title={tooltip}
         aria-label={tooltip}
-        data-tooltip={tooltip}
+        onMouseEnter={(event) => mostrarTooltipPendencias(event, tooltip)}
+        onMouseLeave={esconderTooltipPendencias}
+        onFocus={(event) => mostrarTooltipPendencias(event, tooltip)}
+        onBlur={esconderTooltipPendencias}
       >
         {pendenciasLista.length} pendência(s)
       </span>
@@ -877,6 +906,20 @@ export default function Faturamentos() {
               </>
             )}
           </div>
+        </div>
+      )}
+      {tooltipPendencias && (
+        <div
+          id="billing-pendency-floating-tooltip"
+          role="tooltip"
+          className={`billing-pendency-floating-tooltip ${tooltipPendencias.posicao}`}
+          style={{
+            left: tooltipPendencias.left,
+            top: tooltipPendencias.top,
+            width: tooltipPendencias.width,
+          }}
+        >
+          {tooltipPendencias.conteudo}
         </div>
       )}
     </div>
