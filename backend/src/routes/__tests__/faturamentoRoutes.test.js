@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  criarHandlerClassificarTributacaoFaturamento,
   criarHandlerCancelarFaturamento,
   criarHandlerCriarFaturamento,
   criarHandlerDeterminarFiscalFaturamento,
@@ -316,6 +317,10 @@ const criarAmbiente = ({
     getDb: () => db,
     criarTimestampServidor: () => SERVER_TIMESTAMP,
   });
+  const classificarTributacaoHandler = criarHandlerClassificarTributacaoFaturamento({
+    getDb: () => db,
+    criarTimestampServidor: () => SERVER_TIMESTAMP,
+  });
   const contextoHandler = criarHandlerSalvarContextoOperacionalFaturamento({
     getDb: () => db,
     criarTimestampServidor: () => SERVER_TIMESTAMP,
@@ -367,6 +372,7 @@ const criarAmbiente = ({
     prepararHandler,
     cancelarHandler,
     determinarFiscalHandler,
+    classificarTributacaoHandler,
     contextoHandler,
     listarHandler,
     obterHandler,
@@ -431,6 +437,19 @@ const executarDeterminarFiscal = async (
 ) => {
   const res = criarRes();
   await ambiente.determinarFiscalHandler(
+    ambiente.req(body, { faturamentoId }),
+    res
+  );
+  return res;
+};
+
+const executarClassificarTributacao = async (
+  ambiente,
+  faturamentoId = pathFaturamento().split("/").pop(),
+  body = { empresaId: "empresa-1" }
+) => {
+  const res = criarRes();
+  await ambiente.classificarTributacaoHandler(
     ambiente.req(body, { faturamentoId }),
     res
   );
@@ -1472,6 +1491,200 @@ test("reexecucao de determinacao fiscal e idempotente para mesma regra", async (
   const primeira = ambiente.db.get(pathFaturamento()).determinacaoFiscal;
   await executarDeterminarFiscal(ambiente);
   const segunda = ambiente.db.get(pathFaturamento()).determinacaoFiscal;
+
+  assert.deepEqual(segunda, primeira);
+});
+
+test("classificar tributacao exige autenticacao", async () => {
+  const ambiente = criarAmbiente();
+  await executar(ambiente);
+  const res = criarRes();
+
+  await ambiente.classificarTributacaoHandler({
+    user: null,
+    body: { empresaId: "empresa-1" },
+    params: { faturamentoId: pathFaturamento().split("/").pop() },
+  }, res);
+
+  assert.equal(res.statusCode, 401);
+  assert.equal(res.body.codigo, "token_ausente");
+});
+
+test("classificar tributacao persiste resultado em rascunho autorizado", async () => {
+  const ambiente = criarAmbiente({
+    atorUid: "financeiro-1",
+    usuarioEmpresa: { role: "financeiro", status: "ativo" },
+    venda: criarVenda({
+      itens: [
+        {
+          ...criarVenda().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("revenda"),
+        },
+      ],
+    }),
+  });
+
+  await executar(ambiente);
+  await executarContexto(ambiente);
+  await executarDeterminarFiscal(ambiente);
+  const res = await executarClassificarTributacao(ambiente);
+  const faturamento = ambiente.db.get(pathFaturamento());
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.classificacaoTributaria.regraVersao, "tributaria_v1");
+  assert.deepEqual(res.body.classificacaoTributaria.itens[0].ibsCbs, {
+    cst: null,
+    cClassTrib: null,
+    fonte: null,
+  });
+  assert.deepEqual(faturamento.classificacaoTributariaAtualizadaEm, SERVER_TIMESTAMP);
+  assert.equal(faturamento.classificacaoTributariaAtualizadaPor, "financeiro-1");
+  assert.equal(
+    faturamento.classificacaoTributaria.pendencias.includes(
+      "classificacao_ibs_cbs_nao_determinada"
+    ),
+    true
+  );
+});
+
+test("administrador_empresa pode classificar tributacao", async () => {
+  const ambiente = criarAmbiente({
+    atorUid: "admin-empresa-1",
+    usuarioEmpresa: { role: "administrador_empresa", status: "ativo" },
+  });
+
+  await executar(ambiente);
+  const res = await executarClassificarTributacao(ambiente);
+
+  assert.equal(res.statusCode, 200);
+});
+
+test("comercial e visualizacao nao classificam tributacao", async () => {
+  for (const role of ["comercial", "visualizacao"]) {
+    const ambiente = criarAmbiente({
+      atorUid: `${role}-1`,
+      usuarioEmpresa: { role, status: "ativo" },
+    });
+
+    ambiente.db.set(pathFaturamento(), { status: "rascunho" });
+    const res = await executarClassificarTributacao(ambiente);
+
+    assert.equal(res.statusCode, 403);
+    assert.equal(res.body.codigo, "sem_permissao");
+    assert.equal(
+      Object.hasOwn(
+        ambiente.db.get(pathFaturamento()),
+        "classificacaoTributaria"
+      ),
+      false
+    );
+  }
+});
+
+test("classificar tributacao de empresa cruzada e negado", async () => {
+  const ambiente = criarAmbiente({ atorUid: "financeiro-1" });
+  ambiente.db.set(pathEmpresa("owner-2", "empresa-2"), {
+    nome: "Outra Empresa",
+    ownerUid: "owner-2",
+    segmento: "comercio",
+  });
+  ambiente.db.set(
+    pathFaturamento("venda-2", "owner-2", "empresa-2"),
+    { status: "rascunho" }
+  );
+
+  const res = await executarClassificarTributacao(
+    ambiente,
+    "venda_venda-2_preparacao_v1",
+    { empresaId: "empresa-2" }
+  );
+
+  assert.equal(res.statusCode, 404);
+});
+
+test("classificar tributacao de faturamento inexistente retorna 404", async () => {
+  const ambiente = criarAmbiente({ venda: null });
+
+  const res = await executarClassificarTributacao(ambiente);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body.codigo, "faturamento_nao_encontrado");
+});
+
+test("classificar tributacao rejeita faturamento cancelado", async () => {
+  const ambiente = criarAmbiente();
+
+  await executar(ambiente);
+  await executarCancelar(ambiente);
+  const res = await executarClassificarTributacao(ambiente);
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.codigo, "status_invalido");
+});
+
+test("classificar tributacao rejeita faturamento preparado", async () => {
+  const ambiente = criarAmbiente();
+
+  await executar(ambiente);
+  await executarContexto(ambiente);
+  await executarPreparar(ambiente);
+  const antes = ambiente.db.get(pathFaturamento());
+  const res = await executarClassificarTributacao(ambiente);
+  const depois = ambiente.db.get(pathFaturamento());
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.codigo, "status_invalido");
+  assert.deepEqual(depois, antes);
+});
+
+test("classificar tributacao nao altera snapshots determinacao venda estoque ou financeiro", async () => {
+  const venda = criarVenda({
+    itens: [
+      {
+        ...criarVenda().itens[0],
+        fiscalSnapshot: fiscalItemSnapshotClassificado("fabricado"),
+      },
+    ],
+  });
+  const ambiente = criarAmbiente({ venda });
+
+  await executar(ambiente);
+  await executarContexto(ambiente);
+  await executarDeterminarFiscal(ambiente);
+  const faturamentoAntes = ambiente.db.get(pathFaturamento());
+  const vendaAntes = ambiente.db.get(pathVenda());
+  await executarClassificarTributacao(ambiente);
+  const faturamentoDepois = ambiente.db.get(pathFaturamento());
+  const vendaDepois = ambiente.db.get(pathVenda());
+
+  assert.deepEqual(faturamentoDepois.origem, faturamentoAntes.origem);
+  assert.deepEqual(faturamentoDepois.contextoFiscal, faturamentoAntes.contextoFiscal);
+  assert.deepEqual(faturamentoDepois.itens, faturamentoAntes.itens);
+  assert.deepEqual(faturamentoDepois.totais, faturamentoAntes.totais);
+  assert.deepEqual(faturamentoDepois.determinacaoFiscal, faturamentoAntes.determinacaoFiscal);
+  assert.deepEqual(vendaDepois, vendaAntes);
+});
+
+test("reexecucao de classificacao tributaria e idempotente para mesma regra", async () => {
+  const ambiente = criarAmbiente({
+    venda: criarVenda({
+      itens: [
+        {
+          ...criarVenda().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("revenda"),
+        },
+      ],
+    }),
+  });
+
+  await executar(ambiente);
+  await executarContexto(ambiente);
+  await executarDeterminarFiscal(ambiente);
+  await executarClassificarTributacao(ambiente);
+  const primeira = ambiente.db.get(pathFaturamento()).classificacaoTributaria;
+  await executarClassificarTributacao(ambiente);
+  const segunda = ambiente.db.get(pathFaturamento()).classificacaoTributaria;
 
   assert.deepEqual(segunda, primeira);
 });

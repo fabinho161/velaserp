@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   calcularKpisFaturamento,
+  descreverPendenciaClassificacaoTributaria,
   descreverPendenciaDeterminacaoFiscal,
+  descreverPendenciasClassificacaoTributaria,
   descreverPendenciaFaturamento,
   descreverPendenciasDeterminacaoFiscal,
   descreverPendenciasFaturamento,
@@ -16,8 +18,10 @@ import {
   formatarIndicadorIEFiscal,
   formatarOrigemFaturamento,
   formatarOrigemProdutoFiscal,
+  formatarSituacaoClassificacaoTributariaItem,
   formatarSituacaoDeterminacaoItem,
   formatarStatusFaturamento,
+  obterSituacaoClassificacaoTributariaItem,
   obterSituacaoDeterminacaoItem,
 } from "../faturamentoUi.js";
 
@@ -193,4 +197,51 @@ test("formata fonte de cfop sem duplicar regra fiscal", () => {
     "Produção interna (fiscal_v1)"
   );
   assert.equal(formatarFonteCfop(null), "-");
+});
+
+test("descreve pendencias tributarias com fallback seguro", () => {
+  assert.equal(
+    descreverPendenciaClassificacaoTributaria("determinacao_fiscal_ausente"),
+    "A determinação fiscal ainda não foi realizada."
+  );
+  assert.equal(
+    descreverPendenciaClassificacaoTributaria("codigo_novo"),
+    "Pendência tributária não mapeada: codigo_novo"
+  );
+  assert.deepEqual(
+    descreverPendenciasClassificacaoTributaria([
+      "determinacao_fiscal_item_incompleta",
+      "classificacao_ibs_cbs_nao_determinada",
+    ]),
+    [
+      "A determinação fiscal do item está incompleta.",
+      "A classificação IBS/CBS ainda não pôde ser determinada com segurança.",
+    ]
+  );
+});
+
+test("determina situacao visual do item tributario", () => {
+  assert.equal(
+    obterSituacaoClassificacaoTributariaItem({
+      ibsCbs: { cst: "000", cClassTrib: "000001", fonte: { tipo: "tabela" } },
+      pendencias: [],
+    }),
+    "classificado"
+  );
+  assert.equal(
+    obterSituacaoClassificacaoTributariaItem({
+      ibsCbs: { cst: null, cClassTrib: null, fonte: null },
+      pendencias: [],
+    }),
+    "pendente"
+  );
+  assert.equal(
+    obterSituacaoClassificacaoTributariaItem({
+      ibsCbs: { cst: "000", cClassTrib: "000001", fonte: { tipo: "tabela" } },
+      pendencias: ["classificacao_ibs_cbs_nao_determinada"],
+    }),
+    "pendente"
+  );
+  assert.equal(formatarSituacaoClassificacaoTributariaItem("classificado"), "Classificado");
+  assert.equal(formatarSituacaoClassificacaoTributariaItem("pendente"), "Pendente");
 });

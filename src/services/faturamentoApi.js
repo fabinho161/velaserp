@@ -109,6 +109,15 @@ export const determinarFiscalFaturamento = ({ empresaId, faturamentoId }) =>
     }
   );
 
+export const classificarTributacaoFaturamento = ({ empresaId, faturamentoId }) =>
+  requisitarFaturamento(
+    `/api/faturamentos/${encodeURIComponent(faturamentoId)}/classificar-tributacao`,
+    {
+      method: "POST",
+      body: JSON.stringify({ empresaId }),
+    }
+  );
+
 export const cancelarFaturamento = ({ empresaId, faturamentoId, motivoCancelamento }) =>
   requisitarFaturamento(
     `/api/faturamentos/${encodeURIComponent(faturamentoId)}/cancelar`,

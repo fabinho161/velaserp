@@ -3,10 +3,12 @@ import test from "node:test";
 
 import {
   INDICADORES_IE_DESTINATARIO,
+  PENDENCIAS_CLASSIFICACAO_TRIBUTARIA,
   PENDENCIAS_DETERMINACAO_FISCAL,
   PENDENCIAS_FATURAMENTO,
   PENDENCIAS_PREPARACAO_FATURAMENTO,
   PRESENCAS_COMPRADOR,
+  classificarTributacaoFaturamento,
   criarContextoOperacionalFaturamento,
   criarFaturamentoVenda,
   determinarFiscalFaturamento,
@@ -108,6 +110,15 @@ const faturamentoComContextoOperacional = ({
       ...faturamento.contextoFiscal,
       operacao,
     },
+  };
+};
+
+const faturamentoComDeterminacaoFiscal = (opcoes = {}) => {
+  const faturamento = faturamentoComContextoOperacional(opcoes);
+
+  return {
+    ...faturamento,
+    determinacaoFiscal: determinarFiscalFaturamento(faturamento),
   };
 };
 
@@ -1125,4 +1136,149 @@ test("regime tributario ausente gera pendencia sem calcular CST ou CSOSN", () =>
   );
   assert.equal(Object.hasOwn(determinacao, "cst"), false);
   assert.equal(Object.hasOwn(determinacao, "csosn"), false);
+});
+
+test("classificacao tributaria exige determinacao fiscal existente", () => {
+  const faturamento = faturamentoComContextoOperacional();
+  const classificacao = classificarTributacaoFaturamento(faturamento);
+
+  assert.equal(classificacao.versao, 1);
+  assert.equal(classificacao.regraVersao, "tributaria_v1");
+  assert.deepEqual(classificacao.itens[0].ibsCbs, {
+    cst: null,
+    cClassTrib: null,
+    fonte: null,
+  });
+  assert.deepEqual(classificacao.itens[0].pendencias, [
+    PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.DETERMINACAO_FISCAL_AUSENTE,
+    PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.CLASSIFICACAO_IBS_CBS_NAO_DETERMINADA,
+  ]);
+  assert.deepEqual(classificacao.pendencias, [
+    PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.DETERMINACAO_FISCAL_AUSENTE,
+    PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.CLASSIFICACAO_IBS_CBS_NAO_DETERMINADA,
+  ]);
+});
+
+test("classificacao tributaria marca item sem CFOP efetivo como incompleto", () => {
+  const faturamento = faturamentoComDeterminacaoFiscal();
+  const classificacao = classificarTributacaoFaturamento(faturamento);
+
+  assert.equal(faturamento.determinacaoFiscal.itens[0].cfopEfetivo, null);
+  assert.deepEqual(classificacao.itens[0].pendencias, [
+    PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.DETERMINACAO_FISCAL_ITEM_INCOMPLETA,
+    PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.CLASSIFICACAO_IBS_CBS_NAO_DETERMINADA,
+  ]);
+});
+
+test("classificacao tributaria registra regime ausente sem inferir", () => {
+  const faturamento = faturamentoComDeterminacaoFiscal({
+    venda: vendaBase({
+      fiscalEmpresaSnapshot: {
+        ...fiscalEmpresaSnapshot(),
+        regimeTributario: "",
+      },
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("revenda"),
+        },
+      ],
+    }),
+  });
+  const classificacao = classificarTributacaoFaturamento(faturamento);
+
+  assert.equal(
+    classificacao.pendencias.includes(
+      PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.REGIME_TRIBUTARIO_AUSENTE
+    ),
+    true
+  );
+  assert.equal(classificacao.itens[0].ibsCbs.cst, null);
+  assert.equal(classificacao.itens[0].ibsCbs.cClassTrib, null);
+  assert.equal(classificacao.itens[0].ibsCbs.fonte, null);
+});
+
+test("classificacao tributaria nao inventa CST IBS CBS nem cClassTrib sem regra oficial", () => {
+  const faturamento = faturamentoComDeterminacaoFiscal({
+    venda: vendaBase({
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("fabricado"),
+        },
+      ],
+    }),
+  });
+  const classificacao = classificarTributacaoFaturamento(faturamento);
+
+  assert.equal(faturamento.determinacaoFiscal.itens[0].cfopEfetivo, "5101");
+  assert.deepEqual(classificacao.itens[0].ibsCbs, {
+    cst: null,
+    cClassTrib: null,
+    fonte: null,
+  });
+  assert.deepEqual(classificacao.itens[0].pendencias, [
+    PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.CLASSIFICACAO_IBS_CBS_NAO_DETERMINADA,
+  ]);
+});
+
+test("classificacao tributaria e deterministica e nao muta faturamento", () => {
+  const faturamento = faturamentoComDeterminacaoFiscal({
+    venda: vendaBase({
+      itens: [
+        {
+          ...vendaBase().itens[0],
+          fiscalSnapshot: fiscalItemSnapshotClassificado("revenda"),
+        },
+      ],
+    }),
+  });
+  const cloneAntes = structuredClone(faturamento);
+
+  assert.deepEqual(
+    classificarTributacaoFaturamento(faturamento),
+    classificarTributacaoFaturamento(faturamento)
+  );
+  assert.deepEqual(faturamento, cloneAntes);
+});
+
+test("classificacao tributaria lida com multiplos itens", () => {
+  const itemBase = vendaBase().itens[0];
+  const faturamento = faturamentoComDeterminacaoFiscal({
+    venda: vendaBase({
+      itens: [
+        {
+          ...itemBase,
+          produtoId: "produto-fabricado",
+          fiscalSnapshot: fiscalItemSnapshotClassificado("fabricado"),
+        },
+        {
+          ...itemBase,
+          produtoId: "produto-revenda",
+          fiscalSnapshot: fiscalItemSnapshotClassificado("revenda"),
+        },
+      ],
+    }),
+  });
+  const classificacao = classificarTributacaoFaturamento(faturamento);
+
+  assert.equal(classificacao.itens.length, 2);
+  assert.deepEqual(
+    classificacao.itens.map((item) => item.ibsCbs),
+    [
+      { cst: null, cClassTrib: null, fonte: null },
+      { cst: null, cClassTrib: null, fonte: null },
+    ]
+  );
+});
+
+test("faturamento antigo sem itens permanece compativel na classificacao tributaria", () => {
+  const classificacao = classificarTributacaoFaturamento({ status: "rascunho" });
+
+  assert.deepEqual(classificacao.itens, []);
+  assert.deepEqual(classificacao.pendencias, [
+    PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.DETERMINACAO_FISCAL_AUSENTE,
+    PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.REGIME_TRIBUTARIO_AUSENTE,
+    PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.CLASSIFICACAO_IBS_CBS_NAO_DETERMINADA,
+  ]);
 });

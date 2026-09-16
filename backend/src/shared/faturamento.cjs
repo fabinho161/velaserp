@@ -41,6 +41,13 @@ const PENDENCIAS_DETERMINACAO_FISCAL = Object.freeze({
   REGIME_TRIBUTARIO_AUSENTE: "regime_tributario_ausente",
 });
 
+const PENDENCIAS_CLASSIFICACAO_TRIBUTARIA = Object.freeze({
+  DETERMINACAO_FISCAL_AUSENTE: "determinacao_fiscal_ausente",
+  DETERMINACAO_FISCAL_ITEM_INCOMPLETA: "determinacao_fiscal_item_incompleta",
+  REGIME_TRIBUTARIO_AUSENTE: "regime_tributario_ausente",
+  CLASSIFICACAO_IBS_CBS_NAO_DETERMINADA: "classificacao_ibs_cbs_nao_determinada",
+});
+
 const ORDEM_PENDENCIAS_PREPARACAO = Object.freeze([
   PENDENCIAS_PREPARACAO_FATURAMENTO.EMITENTE_SNAPSHOT_AUSENTE,
   PENDENCIAS_PREPARACAO_FATURAMENTO.EMITENTE_CNPJ_AUSENTE,
@@ -100,7 +107,9 @@ const DESTINOS_OPERACAO = Object.freeze({
 
 const VERSAO_FATURAMENTO = 1;
 const VERSAO_DETERMINACAO_FISCAL = 1;
+const VERSAO_CLASSIFICACAO_TRIBUTARIA = 1;
 const REGRA_DETERMINACAO_FISCAL = "fiscal_v1";
+const REGRA_CLASSIFICACAO_TRIBUTARIA = "tributaria_v1";
 const STATUS_INICIAL = "rascunho";
 const TIPO_VENDA_PECAS = "pecas";
 const LIMITE_NATUREZA_OPERACAO = 120;
@@ -816,15 +825,147 @@ const determinarFiscalFaturamento = (faturamento = {}) => {
   });
 };
 
+const ordenarPendenciasClassificacaoTributaria = (pendencias) => {
+  const ordem = [
+    PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.DETERMINACAO_FISCAL_AUSENTE,
+    PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.DETERMINACAO_FISCAL_ITEM_INCOMPLETA,
+    PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.REGIME_TRIBUTARIO_AUSENTE,
+    PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.CLASSIFICACAO_IBS_CBS_NAO_DETERMINADA,
+  ];
+  const pendenciasSet = new Set(pendencias);
+  const ordenadas = ordem.filter((codigo) => pendenciasSet.has(codigo));
+  const extras = [...pendenciasSet]
+    .filter((codigo) => !ordem.includes(codigo))
+    .sort();
+
+  return [...ordenadas, ...extras];
+};
+
+const criarIbsCbsNaoClassificado = () => ({
+  cst: null,
+  cClassTrib: null,
+  fonte: null,
+});
+
+const localizarDeterminacaoItem = ({ determinacaoFiscal = {}, item = {}, indice }) => {
+  const itensDeterminados = Array.isArray(determinacaoFiscal.itens)
+    ? determinacaoFiscal.itens
+    : [];
+  const porIndice = itensDeterminados.find((itemDeterminado) =>
+    Number(itemDeterminado?.indice) === indice
+  );
+
+  if (porIndice) return porIndice;
+
+  const origemItemId = textoSeguro(item?.origemItemId);
+  if (!origemItemId) return null;
+
+  return itensDeterminados.find((itemDeterminado) =>
+    textoSeguro(itemDeterminado?.origemItemId) === origemItemId
+  ) || null;
+};
+
+const criarItemClassificacaoTributaria = ({
+  item = {},
+  indice,
+  determinacaoFiscal = null,
+  determinacaoAusente = false,
+} = {}) => {
+  const pendencias = new Set();
+  const itemDeterminado = determinacaoAusente
+    ? null
+    : localizarDeterminacaoItem({ determinacaoFiscal, item, indice });
+  const pendenciasDeterminacao = Array.isArray(itemDeterminado?.pendencias)
+    ? itemDeterminado.pendencias
+    : [];
+
+  if (determinacaoAusente) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.DETERMINACAO_FISCAL_AUSENTE
+    );
+  } else if (!itemDeterminado || !textoPreenchido(itemDeterminado.cfopEfetivo) ||
+    pendenciasDeterminacao.length > 0) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.DETERMINACAO_FISCAL_ITEM_INCOMPLETA
+    );
+  }
+
+  adicionarPendencia(
+    pendencias,
+    PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.CLASSIFICACAO_IBS_CBS_NAO_DETERMINADA
+  );
+
+  return {
+    origemItemId: textoSeguro(item?.origemItemId),
+    indice,
+    ibsCbs: criarIbsCbsNaoClassificado(),
+    pendencias: ordenarPendenciasClassificacaoTributaria(pendencias),
+  };
+};
+
+const classificarTributacaoFaturamento = (faturamento = {}) => {
+  const determinacaoFiscal = ehObjeto(faturamento.determinacaoFiscal)
+    ? faturamento.determinacaoFiscal
+    : null;
+  const itens = Array.isArray(faturamento.itens) ? faturamento.itens : [];
+  const pendencias = new Set();
+  const determinacaoAusente = !determinacaoFiscal;
+
+  if (determinacaoAusente) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.DETERMINACAO_FISCAL_AUSENTE
+    );
+  }
+
+  if (!textoPreenchido(faturamento.contextoFiscal?.emitente?.regimeTributario)) {
+    adicionarPendencia(
+      pendencias,
+      PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.REGIME_TRIBUTARIO_AUSENTE
+    );
+  }
+
+  const itensClassificados = itens.map((item, indice) => {
+    const itemClassificado = criarItemClassificacaoTributaria({
+      item,
+      indice,
+      determinacaoFiscal,
+      determinacaoAusente,
+    });
+
+    itemClassificado.pendencias.forEach((pendencia) =>
+      adicionarPendencia(pendencias, pendencia)
+    );
+
+    return itemClassificado;
+  });
+
+  adicionarPendencia(
+    pendencias,
+    PENDENCIAS_CLASSIFICACAO_TRIBUTARIA.CLASSIFICACAO_IBS_CBS_NAO_DETERMINADA
+  );
+
+  return congelarProfundo({
+    versao: VERSAO_CLASSIFICACAO_TRIBUTARIA,
+    regraVersao: REGRA_CLASSIFICACAO_TRIBUTARIA,
+    itens: itensClassificados,
+    pendencias: ordenarPendenciasClassificacaoTributaria(pendencias),
+  });
+};
+
 const faturamentoApi = {
   DESTINOS_OPERACAO,
   FINALIDADES_OPERACAO,
   FINALIDADES_OPERACAO_SUPORTADAS,
   INDICADORES_IE_DESTINATARIO,
+  PENDENCIAS_CLASSIFICACAO_TRIBUTARIA,
   PENDENCIAS_DETERMINACAO_FISCAL,
   PENDENCIAS_FATURAMENTO,
   PENDENCIAS_PREPARACAO_FATURAMENTO,
   PRESENCAS_COMPRADOR,
+  classificarTributacaoFaturamento,
   criarContextoOperacionalFaturamento,
   criarFaturamentoVenda,
   determinarCfopItem,

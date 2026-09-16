@@ -8282,6 +8282,11 @@ button,
   color: #15803d;
 }
 
+.billing-tax-status.classificado {
+  background: #ecfdf5;
+  color: #15803d;
+}
+
 .billing-tax-status.pendente {
   background: #fffbeb;
   color: #92400e;

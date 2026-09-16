@@ -13,6 +13,7 @@ import { useToast } from "../context/useToast";
 import { useConfirmacao } from "../context/useConfirmacao";
 import {
   cancelarFaturamento,
+  classificarTributacaoFaturamento as solicitarClassificacaoTributaria,
   determinarFiscalFaturamento as solicitarDeterminacaoFiscal,
   listarFaturamentos,
   obterFaturamento,
@@ -28,6 +29,7 @@ import {
   ORIGEM_FATURAMENTO_OPCOES,
   STATUS_FATURAMENTO_OPCOES,
   calcularKpisFaturamento,
+  descreverPendenciasClassificacaoTributaria,
   descreverPendenciasDeterminacaoFiscal,
   descreverPendenciaFaturamento,
   descreverPendenciasFaturamento,
@@ -40,8 +42,10 @@ import {
   formatarIndicadorIEFiscal,
   formatarOrigemFaturamento,
   formatarOrigemProdutoFiscal,
+  formatarSituacaoClassificacaoTributariaItem,
   formatarSituacaoDeterminacaoItem,
   formatarStatusFaturamento,
+  obterSituacaoClassificacaoTributariaItem,
   obterSituacaoDeterminacaoItem,
 } from "../utils/faturamentoUi";
 
@@ -88,6 +92,17 @@ const dataBR = (valor) => {
 };
 
 const textoOpcional = (valor) => texto(valor) || "-";
+
+const formatarFonteTributaria = (fonte) => {
+  if (!fonte) return "-";
+  if (typeof fonte === "string") return textoOpcional(fonte);
+  if (typeof fonte !== "object") return "-";
+
+  return [fonte.tipo, fonte.codigo, fonte.versao]
+    .map((valor) => texto(valor))
+    .filter(Boolean)
+    .join(" / ") || "-";
+};
 
 const obterFormContexto = (faturamento = {}) => {
   const operacao = faturamento.contextoFiscal?.operacao || {};
@@ -231,6 +246,16 @@ export default function Faturamentos() {
   )
     ? determinacaoFiscalSelecionada.pendencias
     : [];
+  const classificacaoTributariaSelecionada =
+    faturamentoSelecionado?.classificacaoTributaria &&
+    typeof faturamentoSelecionado.classificacaoTributaria === "object"
+      ? faturamentoSelecionado.classificacaoTributaria
+      : null;
+  const pendenciasTributariasSelecionadas = Array.isArray(
+    classificacaoTributariaSelecionada?.pendencias
+  )
+    ? classificacaoTributariaSelecionada.pendencias
+    : [];
 
   const atualizarFiltro = (campo, valor) => {
     setFiltros((atual) => ({ ...atual, [campo]: valor }));
@@ -337,6 +362,25 @@ export default function Faturamentos() {
     }
   };
 
+  const classificarTributacao = async () => {
+    if (!empresaId || !faturamentoSelecionado?.id || acaoEmAndamento) return;
+
+    setAcaoEmAndamento("classificar-tributacao");
+    try {
+      await solicitarClassificacaoTributaria({
+        empresaId,
+        faturamentoId: faturamentoSelecionado.id,
+      });
+      showToast("Classificação tributária realizada com sucesso.", "success");
+      await carregarLista();
+      await carregarDetalhe(faturamentoSelecionado.id);
+    } catch (error) {
+      showToast(error.message || "Não foi possível classificar tributariamente o faturamento.", "error");
+    } finally {
+      setAcaoEmAndamento("");
+    }
+  };
+
   const renderInfo = (label, valor) => (
     <div className="billing-info-item">
       <span>{label}</span>
@@ -417,6 +461,20 @@ export default function Faturamentos() {
     return (
       <ul className="billing-tax-pendency-list">
         {descreverPendenciasDeterminacaoFiscal(lista).map((descricao) => (
+          <li key={descricao}>{descricao}</li>
+        ))}
+      </ul>
+    );
+  };
+
+  const renderPendenciasTributarias = (pendencias = []) => {
+    const lista = Array.isArray(pendencias) ? pendencias : [];
+
+    if (lista.length === 0) return null;
+
+    return (
+      <ul className="billing-tax-pendency-list">
+        {descreverPendenciasClassificacaoTributaria(lista).map((descricao) => (
           <li key={descricao}>{descricao}</li>
         ))}
       </ul>
@@ -846,6 +904,90 @@ export default function Faturamentos() {
                 </section>
 
                 <section className="billing-detail-section">
+                  <h3>Classificação Tributária</h3>
+                  {classificacaoTributariaSelecionada ? (
+                    <>
+                      <div className="billing-info-grid billing-tax-summary">
+                        {renderInfo("Versão", classificacaoTributariaSelecionada.versao)}
+                        {renderInfo("Regra", classificacaoTributariaSelecionada.regraVersao)}
+                      </div>
+
+                      <div className="table-wrapper billing-tax-table-wrapper">
+                        <table className="billing-tax-table billing-tax-classification-table">
+                          <thead>
+                            <tr>
+                              <th>Item</th>
+                              <th>CST IBS/CBS</th>
+                              <th>cClassTrib</th>
+                              <th>Fonte</th>
+                              <th>Situação</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(classificacaoTributariaSelecionada.itens || []).map((itemClassificado, index) => {
+                              const itemOrigem = obterItemOrigemDeterminacao(itemClassificado);
+                              const situacao = obterSituacaoClassificacaoTributariaItem(itemClassificado);
+                              const pendenciasItem = Array.isArray(itemClassificado.pendencias)
+                                ? itemClassificado.pendencias
+                                : [];
+
+                              return (
+                                <tr key={`${itemClassificado.origemItemId || "item"}-${index}`}>
+                                  <td data-label="Item">
+                                    <span className="billing-tax-item-name">
+                                      {itemOrigem.descricao || `Item ${index + 1}`}
+                                    </span>
+                                  </td>
+                                  <td data-label="CST IBS/CBS">
+                                    {itemClassificado.ibsCbs?.cst || "-"}
+                                  </td>
+                                  <td data-label="cClassTrib">
+                                    {itemClassificado.ibsCbs?.cClassTrib || "-"}
+                                  </td>
+                                  <td data-label="Fonte">
+                                    {formatarFonteTributaria(itemClassificado.ibsCbs?.fonte)}
+                                  </td>
+                                  <td data-label="Situação">
+                                    <span className={`billing-tax-status ${situacao}`}>
+                                      {formatarSituacaoClassificacaoTributariaItem(situacao)}
+                                    </span>
+                                    {renderPendenciasTributarias(pendenciasItem)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {(classificacaoTributariaSelecionada.itens || []).length === 0 && (
+                              <tr>
+                                <td colSpan="5">Nenhum item classificado.</td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="billing-tax-pendencies">
+                        <h4>Pendências tributárias</h4>
+                        {pendenciasTributariasSelecionadas.length > 0 ? (
+                          <ul className="billing-pendency-list">
+                            {descreverPendenciasClassificacaoTributaria(
+                              pendenciasTributariasSelecionadas
+                            ).map((descricao) => (
+                              <li key={descricao}>{descricao}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="billing-empty-note">Sem pendências tributárias.</p>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="billing-empty-note">
+                      Classificação tributária ainda não realizada.
+                    </p>
+                  )}
+                </section>
+
+                <section className="billing-detail-section">
                   <h3>Pendências</h3>
                   {pendenciasSelecionadas.length > 0 ? (
                     <ul className="billing-pendency-list">
@@ -885,6 +1027,17 @@ export default function Faturamentos() {
                       {acaoEmAndamento === "determinar-fiscal"
                         ? "Determinando..."
                         : "Determinar fiscal"}
+                    </button>
+                  )}
+                  {statusSelecionado === "rascunho" && podeDeterminarFiscal && (
+                    <button
+                      type="button"
+                      onClick={classificarTributacao}
+                      disabled={Boolean(acaoEmAndamento)}
+                    >
+                      {acaoEmAndamento === "classificar-tributacao"
+                        ? "Classificando..."
+                        : "Classificar tributação"}
                     </button>
                   )}
                   {statusSelecionado === "rascunho" && podeEditarContexto && (

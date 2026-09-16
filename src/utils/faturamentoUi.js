@@ -51,6 +51,15 @@ export const LABELS_PENDENCIAS_DETERMINACAO_FISCAL = Object.freeze({
   regime_tributario_ausente: "Regime tributário do emitente ausente.",
 });
 
+export const LABELS_PENDENCIAS_CLASSIFICACAO_TRIBUTARIA = Object.freeze({
+  determinacao_fiscal_ausente: "A determinação fiscal ainda não foi realizada.",
+  determinacao_fiscal_item_incompleta: "A determinação fiscal do item está incompleta.",
+  regime_tributario_ausente:
+    "O regime tributário do emitente não está disponível no snapshot.",
+  classificacao_ibs_cbs_nao_determinada:
+    "A classificação IBS/CBS ainda não pôde ser determinada com segurança.",
+});
+
 const texto = (valor) => String(valor || "").trim();
 
 const textoBusca = (valor) =>
@@ -188,6 +197,15 @@ export const descreverPendenciasDeterminacaoFiscal = (pendencias = []) =>
     descreverPendenciaDeterminacaoFiscal(pendencia)
   );
 
+export const descreverPendenciaClassificacaoTributaria = (codigo) =>
+  LABELS_PENDENCIAS_CLASSIFICACAO_TRIBUTARIA[codigo] ||
+  `Pendência tributária não mapeada: ${codigo}`;
+
+export const descreverPendenciasClassificacaoTributaria = (pendencias = []) =>
+  (Array.isArray(pendencias) ? pendencias : []).map((pendencia) =>
+    descreverPendenciaClassificacaoTributaria(pendencia)
+  );
+
 export const obterSituacaoDeterminacaoItem = (item = {}) => {
   const pendencias = Array.isArray(item.pendencias) ? item.pendencias : [];
   return item.cfopEfetivo && pendencias.length === 0 ? "determinado" : "pendente";
@@ -195,6 +213,16 @@ export const obterSituacaoDeterminacaoItem = (item = {}) => {
 
 export const formatarSituacaoDeterminacaoItem = (situacao) =>
   situacao === "determinado" ? "Determinado" : "Pendente";
+
+export const obterSituacaoClassificacaoTributariaItem = (item = {}) => {
+  const pendencias = Array.isArray(item.pendencias) ? item.pendencias : [];
+  return item.ibsCbs?.cst && item.ibsCbs?.cClassTrib && pendencias.length === 0
+    ? "classificado"
+    : "pendente";
+};
+
+export const formatarSituacaoClassificacaoTributariaItem = (situacao) =>
+  situacao === "classificado" ? "Classificado" : "Pendente";
 
 export const calcularKpisFaturamento = (faturamentos = []) => {
   const lista = Array.isArray(faturamentos) ? faturamentos : [];

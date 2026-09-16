@@ -2,6 +2,7 @@ const express = require("express");
 const authFirebase = require("../middlewares/authFirebase");
 const { FieldValue, getDb } = require("../firebaseAdmin");
 const {
+  classificarTributacaoFaturamento,
   criarContextoOperacionalFaturamento,
   criarFaturamentoVenda,
   determinarFiscalFaturamento,
@@ -1021,6 +1022,117 @@ const criarHandlerDeterminarFiscalFaturamento = ({
   }
 };
 
+const criarHandlerClassificarTributacaoFaturamento = ({
+  getDb: getDbDependencia = getDb,
+  criarTimestampServidor = () => FieldValue.serverTimestamp(),
+} = {}) => async (req, res) => {
+  const atorUid = normalizarId(req.user?.uid);
+
+  if (!atorUid) {
+    res.status(401).json({
+      ok: false,
+      error: "Token Firebase nao informado.",
+      codigo: "token_ausente",
+    });
+    return;
+  }
+
+  let payload;
+
+  try {
+    payload = validarPayloadFaturamentoMinimo({
+      params: req.params,
+      body: req.body,
+    });
+  } catch (error) {
+    montarRespostaErro(res, error);
+    return;
+  }
+
+  const db = getDbDependencia();
+
+  try {
+    const resultado = await db.runTransaction(async (transaction) => {
+      const {
+        atorData,
+        ownerUid,
+        empresaRef,
+        vinculoUsuarioEmpresa,
+      } = await resolverAcessoEmpresa({
+        db,
+        transaction,
+        atorUid,
+        empresaId: payload.empresaId,
+      });
+      const faturamentoRef = empresaRef.collection("faturamentos").doc(payload.faturamentoId);
+      const faturamentoSnapshot = await transaction.get(faturamentoRef);
+
+      if (!usuarioAtivoPodeDeterminarFiscal({
+        atorUid,
+        ownerUid,
+        atorData,
+        vinculoUsuarioEmpresa,
+      })) {
+        throw criarErroHttp(
+          403,
+          "Voce nao tem permissao para classificar tributariamente o faturamento.",
+          "sem_permissao"
+        );
+      }
+
+      if (!snapshotExiste(faturamentoSnapshot)) {
+        throw criarErroHttp(404, "Faturamento nao encontrado.", "faturamento_nao_encontrado");
+      }
+
+      const faturamento = dadosSnapshot(faturamentoSnapshot);
+      const statusAtual = String(faturamento.status || "rascunho").trim().toLowerCase();
+
+      if (statusAtual !== "rascunho") {
+        throw criarErroHttp(
+          409,
+          "Status do faturamento nao permite classificacao tributaria.",
+          "status_invalido"
+        );
+      }
+
+      const classificacaoTributaria = classificarTributacaoFaturamento({
+        id: faturamentoSnapshot.id,
+        ...faturamento,
+      });
+      const timestamp = criarTimestampServidor();
+
+      transaction.update(faturamentoRef, {
+        classificacaoTributaria,
+        classificacaoTributariaAtualizadaEm: timestamp,
+        classificacaoTributariaAtualizadaPor: atorUid,
+        atualizadoEm: timestamp,
+      });
+
+      return {
+        faturamentoId: faturamentoRef.id,
+        status: statusAtual,
+        classificacaoTributaria,
+      };
+    });
+
+    res.status(200).json({
+      ok: true,
+      faturamentoId: resultado.faturamentoId,
+      status: resultado.status,
+      classificacaoTributaria: resultado.classificacaoTributaria,
+    });
+  } catch (error) {
+    console.error("Erro ao classificar tributariamente o faturamento", {
+      atorUid,
+      empresaId: payload?.empresaId,
+      faturamentoId: payload?.faturamentoId,
+      statusCode: error.statusCode || 500,
+      codigo: error.codigo || null,
+    });
+    montarRespostaErro(res, error);
+  }
+};
+
 const criarHandlerCancelarFaturamento = ({
   getDb: getDbDependencia = getDb,
   criarTimestampServidor = () => FieldValue.serverTimestamp(),
@@ -1151,6 +1263,11 @@ router.post(
   authFirebase,
   criarHandlerDeterminarFiscalFaturamento()
 );
+router.post(
+  "/:faturamentoId/classificar-tributacao",
+  authFirebase,
+  criarHandlerClassificarTributacaoFaturamento()
+);
 router.post("/:faturamentoId/cancelar", authFirebase, criarHandlerCancelarFaturamento());
 
 module.exports = router;
@@ -1160,6 +1277,8 @@ module.exports.criarHandlerCriarFaturamento = criarHandlerCriarFaturamento;
 module.exports.criarHandlerPrepararFaturamento = criarHandlerPrepararFaturamento;
 module.exports.criarHandlerDeterminarFiscalFaturamento =
   criarHandlerDeterminarFiscalFaturamento;
+module.exports.criarHandlerClassificarTributacaoFaturamento =
+  criarHandlerClassificarTributacaoFaturamento;
 module.exports.criarHandlerSalvarContextoOperacionalFaturamento =
   criarHandlerSalvarContextoOperacionalFaturamento;
 module.exports.criarHandlerCancelarFaturamento = criarHandlerCancelarFaturamento;
