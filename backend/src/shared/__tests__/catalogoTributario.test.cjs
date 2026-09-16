@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
   CATALOGO_IBS_CBS_REFERENCIA,
+  CATALOGO_IBS_CBS_2025_002_V1_60,
   validarCatalogoTributario,
   buscarClassificacaoPorCodigo,
   listarClassificacoesPorCst,
@@ -97,4 +98,52 @@ test("historical billing classification remains untouched by catalog lookup", ()
 
   assert.deepEqual(historico, antes);
   assert.deepEqual(historico.classificacaoTributaria, antes.classificacaoTributaria);
+});
+
+test("official v1.60 dataset has verified provenance, 18 CSTs and 164 unique classifications", () => {
+  const catalogo = CATALOGO_IBS_CBS_2025_002_V1_60;
+  assert.equal(validarCatalogoTributario(catalogo), true);
+  assert.equal(catalogo.tipo, "ibs_cbs_cclasstrib");
+  assert.equal(catalogo.versaoCatalogo, "2025.002-v1.60");
+  assert.equal(catalogo.referencia.documento, "IT 2025.002");
+  assert.equal(catalogo.referencia.versaoDocumento, "1.60");
+  assert.equal(catalogo.referencia.dataDocumento, "2026-06-22");
+  assert.equal(catalogo.referencia.dataPublicacao, "2026-06-23");
+  assert.equal(catalogo.completo, true);
+  assert.equal(catalogo.csts.length, 18);
+  assert.equal(new Set(catalogo.csts.map((item) => item.cst)).size, 18);
+  assert.equal(catalogo.itens.length, 164);
+  assert.equal(new Set(catalogo.itens.map((item) => item.cClassTrib)).size, 164);
+  assert.equal(catalogo.itens.filter((item) => item.fimVigencia !== null).length, 3);
+  assert.ok(catalogo.itens.every((item) => typeof item.cst === "string" && typeof item.cClassTrib === "string"));
+  assert.ok(catalogo.itens.every((item) => item.cClassTrib.slice(0, 3) === item.cst));
+});
+
+test("official classifications are searchable without mutating nested metadata", () => {
+  const catalogo = CATALOGO_IBS_CBS_2025_002_V1_60;
+  const item = buscarClassificacaoPorCodigo("000001", catalogo);
+  assert.equal(item.cst, "000");
+  assert.equal(item.cClassTrib, "000001");
+  assert.equal(item.descricao, "Situações tributadas integralmente pelo IBS e CBS.");
+  assert.equal(item.indicadores.IndNfe, true);
+  assert.equal(typeof item.metadadosOficiais.PercRedIbs, "number");
+  assert.equal(item.origemCatalogo.versaoCatalogo, "2025.002-v1.60");
+  assert.equal(buscarClassificacaoPorCodigo("999999", catalogo), null);
+  const porCst = listarClassificacoesPorCst("000", catalogo);
+  assert.ok(porCst.length > 0);
+  assert.ok(porCst.every((valor) => valor.cst === "000"));
+  assert.deepEqual(listarClassificacoesPorCst("999", catalogo), []);
+  item.indicadores.IndNfe = false;
+  assert.equal(buscarClassificacaoPorCodigo("000001", catalogo).indicadores.IndNfe, true);
+  assert.equal(Object.isFrozen(catalogo.itens[0].indicadores), true);
+});
+
+test("validator rejects incomplete or structurally inconsistent official catalogues", () => {
+  const catalogo = CATALOGO_IBS_CBS_2025_002_V1_60;
+  assert.equal(validarCatalogoTributario({ ...catalogo, itens: [] }), false);
+  assert.equal(validarCatalogoTributario({ ...catalogo, itens: [catalogo.itens[0], catalogo.itens[0]] }), false);
+  assert.equal(validarCatalogoTributario({ ...catalogo, itens: [{ ...catalogo.itens[0], cst: "010" }] }), false);
+  assert.equal(validarCatalogoTributario({ ...catalogo, itens: [{ ...catalogo.itens[0], indicadores: { IndNfe: "sim" } }] }), false);
+  assert.equal(validarCatalogoTributario({ ...catalogo, itens: [{ ...catalogo.itens[0], inicioVigencia: "2026-02-30T00:00:00" }] }), false);
+  assert.equal(validarCatalogoTributario({ ...catalogo, itens: [{ ...catalogo.itens[0], fimVigencia: "2020-01-01T00:00:00" }] }), false);
 });
