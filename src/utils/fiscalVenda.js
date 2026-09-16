@@ -1,3 +1,5 @@
+import { criarFiscalDestinatarioSnapshot } from "./fiscalCliente.js";
+
 const FISCAL_ITEM_PADRAO = Object.freeze({
   versao: 1,
   ncm: "",
@@ -89,6 +91,8 @@ export const criarDestinatarioSnapshotVenda = ({
       ? cliente
       : {};
 
+  const fiscalDestinatario = criarFiscalDestinatarioSnapshot(clienteValido);
+
   return Object.freeze({
     ...DESTINATARIO_PADRAO,
     clienteId: valorTextoFiscal(clienteValido.id || clienteId),
@@ -99,6 +103,9 @@ export const criarDestinatarioSnapshotVenda = ({
     endereco: valorTextoFiscal(clienteValido.endereco),
     cidade: valorTextoFiscal(clienteValido.cidade),
     uf: valorTextoFiscal(clienteValido.uf),
+    ...(fiscalDestinatario
+      ? { ...fiscalDestinatario, enderecoFiscal: Object.freeze(fiscalDestinatario.enderecoFiscal) }
+      : {}),
   });
 };
 

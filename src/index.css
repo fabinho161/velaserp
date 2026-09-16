@@ -4979,6 +4979,22 @@ tr:hover td {
   grid-column: 1 / -1;
 }
 
+.crm-fiscal-details {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.crm-fiscal-details summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.crm-fiscal-details > .crm-form-grid {
+  margin-top: 12px;
+}
+
 .crm-delete-modal-card {
   width: min(520px, 100%);
   padding: 24px;

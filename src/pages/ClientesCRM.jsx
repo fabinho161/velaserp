@@ -16,6 +16,8 @@ import { usePlano } from "../hooks/usePlano";
 import { useTableSort } from "../hooks/useTableSort";
 import { normalizarSegmentoEmpresa } from "../config/segmentosEmpresa.js";
 import { dataBR, moedaBR, numeroBR } from "../utils/formatters";
+import { INDICADORES_IE_DESTINATARIO } from "../utils/faturamento.js";
+import { prepararFiscalCliente, TIPOS_PESSOA_FISCAL } from "../utils/fiscalCliente.js";
 
 const TIPOS_CLIENTE = ["Final", "Revendedor", "Distribuidor", "Outro"];
 const STATUS_RELACIONAMENTO = ["Ativo", "Atenção", "Inativo"];
@@ -28,6 +30,15 @@ const STATUS_RECOMPRA = [
   "Inativo",
 ];
 
+const FISCAL_CLIENTE_INICIAL = {
+  tipoPessoa: "",
+  cpf: "",
+  cnpj: "",
+  inscricaoEstadual: "",
+  indicadorIECadastral: "",
+  enderecoFiscal: { paisCodigo: "", paisNome: "", municipioCodigo: "" },
+};
+
 const CLIENTE_INICIAL = {
   nome: "",
   telefone: "",
@@ -36,6 +47,7 @@ const CLIENTE_INICIAL = {
   uf: "",
   endereco: "",
   documento: "",
+  fiscal: FISCAL_CLIENTE_INICIAL,
   tipo: "Final",
   observacoes: "",
   statusRelacionamento: "Ativo",
@@ -425,6 +437,18 @@ export default function ClientesCRM() {
       uf: cliente.uf || "",
       endereco: cliente.endereco || "",
       documento: cliente.documento || "",
+      fiscal: {
+        tipoPessoa: cliente.fiscal?.tipoPessoa || "",
+        cpf: cliente.fiscal?.cpf || "",
+        cnpj: cliente.fiscal?.cnpj || "",
+        inscricaoEstadual: cliente.fiscal?.inscricaoEstadual || "",
+        indicadorIECadastral: cliente.fiscal?.indicadorIECadastral || "",
+        enderecoFiscal: {
+          paisCodigo: cliente.fiscal?.enderecoFiscal?.paisCodigo || "",
+          paisNome: cliente.fiscal?.enderecoFiscal?.paisNome || "",
+          municipioCodigo: cliente.fiscal?.enderecoFiscal?.municipioCodigo || "",
+        },
+      },
       tipo: cliente.tipo || "Final",
       observacoes: cliente.observacoes || "",
       statusRelacionamento: cliente.statusRelacionamento || "Ativo",
@@ -438,6 +462,20 @@ export default function ClientesCRM() {
   const fecharModal = () => {
     setModalAberto(false);
     limparFormulario();
+  };
+
+  const atualizarFiscal = (campo, valor) => {
+    setForm((atual) => ({ ...atual, fiscal: { ...atual.fiscal, [campo]: valor } }));
+  };
+
+  const atualizarEnderecoFiscal = (campo, valor) => {
+    setForm((atual) => ({
+      ...atual,
+      fiscal: {
+        ...atual.fiscal,
+        enderecoFiscal: { ...atual.fiscal.enderecoFiscal, [campo]: valor },
+      },
+    }));
   };
 
   const salvarCliente = async () => {
@@ -465,6 +503,14 @@ export default function ClientesCRM() {
       return;
     }
 
+    let fiscalCliente;
+    try {
+      fiscalCliente = prepararFiscalCliente(form.fiscal, { uf: form.uf });
+    } catch (error) {
+      showToast(error.message, "warning");
+      return;
+    }
+
     const clienteAnterior = clienteEditandoId
       ? clientesComerciais.find((cliente) => cliente.id === clienteEditandoId)
       : null;
@@ -486,6 +532,7 @@ export default function ClientesCRM() {
       cidade: form.cidade.trim(),
       endereco: form.endereco.trim(),
       documento: form.documento.trim(),
+      fiscal: fiscalCliente,
       empresaId,
       userId: user?.uid || "",
       ativo: clienteAtivo,
@@ -1029,6 +1076,85 @@ export default function ClientesCRM() {
                   onChange={(e) => setForm({ ...form, documento: e.target.value })}
                 />
               </label>
+
+              <details className="crm-fiscal-details crm-field-full">
+                <summary>Dados fiscais do destinatário</summary>
+                <div className="crm-form-grid">
+                  <label>
+                    Tipo de pessoa
+                    <select
+                      value={form.fiscal.tipoPessoa}
+                      onChange={(e) => {
+                        const tipoPessoa = e.target.value;
+                        setForm((atual) => ({
+                          ...atual,
+                          fiscal: {
+                            ...atual.fiscal,
+                            tipoPessoa,
+                            cpf: "",
+                            cnpj: "",
+                            ...(tipoPessoa === TIPOS_PESSOA_FISCAL.EXTERIOR
+                              ? {
+                                  inscricaoEstadual: "",
+                                  indicadorIECadastral: "",
+                                  enderecoFiscal: { ...atual.fiscal.enderecoFiscal, municipioCodigo: "" },
+                                }
+                              : {}),
+                          },
+                        }));
+                      }}
+                    >
+                      <option value="">Não informado</option>
+                      <option value={TIPOS_PESSOA_FISCAL.FISICA}>Pessoa Física</option>
+                      <option value={TIPOS_PESSOA_FISCAL.JURIDICA}>Pessoa Jurídica</option>
+                      <option value={TIPOS_PESSOA_FISCAL.EXTERIOR}>Exterior</option>
+                    </select>
+                  </label>
+                  {form.fiscal.tipoPessoa === TIPOS_PESSOA_FISCAL.FISICA && (
+                    <label>
+                      CPF
+                      <input inputMode="numeric" value={form.fiscal.cpf} onChange={(e) => atualizarFiscal("cpf", e.target.value)} />
+                    </label>
+                  )}
+                  {form.fiscal.tipoPessoa === TIPOS_PESSOA_FISCAL.JURIDICA && (
+                    <label>
+                      CNPJ
+                      <input inputMode="numeric" value={form.fiscal.cnpj} onChange={(e) => atualizarFiscal("cnpj", e.target.value)} />
+                    </label>
+                  )}
+                  {form.fiscal.tipoPessoa !== TIPOS_PESSOA_FISCAL.EXTERIOR && (
+                    <>
+                      <label>
+                        Inscrição Estadual
+                        <input value={form.fiscal.inscricaoEstadual} onChange={(e) => atualizarFiscal("inscricaoEstadual", e.target.value)} />
+                      </label>
+                      <label>
+                        Situação da inscrição estadual
+                        <select value={form.fiscal.indicadorIECadastral} onChange={(e) => atualizarFiscal("indicadorIECadastral", e.target.value)}>
+                          <option value="">Não informada</option>
+                          <option value={INDICADORES_IE_DESTINATARIO.CONTRIBUINTE}>Contribuinte</option>
+                          <option value={INDICADORES_IE_DESTINATARIO.CONTRIBUINTE_ISENTO}>Contribuinte isento</option>
+                          <option value={INDICADORES_IE_DESTINATARIO.NAO_CONTRIBUINTE}>Não contribuinte</option>
+                        </select>
+                      </label>
+                    </>
+                  )}
+                  <label>
+                    País
+                    <input value={form.fiscal.enderecoFiscal.paisNome} onChange={(e) => atualizarEnderecoFiscal("paisNome", e.target.value)} />
+                  </label>
+                  <label>
+                    Código do país
+                    <input value={form.fiscal.enderecoFiscal.paisCodigo} onChange={(e) => atualizarEnderecoFiscal("paisCodigo", e.target.value)} />
+                  </label>
+                  {form.fiscal.tipoPessoa !== TIPOS_PESSOA_FISCAL.EXTERIOR && (
+                    <label>
+                      Código do município
+                      <input inputMode="numeric" value={form.fiscal.enderecoFiscal.municipioCodigo} onChange={(e) => atualizarEnderecoFiscal("municipioCodigo", e.target.value)} />
+                    </label>
+                  )}
+                </div>
+              </details>
 
               <label>
                 Cidade
