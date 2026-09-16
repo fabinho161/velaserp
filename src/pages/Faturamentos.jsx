@@ -289,7 +289,7 @@ export default function Faturamentos() {
     if (!empresaId || !faturamentoSelecionado?.id || acaoEmAndamento) return;
 
     const confirmado = await confirmar(
-      "Após preparar, o contexto e os snapshots não poderão ser alterados. Deseja continuar?"
+      "Após preparar, os dados da operação e os dados fiscais registrados não poderão ser alterados. Deseja continuar?"
     );
     if (!confirmado) return;
 

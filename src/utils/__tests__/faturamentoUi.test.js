@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  LABELS_PENDENCIAS_FATURAMENTO,
+  LABELS_PENDENCIAS_CLASSIFICACAO_TRIBUTARIA,
   calcularKpisFaturamento,
   descreverPendenciaClassificacaoTributaria,
   descreverPendenciaDeterminacaoFiscal,
@@ -50,7 +52,7 @@ test("formata labels de status origem destino e pendencias", () => {
   assert.equal(formatarDestinoOperacao("interestadual"), "Interestadual");
   assert.equal(
     descreverPendenciaFaturamento("item_ncm_ausente"),
-    "Um ou mais itens não possuem NCM no snapshot fiscal."
+    "Um ou mais itens não possuem NCM nos dados fiscais registrados."
   );
 });
 
@@ -80,11 +82,17 @@ test("converte lista de codigos de pendencia em mensagens amigaveis", () => {
       "item_fiscal_snapshot_ausente",
     ]),
     [
-      "Snapshot fiscal do emitente ausente.",
-      "Snapshot do destinatário ausente.",
-      "Um ou mais itens não possuem snapshot fiscal.",
+      "Dados fiscais do emitente não foram registrados nesta operação.",
+      "Dados do destinatário não foram registrados nesta operação.",
+      "Um ou mais itens não possuem dados fiscais registrados nesta operação.",
     ]
   );
+  for (const mensagem of Object.values(LABELS_PENDENCIAS_FATURAMENTO)) {
+    assert.doesNotMatch(mensagem, /snapshot|payload|schema|enum|null|undefined|objeto fiscal/i);
+  }
+  for (const mensagem of Object.values(LABELS_PENDENCIAS_CLASSIFICACAO_TRIBUTARIA)) {
+    assert.doesNotMatch(mensagem, /snapshot|payload|schema|enum|null|undefined|objeto fiscal/i);
+  }
 });
 
 test("filtra por status origem destinatario e periodo", () => {

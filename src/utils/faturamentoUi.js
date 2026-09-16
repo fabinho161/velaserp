@@ -12,9 +12,9 @@ export const ORIGEM_FATURAMENTO_OPCOES = Object.freeze([
 ]);
 
 export const LABELS_PENDENCIAS_FATURAMENTO = Object.freeze({
-  emitente_snapshot_ausente: "Snapshot fiscal do emitente ausente.",
-  destinatario_snapshot_ausente: "Snapshot do destinatário ausente.",
-  item_fiscal_snapshot_ausente: "Um ou mais itens não possuem snapshot fiscal.",
+  emitente_snapshot_ausente: "Dados fiscais do emitente não foram registrados nesta operação.",
+  destinatario_snapshot_ausente: "Dados do destinatário não foram registrados nesta operação.",
+  item_fiscal_snapshot_ausente: "Um ou mais itens não possuem dados fiscais registrados nesta operação.",
   emitente_cnpj_ausente: "CNPJ do emitente ausente.",
   emitente_regime_tributario_ausente: "Regime tributário do emitente ausente.",
   emitente_uf_ausente: "UF do emitente ausente.",
@@ -26,9 +26,9 @@ export const LABELS_PENDENCIAS_FATURAMENTO = Object.freeze({
   item_quantidade_invalida: "Um ou mais itens possuem quantidade inválida.",
   item_valor_unitario_invalido: "Um ou mais itens possuem valor unitário inválido.",
   item_total_invalido: "Um ou mais itens possuem total inválido.",
-  item_ncm_ausente: "Um ou mais itens não possuem NCM no snapshot fiscal.",
+  item_ncm_ausente: "Um ou mais itens não possuem NCM nos dados fiscais registrados.",
   item_unidade_tributavel_ausente:
-    "Um ou mais itens não possuem unidade tributável no snapshot fiscal.",
+    "Um ou mais itens não possuem unidade tributável nos dados fiscais registrados.",
   finalidade_operacao_ausente: "Finalidade da operação ausente.",
   finalidade_operacao_invalida: "Finalidade da operação inválida.",
   presenca_comprador_ausente: "Presença do comprador ausente.",
@@ -55,7 +55,7 @@ export const LABELS_PENDENCIAS_CLASSIFICACAO_TRIBUTARIA = Object.freeze({
   determinacao_fiscal_ausente: "A determinação fiscal ainda não foi realizada.",
   determinacao_fiscal_item_incompleta: "A determinação fiscal do item está incompleta.",
   regime_tributario_ausente:
-    "O regime tributário do emitente não está disponível no snapshot.",
+    "O regime tributário do emitente não está disponível nos dados fiscais registrados.",
   classificacao_ibs_cbs_nao_determinada:
     "A classificação IBS/CBS ainda não pôde ser determinada com segurança.",
 });
