@@ -9,6 +9,8 @@ const {
   validarPreparacaoFaturamento,
 } = require("../shared/faturamento.cjs");
 const { normalizarRoleEmpresa } = require("../utils/perfisEmpresa");
+const { CATALOGO_IBS_CBS_2025_002_V1_60 } = require("../shared/catalogoTributario.cjs");
+const { classificarManualmente } = require("../shared/classificacaoManual.cjs");
 
 const router = express.Router();
 
@@ -1095,6 +1097,12 @@ const criarHandlerClassificarTributacaoFaturamento = ({
         );
       }
 
+      if (faturamento.classificacaoTributaria?.itens?.some((item) =>
+        item.origemClassificacao === "manual")) {
+        return { faturamentoId: faturamentoRef.id, status: statusAtual,
+          classificacaoTributaria: faturamento.classificacaoTributaria };
+      }
+
       const classificacaoTributaria = classificarTributacaoFaturamento({
         id: faturamentoSnapshot.id,
         ...faturamento,
@@ -1130,6 +1138,68 @@ const criarHandlerClassificarTributacaoFaturamento = ({
       codigo: error.codigo || null,
     });
     montarRespostaErro(res, error);
+  }
+};
+
+const criarHandlerListarCatalogoTributario = ({ getDb: getDbDependencia = getDb } = {}) => async (req, res) => {
+  const atorUid = normalizarId(req.user?.uid);
+  if (!atorUid) return res.status(401).json({ ok: false, codigo: "token_ausente" });
+  try {
+    const empresaId = validarIdFirestore("empresaId", req.query?.empresaId);
+    const db = getDbDependencia();
+    await db.runTransaction(async (transaction) => {
+      const acesso = await resolverAcessoEmpresa({ db, transaction, atorUid, empresaId });
+      if (!usuarioAtivoPodeLerFaturamento({ atorUid, ...acesso })) {
+        throw criarErroHttp(403, "Sem permissao.", "sem_permissao");
+      }
+    });
+    const catalogo = CATALOGO_IBS_CBS_2025_002_V1_60;
+    return res.status(200).json({ ok: true, versao: catalogo.versaoCatalogo,
+      csts: catalogo.csts.map(({ cst, nome }) => ({ cst, nome })),
+      itens: catalogo.itens.map(({ cst, cClassTrib, descricao, inicioVigencia, fimVigencia }) =>
+        ({ cst, cClassTrib, descricao, inicioVigencia, fimVigencia })) });
+  } catch (error) {
+    return montarRespostaErro(res, error);
+  }
+};
+
+const criarHandlerSalvarClassificacaoManual = ({
+  getDb: getDbDependencia = getDb,
+  agora = () => new Date().toISOString(),
+} = {}) => async (req, res) => {
+  const atorUid = normalizarId(req.user?.uid);
+  if (!atorUid) return res.status(401).json({ ok: false, codigo: "token_ausente" });
+  try {
+    const { empresaId, faturamentoId } = validarPayloadFaturamentoMinimo({ params: req.params, body: req.body });
+    if (!Array.isArray(req.body.itens)) throw criarErroHttp(400, "Itens invalidos.", "itens_invalidos");
+    const db = getDbDependencia();
+    const resultado = await db.runTransaction(async (transaction) => {
+      const acesso = await resolverAcessoEmpresa({ db, transaction, atorUid, empresaId });
+      if (!usuarioAtivoPodeDeterminarFiscal({ atorUid, ...acesso })) {
+        throw criarErroHttp(403, "Sem permissao.", "sem_permissao");
+      }
+      const ref = acesso.empresaRef.collection("faturamentos").doc(faturamentoId);
+      const snapshot = await transaction.get(ref);
+      if (!snapshotExiste(snapshot)) throw criarErroHttp(404, "Faturamento nao encontrado.", "faturamento_nao_encontrado");
+      const faturamento = dadosSnapshot(snapshot);
+      if (String(faturamento.status || "rascunho").trim().toLowerCase() !== "rascunho") {
+        throw criarErroHttp(409, "Status nao permite classificacao.", "status_invalido");
+      }
+      let calculo;
+      try {
+        calculo = classificarManualmente({ faturamento, solicitacoes: req.body.itens,
+          catalogo: CATALOGO_IBS_CBS_2025_002_V1_60, usuarioId: atorUid, dataAuditoria: agora() });
+      } catch (error) {
+        throw criarErroHttp(400, "Classificacao invalida.", error.codigo || "classificacao_invalida");
+      }
+      if (calculo.alterou) transaction.update(ref, { classificacaoTributaria: calculo.classificacaoTributaria,
+        classificacaoTributariaAtualizadaEm: FieldValue.serverTimestamp(),
+        classificacaoTributariaAtualizadaPor: atorUid });
+      return { faturamentoId, classificacaoTributaria: calculo.classificacaoTributaria, alterou: calculo.alterou };
+    });
+    return res.status(200).json({ ok: true, ...resultado });
+  } catch (error) {
+    return montarRespostaErro(res, error);
   }
 };
 
@@ -1249,6 +1319,7 @@ const criarHandlerCancelarFaturamento = ({
   }
 };
 
+router.get("/catalogo-tributario", authFirebase, criarHandlerListarCatalogoTributario());
 router.get("/", authFirebase, criarHandlerListarFaturamentos());
 router.get("/:faturamentoId", authFirebase, criarHandlerObterFaturamento());
 router.post("/", authFirebase, criarHandlerCriarFaturamento());
@@ -1268,6 +1339,7 @@ router.post(
   authFirebase,
   criarHandlerClassificarTributacaoFaturamento()
 );
+router.put("/:faturamentoId/classificacao-tributaria", authFirebase, criarHandlerSalvarClassificacaoManual());
 router.post("/:faturamentoId/cancelar", authFirebase, criarHandlerCancelarFaturamento());
 
 module.exports = router;
@@ -1279,6 +1351,8 @@ module.exports.criarHandlerDeterminarFiscalFaturamento =
   criarHandlerDeterminarFiscalFaturamento;
 module.exports.criarHandlerClassificarTributacaoFaturamento =
   criarHandlerClassificarTributacaoFaturamento;
+module.exports.criarHandlerSalvarClassificacaoManual = criarHandlerSalvarClassificacaoManual;
+module.exports.criarHandlerListarCatalogoTributario = criarHandlerListarCatalogoTributario;
 module.exports.criarHandlerSalvarContextoOperacionalFaturamento =
   criarHandlerSalvarContextoOperacionalFaturamento;
 module.exports.criarHandlerCancelarFaturamento = criarHandlerCancelarFaturamento;

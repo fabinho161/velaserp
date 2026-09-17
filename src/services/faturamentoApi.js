@@ -73,6 +73,17 @@ export const obterFaturamento = ({ empresaId, faturamentoId }) => {
   );
 };
 
+export const listarCatalogoTributario = ({ empresaId }) => {
+  const params = new URLSearchParams({ empresaId });
+  return requisitarFaturamento(`/api/faturamentos/catalogo-tributario?${params.toString()}`);
+};
+
+export const salvarClassificacaoManual = ({ empresaId, faturamentoId, itens }) =>
+  requisitarFaturamento(`/api/faturamentos/${encodeURIComponent(faturamentoId)}/classificacao-tributaria`, {
+    method: "PUT",
+    body: JSON.stringify({ empresaId, itens }),
+  });
+
 export const criarFaturamento = ({ empresaId, vendaId }) =>
   requisitarFaturamento("/api/faturamentos", {
     method: "POST",

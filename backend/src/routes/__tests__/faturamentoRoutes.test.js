@@ -3,6 +3,8 @@ const assert = require("node:assert/strict");
 
 const {
   criarHandlerClassificarTributacaoFaturamento,
+  criarHandlerSalvarClassificacaoManual,
+  criarHandlerListarCatalogoTributario,
   criarHandlerCancelarFaturamento,
   criarHandlerCriarFaturamento,
   criarHandlerDeterminarFiscalFaturamento,
@@ -321,6 +323,11 @@ const criarAmbiente = ({
     getDb: () => db,
     criarTimestampServidor: () => SERVER_TIMESTAMP,
   });
+  const classificacaoManualHandler = criarHandlerSalvarClassificacaoManual({
+    getDb: () => db,
+    agora: () => "2026-09-16T12:00:00Z",
+  });
+  const catalogoHandler = criarHandlerListarCatalogoTributario({ getDb: () => db });
   const contextoHandler = criarHandlerSalvarContextoOperacionalFaturamento({
     getDb: () => db,
     criarTimestampServidor: () => SERVER_TIMESTAMP,
@@ -373,6 +380,8 @@ const criarAmbiente = ({
     cancelarHandler,
     determinarFiscalHandler,
     classificarTributacaoHandler,
+    classificacaoManualHandler,
+    catalogoHandler,
     contextoHandler,
     listarHandler,
     obterHandler,
@@ -502,6 +511,129 @@ test("cria faturamento a partir de venda normal", async () => {
   assert.equal(res.body.reutilizado, false);
   assert.equal(faturamento.origem.tipo, "venda");
   assert.equal(faturamento.itens[0].tipoItem, "mercadoria");
+});
+
+test("catalogo autenticado retorna somente opcoes necessarias e respeita vinculo", async () => {
+  const ambiente = criarAmbiente();
+  const res = criarRes();
+  await ambiente.catalogoHandler(ambiente.req({ empresaId: "empresa-1" }), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.versao, "2025.002-v1.60");
+  assert.ok(res.body.itens.some((item) => item.cClassTrib === "000001"));
+  assert.equal(Object.hasOwn(res.body.itens[0], "metadadosOficiais"), false);
+  const negado = criarRes();
+  await ambiente.catalogoHandler(ambiente.req({ empresaId: "outra" }), negado);
+  assert.equal(negado.statusCode, 404);
+});
+
+test("classificacao manual e atomica, auditada, idempotente e preserva venda", async () => {
+  const ambiente = criarAmbiente();
+  await executar(ambiente);
+  const antes = ambiente.db.get(pathFaturamento());
+  const vendaAntes = ambiente.db.get(pathVenda());
+  const req = ambiente.req({ empresaId: "empresa-1", itens: [
+    { indice: 0, origemItemId: "produto-1", cst: "000", cClassTrib: "000001", observacao: "Contador" },
+  ] }, { faturamentoId: "venda_venda-1_preparacao_v1" });
+  const res = criarRes();
+  await ambiente.classificacaoManualHandler(req, res);
+  assert.equal(res.statusCode, 200);
+  const depois = ambiente.db.get(pathFaturamento());
+  assert.equal(depois.classificacaoTributaria.itens[0].classificadoPor, "owner-1");
+  assert.equal(depois.classificacaoTributaria.itens[0].ibsCbs.fonte.tipo, "manual");
+  assert.deepEqual(depois.itens, antes.itens);
+  assert.deepEqual(depois.contextoFiscal, antes.contextoFiscal);
+  assert.deepEqual(ambiente.db.get(pathVenda()), vendaAntes);
+  const repetido = criarRes();
+  await ambiente.classificacaoManualHandler(req, repetido);
+  assert.equal(repetido.body.alterou, false);
+  const invalida = criarRes();
+  await ambiente.classificacaoManualHandler(ambiente.req({ empresaId: "empresa-1", itens: [
+    { indice: 0, origemItemId: "produto-1", cst: "999", cClassTrib: "000001" },
+  ] }, req.params), invalida);
+  assert.equal(invalida.statusCode, 400);
+  assert.deepEqual(ambiente.db.get(pathFaturamento()), depois);
+});
+
+test("classificacao manual exige autenticacao, vinculo ativo, role e rascunho", async () => {
+  const body = { empresaId: "empresa-1", itens: [
+    { indice: 0, origemItemId: "produto-1", cst: "000", cClassTrib: "000001" },
+  ] };
+  const params = { faturamentoId: "venda_venda-1_preparacao_v1" };
+  const anonimo = criarAmbiente();
+  const reqAnonimo = anonimo.req(body, params);
+  reqAnonimo.user = null;
+  const resAnonimo = criarRes();
+  await anonimo.classificacaoManualHandler(reqAnonimo, resAnonimo);
+  assert.equal(resAnonimo.statusCode, 401);
+
+  for (const role of ["comercial", "estoque", "producao", "visualizacao"]) {
+    const ambiente = criarAmbiente({ atorUid: `usuario-${role}`, usuarioEmpresa: { role } });
+    await executar(ambiente);
+    const antes = ambiente.db.get(pathFaturamento());
+    const res = criarRes();
+    await ambiente.classificacaoManualHandler(ambiente.req(body, params), res);
+    assert.equal(res.statusCode, 403, role);
+    assert.deepEqual(ambiente.db.get(pathFaturamento()), antes);
+  }
+  const inativo = criarAmbiente({ atorUid: "inativo", usuarioEmpresa: { role: "financeiro", status: "inativo" } });
+  await executar(inativo);
+  const resInativo = criarRes();
+  await inativo.classificacaoManualHandler(inativo.req(body, params), resInativo);
+  assert.equal(resInativo.statusCode, 403);
+
+  const owner = criarAmbiente();
+  const inexistente = criarRes();
+  await owner.classificacaoManualHandler(owner.req(body, params), inexistente);
+  assert.equal(inexistente.statusCode, 404);
+  await executar(owner);
+  for (const status of ["preparado", "cancelado"]) {
+    owner.db.set(pathFaturamento(), { ...owner.db.get(pathFaturamento()), status });
+    const res = criarRes();
+    await owner.classificacaoManualHandler(owner.req(body, params), res);
+    assert.equal(res.statusCode, 409, status);
+  }
+});
+
+test("administrador e financeiro ativos podem classificar; empresa cruzada e negada", async () => {
+  const body = { empresaId: "empresa-1", itens: [
+    { indice: 0, origemItemId: "produto-1", cst: "000", cClassTrib: "000001" },
+  ] };
+  const params = { faturamentoId: "venda_venda-1_preparacao_v1" };
+  for (const role of ["administrador_empresa", "financeiro"]) {
+    const ambiente = criarAmbiente({ atorUid: `usuario-${role}`, usuarioEmpresa: { role } });
+    await executar(ambiente);
+    const res = criarRes();
+    await ambiente.classificacaoManualHandler(ambiente.req(body, params), res);
+    assert.equal(res.statusCode, 200, role);
+    assert.equal(res.body.classificacaoTributaria.itens[0].classificadoPor, `usuario-${role}`);
+    const cruzada = criarRes();
+    await ambiente.classificacaoManualHandler(ambiente.req({ ...body, empresaId: "empresa-2" }, params), cruzada);
+    assert.equal(cruzada.statusCode, 404);
+  }
+});
+
+test("segundo item invalido nao persiste primeiro e classificador antigo nao apaga decisao manual", async () => {
+  const venda = criarVenda({ itens: [
+    criarVenda().itens[0],
+    { ...criarVenda().itens[0], produtoId: "produto-2" },
+  ] });
+  const ambiente = criarAmbiente({ venda });
+  await executar(ambiente);
+  const antes = ambiente.db.get(pathFaturamento());
+  const params = { faturamentoId: "venda_venda-1_preparacao_v1" };
+  const primeiro = { indice: 0, origemItemId: "produto-1", cst: "000", cClassTrib: "000001" };
+  const resInvalido = criarRes();
+  await ambiente.classificacaoManualHandler(ambiente.req({ empresaId: "empresa-1", itens: [
+    primeiro, { indice: 1, origemItemId: "produto-2", cst: "999", cClassTrib: "000001" },
+  ] }, params), resInvalido);
+  assert.equal(resInvalido.statusCode, 400);
+  assert.deepEqual(ambiente.db.get(pathFaturamento()), antes);
+  const resValido = criarRes();
+  await ambiente.classificacaoManualHandler(ambiente.req({ empresaId: "empresa-1", itens: [primeiro] }, params), resValido);
+  assert.equal(resValido.statusCode, 200);
+  const manual = ambiente.db.get(pathFaturamento()).classificacaoTributaria;
+  await executarClassificarTributacao(ambiente);
+  assert.deepEqual(ambiente.db.get(pathFaturamento()).classificacaoTributaria, manual);
 });
 
 test("cria faturamento a partir de venda de pecas", async () => {

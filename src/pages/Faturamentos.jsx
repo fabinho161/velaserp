@@ -16,9 +16,11 @@ import {
   classificarTributacaoFaturamento as solicitarClassificacaoTributaria,
   determinarFiscalFaturamento as solicitarDeterminacaoFiscal,
   listarFaturamentos,
+  listarCatalogoTributario,
   obterFaturamento,
   prepararFaturamento,
   salvarContextoOperacional,
+  salvarClassificacaoManual,
 } from "../services/faturamentoApi";
 import {
   FINALIDADES_OPERACAO,
@@ -159,6 +161,8 @@ export default function Faturamentos() {
     dataFinal: "",
   });
   const [formContexto, setFormContexto] = useState(CONTEXTO_FORM_INICIAL);
+  const [catalogoTributario, setCatalogoTributario] = useState(null);
+  const [classificacoesForm, setClassificacoesForm] = useState({});
 
   const isOwnerEmpresa = Boolean(user?.uid && empresaOwnerUid === user.uid);
   const podeEditarContexto =
@@ -196,6 +200,7 @@ export default function Faturamentos() {
     setFaturamentoSelecionado(null);
     setMotivoCancelamento("");
     setFormContexto(CONTEXTO_FORM_INICIAL);
+    setClassificacoesForm({});
     navigate("/faturamentos");
   };
 
@@ -209,6 +214,10 @@ export default function Faturamentos() {
 
       setFaturamentoSelecionado(faturamento);
       setFormContexto(faturamento ? obterFormContexto(faturamento) : CONTEXTO_FORM_INICIAL);
+      setClassificacoesForm(Object.fromEntries((faturamento?.classificacaoTributaria?.itens || [])
+        .filter((item) => item.origemClassificacao === "manual")
+        .map((item) => [item.indice, { cst: item.ibsCbs?.cst || "",
+          cClassTrib: item.ibsCbs?.cClassTrib || "", observacao: item.observacao || "" }])));
     } catch (error) {
       showToast(error.message || "Não foi possível abrir o faturamento.", "error");
       navigate("/faturamentos");
@@ -224,6 +233,15 @@ export default function Faturamentos() {
   useEffect(() => {
     if (faturamentoId) carregarDetalhe(faturamentoId);
   }, [carregarDetalhe, faturamentoId]);
+
+  useEffect(() => {
+    if (!empresaId || !faturamentoId) return;
+    let ativo = true;
+    listarCatalogoTributario({ empresaId })
+      .then((data) => { if (ativo) setCatalogoTributario(data); })
+      .catch(() => { if (ativo) setCatalogoTributario(null); });
+    return () => { ativo = false; };
+  }, [empresaId, faturamentoId]);
 
   const faturamentosFiltrados = useMemo(
     () => filtrarFaturamentos(faturamentos, filtros),
@@ -376,6 +394,40 @@ export default function Faturamentos() {
       await carregarDetalhe(faturamentoSelecionado.id);
     } catch (error) {
       showToast(error.message || "Não foi possível classificar tributariamente o faturamento.", "error");
+    } finally {
+      setAcaoEmAndamento("");
+    }
+  };
+
+  const atualizarClassificacaoForm = (indice, campo, valor) => {
+    setClassificacoesForm((atual) => ({ ...atual, [indice]: {
+      ...atual[indice], [campo]: valor,
+      ...(campo === "cst" ? { cClassTrib: "" } : {}),
+    } }));
+  };
+
+  const salvarClassificacoes = async () => {
+    if (!empresaId || !faturamentoSelecionado?.id || acaoEmAndamento) return;
+    if (Object.values(classificacoesForm).some((form) => Boolean(form.cst) !== Boolean(form.cClassTrib))) {
+      showToast("Selecione CST e classificação para cada item preenchido.", "warning");
+      return;
+    }
+    const itens = Object.entries(classificacoesForm)
+      .filter(([, form]) => form.cst && form.cClassTrib)
+      .map(([indice, form]) => ({ indice: Number(indice),
+        origemItemId: faturamentoSelecionado.itens[Number(indice)]?.origemItemId || "",
+        cst: form.cst, cClassTrib: form.cClassTrib, observacao: form.observacao || "" }));
+    if (itens.length === 0) {
+      showToast("Selecione CST e classificação para ao menos um item.", "warning");
+      return;
+    }
+    setAcaoEmAndamento("classificacao-manual");
+    try {
+      await salvarClassificacaoManual({ empresaId, faturamentoId: faturamentoSelecionado.id, itens });
+      showToast("Classificação informada com sucesso.", "success");
+      await carregarDetalhe(faturamentoSelecionado.id);
+    } catch (error) {
+      showToast(error.message || "Não foi possível salvar a classificação.", "error");
     } finally {
       setAcaoEmAndamento("");
     }
@@ -905,6 +957,42 @@ export default function Faturamentos() {
 
                 <section className="billing-detail-section">
                   <h3>Classificação Tributária</h3>
+                  {statusSelecionado === "rascunho" && podeDeterminarFiscal && (
+                    <div className="billing-manual-classification">
+                      <p>A classificação deve seguir o enquadramento fiscal da operação. O Renovar ERP valida códigos e vigência, mas não define o enquadramento.</p>
+                      {!catalogoTributario && <p>Não foi possível carregar o catálogo tributário.</p>}
+                      {(faturamentoSelecionado.itens || []).map((item, indice) => {
+                        const form = classificacoesForm[indice] || {};
+                        return (
+                          <div className="billing-manual-item" key={`${item.origemItemId || "item"}-${indice}`}>
+                            <strong>{item.descricao || `Item ${indice + 1}`}</strong>
+                            <span>NCM: {item.fiscalSnapshot?.ncm || "-"} · CFOP: {determinacaoFiscalSelecionada?.itens?.find((atual) => atual.indice === indice)?.cfopEfetivo || "-"}</span>
+                            <div className="billing-manual-fields">
+                              <label>CST IBS/CBS
+                                <select value={form.cst || ""} onChange={(event) => atualizarClassificacaoForm(indice, "cst", event.target.value)} disabled={!catalogoTributario || Boolean(acaoEmAndamento)}>
+                                  <option value="">Selecione</option>
+                                  {(catalogoTributario?.csts || []).map((cst) => <option key={cst.cst} value={cst.cst}>{cst.cst} - {cst.nome}</option>)}
+                                </select>
+                              </label>
+                              <label>Classificação (cClassTrib)
+                                <select value={form.cClassTrib || ""} onChange={(event) => atualizarClassificacaoForm(indice, "cClassTrib", event.target.value)} disabled={!form.cst || Boolean(acaoEmAndamento)}>
+                                  <option value="">Selecione</option>
+                                  {(catalogoTributario?.itens || []).filter((opcao) => opcao.cst === form.cst).map((opcao) =>
+                                    <option key={opcao.cClassTrib} value={opcao.cClassTrib}>{opcao.cClassTrib} - {opcao.descricao}</option>)}
+                                </select>
+                              </label>
+                              <label>Observação
+                                <input maxLength={500} value={form.observacao || ""} onChange={(event) => atualizarClassificacaoForm(indice, "observacao", event.target.value)} />
+                              </label>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <button type="button" onClick={salvarClassificacoes} disabled={!catalogoTributario || Boolean(acaoEmAndamento)}>
+                        {acaoEmAndamento === "classificacao-manual" ? "Salvando..." : "Salvar classificação"}
+                      </button>
+                    </div>
+                  )}
                   {classificacaoTributariaSelecionada ? (
                     <>
                       <div className="billing-info-grid billing-tax-summary">
@@ -943,9 +1031,17 @@ export default function Faturamentos() {
                                   </td>
                                   <td data-label="cClassTrib">
                                     {itemClassificado.ibsCbs?.cClassTrib || "-"}
+                                    {itemClassificado.ibsCbs?.cClassTrib && (() => {
+                                      const opcao = (catalogoTributario?.itens || []).find((atual) =>
+                                        atual.cClassTrib === itemClassificado.ibsCbs.cClassTrib);
+                                      return opcao ? <small>{opcao.descricao} · Vigência: {dataBR(opcao.inicioVigencia)} a {opcao.fimVigencia ? dataBR(opcao.fimVigencia) : "sem fim informado"}</small> : null;
+                                    })()}
                                   </td>
                                   <td data-label="Fonte">
-                                    {formatarFonteTributaria(itemClassificado.ibsCbs?.fonte)}
+                                    {itemClassificado.origemClassificacao === "manual" ? "Informado manualmente" : formatarFonteTributaria(itemClassificado.ibsCbs?.fonte)}
+                                    {itemClassificado.origemClassificacao === "manual" && (
+                                      <small>Classificado por {itemClassificado.atualizadoPor || itemClassificado.classificadoPor || "-"} em {dataBR(itemClassificado.atualizadoEm || itemClassificado.classificadoEm)}. {itemClassificado.observacao || ""}</small>
+                                    )}
                                   </td>
                                   <td data-label="Situação">
                                     <span className={`billing-tax-status ${situacao}`}>
@@ -1029,7 +1125,7 @@ export default function Faturamentos() {
                         : "Determinar fiscal"}
                     </button>
                   )}
-                  {statusSelecionado === "rascunho" && podeDeterminarFiscal && (
+                  {statusSelecionado === "rascunho" && podeDeterminarFiscal && !classificacaoTributariaSelecionada?.itens?.some((item) => item.origemClassificacao === "manual") && (
                     <button
                       type="button"
                       onClick={classificarTributacao}

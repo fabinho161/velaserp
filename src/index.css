@@ -8480,3 +8480,30 @@ button,
     display: none;
   }
 }
+.billing-manual-classification {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 20px;
+}
+
+.billing-manual-item {
+  display: grid;
+  gap: 6px;
+  padding: 12px 0;
+  border-bottom: 1px solid #e2e8f0;
+  min-width: 0;
+}
+
+.billing-manual-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.billing-manual-fields label { min-width: 0; }
+.billing-manual-fields select,
+.billing-manual-fields input { width: 100%; max-width: 100%; min-width: 0; }
+
+@media (max-width: 768px) {
+  .billing-manual-fields { grid-template-columns: 1fr; }
+}
