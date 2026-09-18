@@ -118,7 +118,6 @@ service cloud.firestore {
             (
               (request.resource.data.status == "confirmado" && hasValidAgendaMilestone("confirmadoEm")) ||
               (request.resource.data.status == "em_atendimento" && hasValidAgendaMilestone("iniciadoEm")) ||
-              (request.resource.data.status == "concluido" && hasValidAgendaMilestone("concluidoEm")) ||
               (request.resource.data.status == "cancelado" && hasValidAgendaMilestone("canceladoEm"))
             )
           )
@@ -836,6 +835,12 @@ service cloud.firestore {
             canWriteModule(userId, empresaId, "agenda") &&
             hasValidAgendaUpdate();
           allow delete: if false;
+        }
+
+        match /contasReceber/{contaId} {
+          allow read: if isCompanySegment(userId, empresaId, "clientes") &&
+            canReadModule(userId, empresaId, "financeiro");
+          allow create, update, delete: if false;
         }
 
         match /ordensServico/{osId} {

@@ -13,6 +13,7 @@ import { useConfirmacao } from "../context/useConfirmacao";
 import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
 import { db } from "../firebase";
+import { concluirAtendimento } from "../services/financeiroServicosApi";
 import {
   calcularDuracaoAgendamento,
   compararAgendamentosPorHorario,
@@ -464,6 +465,18 @@ export default function Agenda() {
   const atualizarStatusAgendamento = async (agendamento, status) => {
     if (!podeEscreverAgenda || !agendamentosRef || !agendamento?.id) return;
     if (!podeTransicionarStatusAgendamento(agendamento.status, status)) return;
+
+    if (status === "concluido") {
+      try {
+        const resultado = await concluirAtendimento({
+          ownerUid, empresaId, agendamentoId: agendamento.id,
+        });
+        showToast(resultado.pendencia || "Atendimento concluído. Conta a receber registrada.", "success");
+      } catch (error) {
+        showToast(error.message || "Não foi possível concluir o atendimento.", "error");
+      }
+      return;
+    }
 
     if (status === "cancelado") {
       const confirmado = await confirmar(

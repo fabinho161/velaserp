@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { useEffect, useState } from "react";
+import { collection, doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
 import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import ActionMenu from "../components/ActionMenu";
@@ -10,7 +10,8 @@ import { usePlano } from "../hooks/usePlano";
 import { useTableSort } from "../hooks/useTableSort";
 import { moedaBR, inteiroBR, dataBR, numeroBR } from "../utils/formatters";
 import { useParametros } from "../hooks/useParametros";
-import { ehFinanceiroServicos, filtrarMovimentacoesPeriodo, resumirFinanceiroServicos } from "../utils/financeiroServicos.js";
+import { ehFinanceiroServicos, filtrarContasServicos, filtrarMovimentacoesPeriodo, resumirFinanceiroServicos } from "../utils/financeiroServicos.js";
+import { receberAtendimento, sincronizarAtendimentos } from "../services/financeiroServicosApi";
 import { db } from "../firebase";
 
 const vendaCanceladaPorExpedicao = (venda = {}) =>
@@ -59,6 +60,12 @@ const despesaEstaAtiva = (despesa = {}) =>
   despesa.excluida !== true &&
   String(despesa.status || "Pago").trim().toLowerCase() !== "cancelado";
 
+const FORMAS_RECEBIMENTO = [
+  ["pix", "Pix"], ["dinheiro", "Dinheiro"],
+  ["cartao_credito", "Cartão de crédito"], ["cartao_debito", "Cartão de débito"],
+  ["boleto", "Boleto"], ["transferencia", "Transferência"], ["outro", "Outro"],
+];
+
 export default function Financeiro() {
   const navigate = useNavigate();
   // ================================
@@ -84,6 +91,42 @@ export default function Financeiro() {
     (empresa.ownerUid || user?.uid) === (empresaOwnerUid || user?.uid)
   );
   const isPrestacaoServicos = ehFinanceiroServicos(empresaAtual?.segmento);
+  const ownerUid = empresaOwnerUid || user?.uid;
+  const chaveEmpresa = `${ownerUid || ""}/${empresaId || ""}`;
+  const [contasSnapshot, setContasSnapshot] = useState({ chave: "", lista: [] });
+  const [contaRecebendo, setContaRecebendo] = useState(null);
+  const [pagamentoForm, setPagamentoForm] = useState({ dataRecebimento: "", formaPagamento: "" });
+  const [salvandoRecebimento, setSalvandoRecebimento] = useState(false);
+  const contasServicos = contasSnapshot.chave === chaveEmpresa ? contasSnapshot.lista : [];
+
+  useEffect(() => {
+    if (!isPrestacaoServicos || !ownerUid || !empresaId) return undefined;
+    return onSnapshot(
+      collection(db, "users", ownerUid, "empresas", empresaId, "contasReceber"),
+      (snapshot) => setContasSnapshot({
+        chave: chaveEmpresa,
+        lista: snapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
+      }),
+      (error) => {
+        console.error("Erro ao ouvir contas a receber:", error);
+        showToast("Não foi possível carregar os recebimentos.", "error");
+      }
+    );
+  }, [chaveEmpresa, empresaId, isPrestacaoServicos, ownerUid, showToast]);
+
+  useEffect(() => {
+    if (!isPrestacaoServicos || !ownerUid || !empresaId) return;
+    sincronizarAtendimentos({ ownerUid, empresaId })
+      .then((resultado) => {
+        if (resultado.pendencias?.length) {
+          showToast(`${resultado.pendencias.length} atendimento(s) precisam de revisão antes da cobrança.`, "warning");
+        }
+      })
+      .catch((error) => {
+        console.error("Erro ao sincronizar atendimentos:", error);
+        showToast("Não foi possível atualizar as contas de atendimentos.", "error");
+      });
+  }, [empresaId, isPrestacaoServicos, ownerUid, showToast]);
 
   const categoriasDespesaAtivas = categoriasDespesa.filter(
     (categoria) => categoria.ativo
@@ -172,7 +215,29 @@ export default function Financeiro() {
   // ================================
   const movimentacoes = filtrarMovimentacoesPeriodo([...entradas, ...saidas], filtro)
     .sort((a, b) => new Date(b.data) - new Date(a.data));
-  const resumoServicos = isPrestacaoServicos ? resumirFinanceiroServicos(movimentacoes) : null;
+  const resumoServicos = isPrestacaoServicos
+    ? resumirFinanceiroServicos(movimentacoes, contasServicos, filtro)
+    : null;
+  const contasVisiveis = isPrestacaoServicos
+    ? filtrarContasServicos(contasServicos, filtro)
+    : [];
+
+  const registrarRecebimento = async () => {
+    if (!contaRecebendo || !pagamentoForm.dataRecebimento || !pagamentoForm.formaPagamento) {
+      showToast("Informe data e forma de pagamento.", "warning");
+      return;
+    }
+    setSalvandoRecebimento(true);
+    try {
+      await receberAtendimento({ ownerUid, empresaId, contaId: contaRecebendo.id, ...pagamentoForm });
+      setContaRecebendo(null);
+      showToast("Recebimento registrado com sucesso.", "success");
+    } catch (error) {
+      showToast(error.message || "Não foi possível registrar o recebimento.", "error");
+    } finally {
+      setSalvandoRecebimento(false);
+    }
+  };
 
   const movimentacoesOrdenadas = ordenacaoFluxo.ordenar(
     movimentacoes,
@@ -511,7 +576,7 @@ const margemLiquida =
               <strong>{moedaBR(resumoServicos.recebido)}</strong>
             </div>
             <div className="card finance-services-metric finance-services-pending">
-              <p>A receber</p>
+              <p>A receber (posição atual)</p>
               <strong>{moedaBR(resumoServicos.aReceber)}</strong>
             </div>
             <div className="card finance-services-metric finance-services-count">
@@ -691,10 +756,68 @@ const margemLiquida =
       <br />
 
       {isPrestacaoServicos && (
-        <section className="finance-services-empty">
-          <h2>Recebimentos</h2>
-          <p>Os recebimentos dos atendimentos aparecerão aqui quando forem registrados no financeiro.</p>
+        <section className="card finance-services-accounts">
+          <h2>Atendimentos e recebimentos</h2>
+          <div className="table-wrapper">
+            <table>
+              <thead><tr>
+                <th>Cliente</th><th>Serviço</th><th>Competência</th><th>Valor</th>
+                <th>Status</th><th>Recebido em</th><th>Forma</th><th>Ação</th>
+              </tr></thead>
+              <tbody>
+                {contasVisiveis.map((conta) => (
+                  <tr key={conta.id}>
+                    <td>{conta.cliente?.nome || "Cliente não informado"}</td>
+                    <td>{conta.descricao || "Serviço não informado"}</td>
+                    <td>{dataBR(conta.dataCompetencia)}</td>
+                    <td>{moedaBR(conta.valor)}</td>
+                    <td>{conta.status === "recebido" ? "Recebido" : "Pendente"}</td>
+                    <td>{conta.pagamento?.dataRecebimento ? dataBR(conta.pagamento.dataRecebimento) : "-"}</td>
+                    <td>{FORMAS_RECEBIMENTO.find(([id]) => id === conta.pagamento?.formaPagamento)?.[1] || "-"}</td>
+                    <td>{conta.status === "pendente" && (
+                      <button type="button" onClick={() => {
+                        setContaRecebendo(conta);
+                        setPagamentoForm({ dataRecebimento: "", formaPagamento: "" });
+                      }}>Registrar recebimento</button>
+                    )}</td>
+                  </tr>
+                ))}
+                {contasVisiveis.length === 0 && (
+                  <tr><td colSpan="8">Nenhum atendimento financeiro no período.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
+      )}
+
+      {isPrestacaoServicos && contaRecebendo && (
+        <div className="modal-overlay" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !salvandoRecebimento) setContaRecebendo(null);
+        }}>
+          <div className="modal-card finance-services-payment-modal" role="dialog" aria-modal="true" aria-label="Registrar recebimento">
+            <h3>Registrar recebimento</h3>
+            <p>{contaRecebendo.cliente?.nome} · {contaRecebendo.descricao}</p>
+            <strong>{moedaBR(contaRecebendo.valor)}</strong>
+            <label>Data do recebimento
+              <input type="date" value={pagamentoForm.dataRecebimento} onChange={(event) =>
+                setPagamentoForm((atual) => ({ ...atual, dataRecebimento: event.target.value }))} />
+            </label>
+            <label>Forma de pagamento
+              <select value={pagamentoForm.formaPagamento} onChange={(event) =>
+                setPagamentoForm((atual) => ({ ...atual, formaPagamento: event.target.value }))}>
+                <option value="">Selecione</option>
+                {FORMAS_RECEBIMENTO.map(([id, nome]) => <option key={id} value={id}>{nome}</option>)}
+              </select>
+            </label>
+            <div className="modal-actions">
+              <button type="button" disabled={salvandoRecebimento} onClick={() => setContaRecebendo(null)}>Cancelar</button>
+              <button type="button" disabled={salvandoRecebimento} onClick={registrarRecebimento}>
+                {salvandoRecebimento ? "Salvando..." : "Confirmar recebimento"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ================================

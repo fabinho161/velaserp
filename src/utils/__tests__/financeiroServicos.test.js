@@ -3,9 +3,25 @@ import test from "node:test";
 
 import {
   ehFinanceiroServicos,
+  filtrarContasServicos,
   filtrarMovimentacoesPeriodo,
   resumirFinanceiroServicos,
 } from "../financeiroServicos.js";
+
+test("contas pendentes nao viram caixa e recebidas usam data de pagamento", () => {
+  const contas = [
+    { origem: { tipo: "atendimento" }, status: "pendente", valor: 100, dataCompetencia: "2026-08-01" },
+    { origem: { tipo: "atendimento" }, status: "recebido", valor: 80, dataCompetencia: "2026-08-01", pagamento: { dataRecebimento: "2026-09-10" } },
+    { origem: { tipo: "outro" }, status: "recebido", valor: 500, pagamento: { dataRecebimento: "2026-09-10" } },
+  ];
+  assert.equal(filtrarContasServicos(contas, { inicio: "2026-09-01", fim: "2026-09-30" }).length, 1);
+  assert.deepEqual(resumirFinanceiroServicos([{ tipo: "Saída", valor: 30 }], contas, {
+    inicio: "2026-09-01", fim: "2026-09-30",
+  }), {
+    recebido: 80, aReceber: 100, atendimentosPagos: 1, ticketMedio: 80,
+    despesas: 30, saldo: 50,
+  });
+});
 
 test("somente clientes usa a apresentação financeira de serviços", () => {
   assert.equal(ehFinanceiroServicos("clientes"), true);
