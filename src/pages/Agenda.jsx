@@ -14,8 +14,13 @@ import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
 import { db } from "../firebase";
 import {
+  calcularDuracaoAgendamento,
+  compararAgendamentosPorHorario,
   existeConflitoAgendamento,
   normalizarStatusAgendamento,
+  obterHoraFimAgendamento,
+  obterSnapshotServicoAgendamento,
+  sugerirHoraFim,
 } from "../utils/agenda";
 import { moedaBR } from "../utils/formatters";
 
@@ -24,7 +29,7 @@ const agendamentoInicial = {
   servicoId: "",
   data: "",
   horaInicio: "",
-  duracaoMinutos: "",
+  horaFim: "",
   status: "agendado",
   observacoes: "",
 };
@@ -57,7 +62,10 @@ const formatarData = (valor) => {
 
 const formatarDuracao = (valor) => {
   const numero = Number(valor || 0);
-  return Number.isFinite(numero) && numero > 0 ? `${numero} min` : "-";
+  if (!Number.isFinite(numero) || numero <= 0) return "Não informada";
+  const horas = Math.floor(numero / 60);
+  const minutos = numero % 60;
+  return horas ? `${horas}h${minutos ? String(minutos).padStart(2, "0") : ""}` : `${minutos} min`;
 };
 
 const getStatusLabel = (status) => {
@@ -96,6 +104,7 @@ export default function Agenda() {
   const [modalAberto, setModalAberto] = useState(false);
   const [agendamentoEditando, setAgendamentoEditando] = useState(null);
   const [form, setForm] = useState(agendamentoInicial);
+  const [fimAutomatico, setFimAutomatico] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("todos");
@@ -222,13 +231,7 @@ export default function Agenda() {
   }, [chaveDependencias, servicosRef, showToast]);
 
   const agendamentosOrdenados = useMemo(
-    () =>
-      [...agendamentos].sort((a, b) => {
-        const dataA = `${a.data || "9999-12-31"} ${a.horaInicio || "23:59"}`;
-        const dataB = `${b.data || "9999-12-31"} ${b.horaInicio || "23:59"}`;
-
-        return dataA.localeCompare(dataB);
-      }),
+    () => [...agendamentos].sort(compararAgendamentosPorHorario),
     [agendamentos]
   );
 
@@ -280,22 +283,32 @@ export default function Agenda() {
   }, [agendamentosOrdenados, busca, filtroData, filtroStatus]);
 
   const atualizarCampo = (campo, valor) => {
-    setForm((atual) => {
-      if (campo !== "servicoId") {
-        return {
-          ...atual,
-          [campo]: valor,
-        };
-      }
-
+    if (campo === "horaFim") {
+      setFimAutomatico(false);
+      setForm((atual) => ({ ...atual, horaFim: valor }));
+      return;
+    }
+    if (campo === "servicoId") {
+      if (valor === form.servicoId) return;
       const servico = servicos.find((item) => item.id === valor);
-
-      return {
+      setFimAutomatico(true);
+      setForm((atual) => ({
         ...atual,
         servicoId: valor,
-        duracaoMinutos: servico?.tempoEstimadoMinutos || "",
-      };
-    });
+        horaFim: sugerirHoraFim(atual.horaInicio, servico?.tempoEstimadoMinutos),
+      }));
+      return;
+    }
+    if (campo === "horaInicio" && fimAutomatico) {
+      const servico = servicos.find((item) => item.id === form.servicoId);
+      setForm((atual) => ({
+        ...atual,
+        horaInicio: valor,
+        horaFim: sugerirHoraFim(valor, servico?.tempoEstimadoMinutos),
+      }));
+      return;
+    }
+    setForm((atual) => ({ ...atual, [campo]: valor }));
   };
 
   const abrirNovoAgendamento = () => {
@@ -306,6 +319,7 @@ export default function Agenda() {
 
     setAgendamentoEditando(null);
     setForm(agendamentoInicial);
+    setFimAutomatico(true);
     setModalAberto(true);
   };
 
@@ -319,39 +333,45 @@ export default function Agenda() {
       servicoId: agendamento.servicoId || "",
       data: agendamento.data || "",
       horaInicio: agendamento.horaInicio || "",
-      duracaoMinutos: agendamento.duracaoMinutos || "",
+      horaFim: obterHoraFimAgendamento(agendamento),
       status: normalizarStatusAgendamento(agendamento.status),
       observacoes: agendamento.observacoes || "",
     });
+    setFimAutomatico(false);
     setModalAberto(true);
+  };
+
+  const limparModal = () => {
+    setModalAberto(false);
+    setAgendamentoEditando(null);
+    setForm(agendamentoInicial);
+    setFimAutomatico(true);
   };
 
   const fecharModal = () => {
     if (salvando) return;
-
-    setModalAberto(false);
-    setAgendamentoEditando(null);
-    setForm(agendamentoInicial);
+    limparModal();
   };
 
   const montarPayloadAgendamento = () => {
+    const mesmoCliente = agendamentoEditando?.clienteId === form.clienteId;
     const cliente = clientes.find((item) => item.id === form.clienteId);
     const servico = servicos.find((item) => item.id === form.servicoId);
-
-    if (!cliente || !servico) return null;
-
-    const duracaoMinutos = Number(servico.tempoEstimadoMinutos || form.duracaoMinutos || 0);
+    const snapshotServico = obterSnapshotServicoAgendamento(
+      agendamentoEditando,
+      servico || (agendamentoEditando?.servicoId === form.servicoId ? { id: form.servicoId } : null)
+    );
+    if ((!cliente && !mesmoCliente) || !snapshotServico) return null;
 
     return {
-      clienteId: cliente.id,
-      clienteNome: getClienteNome(cliente),
-      clienteTelefone: normalizarTexto(cliente.telefone),
-      servicoId: servico.id,
-      servicoNome: normalizarTexto(servico.nome),
-      valorServico: Number(servico.valor || 0),
-      duracaoMinutos,
+      clienteId: mesmoCliente ? agendamentoEditando.clienteId : cliente.id,
+      clienteNome: mesmoCliente ? String(agendamentoEditando.clienteNome || "") : getClienteNome(cliente),
+      clienteTelefone: mesmoCliente ? String(agendamentoEditando.clienteTelefone || "") : normalizarTexto(cliente.telefone),
+      ...snapshotServico,
+      duracaoMinutos: calcularDuracaoAgendamento(form.horaInicio, form.horaFim),
       data: form.data,
       horaInicio: form.horaInicio,
+      horaFim: form.horaFim,
       status: normalizarStatusAgendamento(form.status),
       observacoes: normalizarTexto(form.observacoes),
       atualizadoEm: serverTimestamp(),
@@ -373,6 +393,14 @@ export default function Agenda() {
       showToast("Preencha os campos obrigatórios.", "warning");
       return;
     }
+    if (!form.horaFim) {
+      showToast("Informe o horário final.", "warning");
+      return;
+    }
+    if (calcularDuracaoAgendamento(form.horaInicio, form.horaFim) === null) {
+      showToast("O horário final deve ser posterior ao horário inicial.", "warning");
+      return;
+    }
 
     const payload = montarPayloadAgendamento();
 
@@ -392,7 +420,7 @@ export default function Agenda() {
         ignorarId: agendamentoEditando?.id || "",
       })
     ) {
-      showToast("Já existe um agendamento nesse horário.", "warning");
+      showToast("Já existe um atendimento agendado nesse período.", "warning");
       return;
     }
 
@@ -411,7 +439,7 @@ export default function Agenda() {
         showToast("Cadastro realizado com sucesso.", "success");
       }
 
-      fecharModal();
+      limparModal();
     } catch (error) {
       console.error("Erro ao salvar agendamento:", error);
       showToast("Não foi possível salvar. Tente novamente.", "error");
@@ -558,7 +586,7 @@ export default function Agenda() {
               <thead>
                 <tr>
                   <th>Data</th>
-                  <th>Hora</th>
+                  <th>Horário</th>
                   <th>Cliente</th>
                   <th>Serviço</th>
                   <th>Duração</th>
@@ -580,7 +608,7 @@ export default function Agenda() {
                       onDoubleClick={() => abrirEdicaoAgendamento(agendamento)}
                     >
                       <td>{formatarData(agendamento.data)}</td>
-                      <td>{agendamento.horaInicio || "-"}</td>
+                      <td>{agendamento.horaInicio || "-"}{obterHoraFimAgendamento(agendamento) ? ` – ${obterHoraFimAgendamento(agendamento)}` : ""}</td>
                       <td>
                         <div className="fornecedores-cell-main">
                           <strong>{agendamento.clienteNome || "-"}</strong>
@@ -677,6 +705,9 @@ export default function Agenda() {
                       {getClienteNome(cliente)}
                     </option>
                   ))}
+                  {agendamentoEditando?.clienteId && !clientes.some((cliente) => cliente.id === agendamentoEditando.clienteId) && (
+                    <option value={agendamentoEditando.clienteId}>{agendamentoEditando.clienteNome || "Cliente anterior"}</option>
+                  )}
                 </select>
               </label>
 
@@ -692,6 +723,9 @@ export default function Agenda() {
                       {servico.nome || "Serviço"}
                     </option>
                   ))}
+                  {agendamentoEditando?.servicoId && !servicos.some((servico) => servico.id === agendamentoEditando.servicoId) && (
+                    <option value={agendamentoEditando.servicoId}>{agendamentoEditando.servicoNome || "Serviço anterior"}</option>
+                  )}
                 </select>
               </label>
 
@@ -714,15 +748,17 @@ export default function Agenda() {
               </label>
 
               <label>
-                Duração
+                Hora final *
                 <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={form.duracaoMinutos}
-                  readOnly
+                  type="time"
+                  value={form.horaFim}
+                  onChange={(event) => atualizarCampo("horaFim", event.target.value)}
                 />
               </label>
+
+              <div className="fornecedores-form-wide">
+                Duração: {formatarDuracao(calcularDuracaoAgendamento(form.horaInicio, form.horaFim))}
+              </div>
 
               <label>
                 Status

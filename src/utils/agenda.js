@@ -12,6 +12,7 @@ export const normalizarStatusAgendamento = (status = "agendado") => {
 };
 
 export const horarioParaMinutos = (hora = "") => {
+  if (!/^\d{2}:\d{2}$/.test(String(hora))) return null;
   const [horas, minutos] = String(hora || "").split(":").map(Number);
 
   if (
@@ -28,17 +29,61 @@ export const horarioParaMinutos = (hora = "") => {
   return horas * 60 + minutos;
 };
 
+export const minutosParaHorario = (minutos) => {
+  if (!Number.isInteger(minutos) || minutos < 0 || minutos >= 1440) return "";
+  return `${String(Math.floor(minutos / 60)).padStart(2, "0")}:${String(minutos % 60).padStart(2, "0")}`;
+};
+
+export const calcularDuracaoAgendamento = (horaInicio, horaFim) => {
+  const inicio = horarioParaMinutos(horaInicio);
+  const fim = horarioParaMinutos(horaFim);
+  return inicio !== null && fim !== null && fim > inicio ? fim - inicio : null;
+};
+
+export const sugerirHoraFim = (horaInicio, duracaoMinutos) => {
+  const inicio = horarioParaMinutos(horaInicio);
+  const duracao = Number(duracaoMinutos);
+  return inicio !== null && Number.isInteger(duracao) && duracao > 0
+    ? minutosParaHorario(inicio + duracao)
+    : "";
+};
+
+export const obterHoraFimAgendamento = (agendamento = {}) => {
+  if (horarioParaMinutos(agendamento.horaFim) !== null) return agendamento.horaFim;
+  return sugerirHoraFim(agendamento.horaInicio, agendamento.duracaoMinutos);
+};
+
+export const obterSnapshotServicoAgendamento = (agendamento, servico) => {
+  if (agendamento?.servicoId === servico?.id) {
+    return {
+      servicoId: agendamento.servicoId,
+      servicoNome: String(agendamento.servicoNome || ""),
+      valorServico: Number(agendamento.valorServico ?? 0),
+    };
+  }
+  if (!servico) return null;
+  return {
+    servicoId: servico.id,
+    servicoNome: String(servico.nome || "").trim(),
+    valorServico: Number(servico.valor || 0),
+  };
+};
+
+export const compararAgendamentosPorHorario = (a, b) => {
+  const dataA = `${a.data || "9999-12-31"} ${a.horaInicio || "23:59"}`;
+  const dataB = `${b.data || "9999-12-31"} ${b.horaInicio || "23:59"}`;
+  return dataA.localeCompare(dataB);
+};
+
 export const obterIntervaloAgendamento = (agendamento = {}) => {
   const inicio = horarioParaMinutos(agendamento.horaInicio);
-  const duracao = Number(agendamento.duracaoMinutos || 0);
-
-  if (inicio === null || !Number.isFinite(duracao) || duracao <= 0) {
-    return null;
-  }
+  const fimHorario = obterHoraFimAgendamento(agendamento);
+  const fim = horarioParaMinutos(fimHorario);
+  if (inicio === null || fim === null || fim <= inicio) return null;
 
   return {
     inicio,
-    fim: inicio + duracao,
+    fim,
   };
 };
 
