@@ -10,6 +10,7 @@ import { usePlano } from "../hooks/usePlano";
 import { useTableSort } from "../hooks/useTableSort";
 import { moedaBR, inteiroBR, dataBR, numeroBR } from "../utils/formatters";
 import { useParametros } from "../hooks/useParametros";
+import { ehFinanceiroServicos, filtrarMovimentacoesPeriodo, resumirFinanceiroServicos } from "../utils/financeiroServicos.js";
 import { db } from "../firebase";
 
 const vendaCanceladaPorExpedicao = (venda = {}) =>
@@ -67,6 +68,7 @@ export default function Financeiro() {
     user,
     empresaId,
     empresaOwnerUid,
+    empresas = [],
     vendas,
     despesas,
     ordensServico = [],
@@ -77,6 +79,11 @@ export default function Financeiro() {
   const { confirmar } = useConfirmacao();
   const { podeUsarDRE } = usePlano();
   const { categoriasDespesa = [] } = useParametros();
+  const empresaAtual = empresas.find((empresa) =>
+    empresa.id === empresaId &&
+    (empresa.ownerUid || user?.uid) === (empresaOwnerUid || user?.uid)
+  );
+  const isPrestacaoServicos = ehFinanceiroServicos(empresaAtual?.segmento);
 
   const categoriasDespesaAtivas = categoriasDespesa.filter(
     (categoria) => categoria.ativo
@@ -146,7 +153,7 @@ export default function Financeiro() {
       status: "Recebido",
     }));
 
-  const entradas = [...entradasVendas, ...entradasOrdensServico];
+  const entradas = isPrestacaoServicos ? [] : [...entradasVendas, ...entradasOrdensServico];
 
   // ================================
   // 🔹 SAÍDAS CADASTRADAS
@@ -163,13 +170,9 @@ export default function Financeiro() {
   // ================================
   // 🔹 MOVIMENTAÇÕES GERAIS COM FILTRO
   // ================================
-  const movimentacoes = [...entradas, ...saidas]
-    .filter((item) => {
-      if (filtro.inicio && item.data < filtro.inicio) return false;
-      if (filtro.fim && item.data > filtro.fim) return false;
-      return true;
-    })
+  const movimentacoes = filtrarMovimentacoesPeriodo([...entradas, ...saidas], filtro)
     .sort((a, b) => new Date(b.data) - new Date(a.data));
+  const resumoServicos = isPrestacaoServicos ? resumirFinanceiroServicos(movimentacoes) : null;
 
   const movimentacoesOrdenadas = ordenacaoFluxo.ordenar(
     movimentacoes,
@@ -495,7 +498,38 @@ const margemLiquida =
   // 🔹 RENDERIZAÇÃO
   // ================================
   return (
-    <div>
+    <div className={isPrestacaoServicos ? "finance-services-page" : undefined}>
+      {isPrestacaoServicos ? (
+        <>
+          <div className="finance-services-header">
+            <h1 className="page-title">Financeiro</h1>
+            <p className="page-subtitle">Recebimentos e despesas da prestação de serviços.</p>
+          </div>
+          <div className="finance-services-summary">
+            <div className="card finance-services-metric finance-services-received">
+              <p>Recebido no período</p>
+              <strong>{moedaBR(resumoServicos.recebido)}</strong>
+            </div>
+            <div className="card finance-services-metric finance-services-pending">
+              <p>A receber</p>
+              <strong>{moedaBR(resumoServicos.aReceber)}</strong>
+            </div>
+            <div className="card finance-services-metric finance-services-count">
+              <p>Atendimentos pagos</p>
+              <strong>{inteiroBR(resumoServicos.atendimentosPagos)}</strong>
+            </div>
+            <div className="card finance-services-metric finance-services-ticket">
+              <p>Ticket médio</p>
+              <strong>{moedaBR(resumoServicos.ticketMedio)}</strong>
+            </div>
+          </div>
+          <div className="finance-services-balance">
+            <span>Despesas no período: <strong>{moedaBR(resumoServicos.despesas)}</strong></span>
+            <span>Resultado no período: <strong>{moedaBR(resumoServicos.saldo)}</strong></span>
+          </div>
+        </>
+      ) : (
+        <>
       <h1 className="page-title">Financeiro</h1>
 
       {/* ================================
@@ -626,6 +660,9 @@ const margemLiquida =
         </div>
       </div>
 
+        </>
+      )}
+
       {/* ================================
           🔹 FILTROS
       ================================= */}
@@ -652,6 +689,13 @@ const margemLiquida =
       </div>
 
       <br />
+
+      {isPrestacaoServicos && (
+        <section className="finance-services-empty">
+          <h2>Recebimentos</h2>
+          <p>Os recebimentos dos atendimentos aparecerão aqui quando forem registrados no financeiro.</p>
+        </section>
+      )}
 
       {/* ================================
           🔹 CADASTRO DE DESPESAS
@@ -722,7 +766,7 @@ const margemLiquida =
     {/* ================================
         🔹 DRE PROFISSIONAL
     ================================ */}
-        {podeUsarDRE ? (
+        {!isPrestacaoServicos && (podeUsarDRE ? (
         <div className="card">
           <h3>DRE - Demonstrativo de Resultado</h3>
 
@@ -850,7 +894,7 @@ const margemLiquida =
               Ver planos
             </button>
           </div>
-        )}
+        ))}
 
         <br />
 
@@ -858,7 +902,7 @@ const margemLiquida =
           🔹 FLUXO DE CAIXA
       ================================= */}
       <div className="card">
-        <h3>Fluxo de Caixa</h3>
+        <h3>{isPrestacaoServicos ? "Histórico financeiro" : "Fluxo de Caixa"}</h3>
 
         <div className="table-wrapper">
           <table>
@@ -936,7 +980,7 @@ const margemLiquida =
 
             {movimentacoesOrdenadas.length === 0 && (
               <tr>
-                <td colSpan="6">Nenhuma movimentação encontrada.</td>
+                <td colSpan="6">{isPrestacaoServicos ? "Nenhuma despesa encontrada no período." : "Nenhuma movimentação encontrada."}</td>
               </tr>
             )}
           </tbody>
