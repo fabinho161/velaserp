@@ -8,12 +8,14 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { CalendarDays, CheckCircle2, Filter, Plus, Search } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import ActionMenu from "../components/ActionMenu";
 import { useConfirmacao } from "../context/useConfirmacao";
 import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
 import { db } from "../firebase";
 import { concluirAtendimento } from "../services/financeiroServicosApi";
+import { criarFaturamentoAtendimento } from "../services/faturamentoApi";
 import {
   calcularDuracaoAgendamento,
   compararAgendamentosPorHorario,
@@ -105,10 +107,12 @@ export default function Agenda() {
     empresaOwnerUid,
     isAdminMaster,
     perfilEmpresaAtual,
+    usuarioEmpresaSomenteLeitura,
     user,
   } = useERP();
   const { showToast } = useToast();
   const { confirmar } = useConfirmacao();
+  const navigate = useNavigate();
 
   const [agendamentos, setAgendamentos] = useState([]);
   const [clientesSnapshot, setClientesSnapshot] = useState({ chave: "", lista: [] });
@@ -126,6 +130,9 @@ export default function Agenda() {
   const ownerUid = empresaOwnerUid || user?.uid || null;
   const podeEscreverAgenda =
     isAdminMaster || PERFIS_ESCRITA_AGENDA.has(perfilEmpresaAtual);
+  const podeGerarFaturamento = !usuarioEmpresaSomenteLeitura &&
+    (user?.uid === ownerUid || isAdminMaster ||
+      ["administrador_empresa", "financeiro", "comercial"].includes(perfilEmpresaAtual));
   const chaveDependencias =
     podeEscreverAgenda && ownerUid && empresaId ? `${ownerUid}/${empresaId}` : "";
   const clientes =
@@ -506,6 +513,17 @@ export default function Agenda() {
     }
   };
 
+  const gerarFaturamentoAtendimento = async (agendamento) => {
+    if (!podeGerarFaturamento || agendamento.status !== "concluido" || !empresaId) return;
+    try {
+      const resultado = await criarFaturamentoAtendimento({ empresaId, agendamentoId: agendamento.id });
+      showToast(resultado.reutilizado ? "Faturamento existente aberto." : "Rascunho de faturamento criado.", "success");
+      navigate(`/faturamentos/${encodeURIComponent(resultado.faturamentoId)}`);
+    } catch (error) {
+      showToast(error.message || "Não foi possível gerar o faturamento.", "error");
+    }
+  };
+
   const somenteLeitura = !podeEscreverAgenda ||
     Boolean(agendamentoEditando && !podeEditarDadosAgendamento(agendamentoEditando.status));
 
@@ -666,6 +684,10 @@ export default function Agenda() {
                                 danger: proximo === "cancelado",
                                 onClick: () => atualizarStatusAgendamento(agendamento, proximo),
                               })) : []),
+                              ...(status === "concluido" && podeGerarFaturamento ? [{
+                                label: "Gerar faturamento",
+                                onClick: () => gerarFaturamentoAtendimento(agendamento),
+                              }] : []),
                             ]}
                           />
                       </td>

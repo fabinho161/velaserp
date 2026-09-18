@@ -5,6 +5,8 @@ const {
   classificarTributacaoFaturamento,
   criarContextoOperacionalFaturamento,
   criarFaturamentoVenda,
+  criarFaturamentoAtendimento,
+  ehFaturamentoServico,
   determinarFiscalFaturamento,
   validarPreparacaoFaturamento,
 } = require("../shared/faturamento.cjs");
@@ -265,6 +267,9 @@ const criarIdFaturamento = ({ vendaId }) =>
 const criarIdempotencyKey = ({ empresaId, tipoOrigem, vendaId }) =>
   `${empresaId}:${tipoOrigem}:${vendaId}:preparacao:v${VERSAO_PREPARACAO}`;
 
+const criarIdFaturamentoAtendimento = (agendamentoId) =>
+  `atendimento_${agendamentoId}_preparacao_v${VERSAO_PREPARACAO}`;
+
 const resolverAcessoEmpresa = async ({ db, transaction, atorUid, empresaId }) => {
   const atorRef = db.collection("users").doc(atorUid);
   const empresaUsuarioRef = atorRef.collection("empresas").doc(empresaId);
@@ -511,6 +516,69 @@ const criarHandlerObterFaturamento = ({
       codigo: error.codigo || null,
     });
     montarRespostaErro(res, error);
+  }
+};
+
+const criarHandlerCriarFaturamentoAtendimento = ({
+  getDb: getDbDependencia = getDb,
+  criarTimestampServidor = () => FieldValue.serverTimestamp(),
+} = {}) => async (req, res) => {
+  const atorUid = normalizarId(req.user?.uid);
+  if (!atorUid) return res.status(401).json({ ok: false, codigo: "token_ausente" });
+  try {
+    const empresaId = validarIdFirestore("empresaId", req.body?.empresaId);
+    const agendamentoId = validarIdFirestore("agendamentoId", req.body?.agendamentoId);
+    const db = getDbDependencia();
+    const resultado = await db.runTransaction(async (transaction) => {
+      const acesso = await resolverAcessoEmpresa({ db, transaction, atorUid, empresaId });
+      if (normalizarSegmentoEmpresa(acesso.empresa.segmento) !== "clientes" ||
+          !usuarioAtivoPodePrepararFaturamento({ atorUid, ...acesso })) {
+        throw criarErroHttp(403, "Operacao indisponivel para esta empresa.", "sem_permissao");
+      }
+      const agendamentoRef = acesso.empresaRef.collection("agendamentos").doc(agendamentoId);
+      const faturamentoRef = acesso.empresaRef.collection("faturamentos")
+        .doc(criarIdFaturamentoAtendimento(agendamentoId));
+      const [agendamentoSnap, faturamentoSnap] = await Promise.all([
+        transaction.get(agendamentoRef), transaction.get(faturamentoRef),
+      ]);
+      if (!snapshotExiste(agendamentoSnap) || dadosSnapshot(agendamentoSnap).status !== "concluido") {
+        throw criarErroHttp(409, "Atendimento nao concluido ou inexistente.", "atendimento_indisponivel");
+      }
+      if (snapshotExiste(faturamentoSnap)) {
+        const existente = dadosSnapshot(faturamentoSnap);
+        if (existente.origem?.tipo !== "atendimento" || existente.origem.documentoId !== agendamentoId) {
+          throw criarErroHttp(409, "Origem do faturamento inconsistente.", "origem_divergente");
+        }
+        return { faturamentoId: faturamentoRef.id, status: existente.status || "rascunho", reutilizado: true };
+      }
+      const agendamento = { ...dadosSnapshot(agendamentoSnap), id: agendamentoId };
+      const clienteRef = acesso.empresaRef.collection("clientesComerciais").doc(agendamento.clienteId || "_ausente");
+      const fiscalRef = acesso.empresaRef.collection("configuracoes").doc("fiscal");
+      const [clienteSnap, fiscalSnap] = await Promise.all([
+        transaction.get(clienteRef), transaction.get(fiscalRef),
+      ]);
+      let core;
+      try {
+        core = criarFaturamentoAtendimento({
+          agendamento,
+          cliente: dadosSnapshot(clienteSnap),
+          fiscalEmpresa: dadosSnapshot(fiscalSnap),
+        });
+      } catch (error) {
+        throw criarErroHttp(422, error.message, error.codigo || "atendimento_invalido");
+      }
+      const timestamp = criarTimestampServidor();
+      transaction.create(faturamentoRef, {
+        ...core,
+        idempotencyKey: `${empresaId}:atendimento:${agendamentoId}:preparacao:v${VERSAO_PREPARACAO}`,
+        criadoEm: timestamp, atualizadoEm: timestamp, criadoPor: atorUid,
+        persistencia: { versao: 1, versaoPreparacao: VERSAO_PREPARACAO },
+      });
+      return { faturamentoId: faturamentoRef.id, status: "rascunho", reutilizado: false };
+    });
+    return res.status(resultado.reutilizado ? 200 : 201).json({ ok: true, ...resultado });
+  } catch (error) {
+    return montarRespostaErro(res, error);
   }
 };
 
@@ -862,6 +930,10 @@ const criarHandlerSalvarContextoOperacionalFaturamento = ({
         );
       }
 
+      if (ehFaturamentoServico(faturamento)) {
+        throw criarErroHttp(409, "Contexto fiscal de servico ainda nao disponivel.", "servico_aguarda_contexto");
+      }
+
       let operacao;
 
       try {
@@ -986,6 +1058,9 @@ const criarHandlerDeterminarFiscalFaturamento = ({
         );
       }
 
+      if (ehFaturamentoServico(faturamento)) {
+        throw criarErroHttp(409, "Determinacao CFOP nao se aplica a servico.", "servico_sem_cfop");
+      }
       const determinacaoFiscal = determinarFiscalFaturamento({
         id: faturamentoSnapshot.id,
         ...faturamento,
@@ -1103,6 +1178,9 @@ const criarHandlerClassificarTributacaoFaturamento = ({
           classificacaoTributaria: faturamento.classificacaoTributaria };
       }
 
+      if (ehFaturamentoServico(faturamento)) {
+        throw criarErroHttp(409, "Classificacao automatica de servico indisponivel.", "servico_aguarda_classificacao");
+      }
       const classificacaoTributaria = classificarTributacaoFaturamento({
         id: faturamentoSnapshot.id,
         ...faturamento,
@@ -1182,6 +1260,9 @@ const criarHandlerSalvarClassificacaoManual = ({
       const snapshot = await transaction.get(ref);
       if (!snapshotExiste(snapshot)) throw criarErroHttp(404, "Faturamento nao encontrado.", "faturamento_nao_encontrado");
       const faturamento = dadosSnapshot(snapshot);
+      if (ehFaturamentoServico(faturamento)) {
+        throw criarErroHttp(409, "Classificacao manual de servico ainda nao disponivel.", "servico_aguarda_classificacao");
+      }
       if (String(faturamento.status || "rascunho").trim().toLowerCase() !== "rascunho") {
         throw criarErroHttp(409, "Status nao permite classificacao.", "status_invalido");
       }
@@ -1323,6 +1404,7 @@ router.get("/catalogo-tributario", authFirebase, criarHandlerListarCatalogoTribu
 router.get("/", authFirebase, criarHandlerListarFaturamentos());
 router.get("/:faturamentoId", authFirebase, criarHandlerObterFaturamento());
 router.post("/", authFirebase, criarHandlerCriarFaturamento());
+router.post("/atendimento", authFirebase, criarHandlerCriarFaturamentoAtendimento());
 router.put(
   "/:faturamentoId/contexto-operacional",
   authFirebase,
@@ -1346,6 +1428,7 @@ module.exports = router;
 module.exports.criarHandlerListarFaturamentos = criarHandlerListarFaturamentos;
 module.exports.criarHandlerObterFaturamento = criarHandlerObterFaturamento;
 module.exports.criarHandlerCriarFaturamento = criarHandlerCriarFaturamento;
+module.exports.criarHandlerCriarFaturamentoAtendimento = criarHandlerCriarFaturamentoAtendimento;
 module.exports.criarHandlerPrepararFaturamento = criarHandlerPrepararFaturamento;
 module.exports.criarHandlerDeterminarFiscalFaturamento =
   criarHandlerDeterminarFiscalFaturamento;
@@ -1358,6 +1441,7 @@ module.exports.criarHandlerSalvarContextoOperacionalFaturamento =
 module.exports.criarHandlerCancelarFaturamento = criarHandlerCancelarFaturamento;
 module.exports._internals = {
   criarIdFaturamento,
+  criarIdFaturamentoAtendimento,
   criarIdempotencyKey,
   sanitizarMotivoCancelamento,
   validarPayloadOperacaoFaturamento,

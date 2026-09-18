@@ -48,12 +48,27 @@ const faturamento = (dados = {}) => ({
 
 test("formata labels de status origem destino e pendencias", () => {
   assert.equal(formatarStatusFaturamento("preparado"), "Preparado");
+  assert.equal(formatarOrigemFaturamento("atendimento"), "Atendimento");
   assert.equal(formatarOrigemFaturamento("venda_pecas"), "Venda de Peças");
   assert.equal(formatarDestinoOperacao("interestadual"), "Interestadual");
   assert.equal(
     descreverPendenciaFaturamento("item_ncm_ausente"),
     "Um ou mais itens não possuem NCM nos dados fiscais registrados."
   );
+});
+
+test("descreve pendencias de servico sem conceitos de mercadoria", () => {
+  for (const codigo of [
+    "classificacao_servico_ausente",
+    "local_prestacao_ausente",
+    "competencia_fiscal_pendente",
+    "tomador_fiscal_incompleto",
+    "prestador_fiscal_incompleto",
+  ]) {
+    const mensagem = descreverPendenciaFaturamento(codigo);
+    assert.ok(mensagem);
+    assert.doesNotMatch(mensagem, /NCM|CFOP|origemProduto/);
+  }
 });
 
 test("calcula kpis por status e pendencias", () => {

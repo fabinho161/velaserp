@@ -7,12 +7,17 @@ const {
   criarHandlerListarCatalogoTributario,
   criarHandlerCancelarFaturamento,
   criarHandlerCriarFaturamento,
+  criarHandlerCriarFaturamentoAtendimento,
   criarHandlerDeterminarFiscalFaturamento,
   criarHandlerListarFaturamentos,
   criarHandlerObterFaturamento,
   criarHandlerPrepararFaturamento,
   criarHandlerSalvarContextoOperacionalFaturamento,
 } = require("../faturamentoRoutes");
+
+const pathAtendimento = (id = "agenda-1") => `users/owner-1/empresas/empresa-1/agendamentos/${id}`;
+const pathFaturamentoAtendimento = (id = "agenda-1") =>
+  `users/owner-1/empresas/empresa-1/faturamentos/atendimento_${id}_preparacao_v1`;
 
 const SERVER_TIMESTAMP = { __serverTimestamp: true };
 
@@ -885,6 +890,82 @@ test("listagem de faturamentos exige autenticacao", async () => {
 
   assert.equal(res.statusCode, 401);
   assert.equal(res.body.codigo, "token_ausente");
+});
+
+const criarAmbienteAtendimento = ({ status = "concluido", segmento = "clientes", atorUid = "owner-1", role = "comercial", valorServico = 100 } = {}) => {
+  const ambiente = criarAmbiente({ atorUid, usuarioEmpresa: { role }, empresa: { segmento } });
+  ambiente.db.set(pathAtendimento(), {
+    status, clienteId: "cliente-1", clienteNome: "Nome historico", clienteTelefone: "62999990000",
+    servicoId: "servico-1", servicoNome: "Servico historico", valorServico, data: "2026-09-01",
+  });
+  ambiente.db.set("users/owner-1/empresas/empresa-1/clientesComerciais/cliente-1", {
+    nome: "Nome atual", documento: "11122233344", fiscal: { cpf: "" },
+  });
+  ambiente.db.set("users/owner-1/empresas/empresa-1/configuracoes/fiscal", {
+    cnpj: "11222333000144", inscricaoMunicipal: "123", municipio: "Itumbiara",
+  });
+  const handler = criarHandlerCriarFaturamentoAtendimento({
+    getDb: () => ambiente.db, criarTimestampServidor: () => SERVER_TIMESTAMP,
+  });
+  const executarAtendimento = async () => {
+    const res = criarRes();
+    await handler(ambiente.req({ empresaId: "empresa-1", agendamentoId: "agenda-1" }), res);
+    return res;
+  };
+  return { ...ambiente, executarAtendimento };
+};
+
+test("atendimento concluido cria um rascunho idempotente sem tocar conta a receber", async () => {
+  const ambiente = criarAmbienteAtendimento();
+  const [primeiro, segundo] = await Promise.all([
+    ambiente.executarAtendimento(), ambiente.executarAtendimento(),
+  ]);
+  assert.deepEqual([primeiro.statusCode, segundo.statusCode], [201, 200]);
+  const fat = ambiente.db.get(pathFaturamentoAtendimento());
+  assert.equal(fat.origem.tipo, "atendimento");
+  assert.equal(fat.origem.documentoId, "agenda-1");
+  assert.equal(fat.status, "rascunho");
+  assert.equal(fat.totais.valorLiquido, 100);
+  assert.equal(fat.contextoFiscal.destinatario.nome, "Nome historico");
+  assert.equal(fat.itens[0].descricao, "Servico historico");
+  assert.equal(fat.itens[0].tipoItem, "servico");
+  assert.equal(ambiente.db.transactions.flatMap((tx) => tx.reads).some((path) => path.includes("contasReceber")), false);
+  assert.equal(ambiente.db.transactions.flatMap((tx) => tx.writes).some((write) => write.path.includes("contasReceber")), false);
+});
+
+test("outros estados, segmento e role sem permissao sao negados", async () => {
+  for (const status of ["agendado", "confirmado", "em_atendimento", "cancelado"]) {
+    const ambiente = criarAmbienteAtendimento({ status });
+    assert.equal((await ambiente.executarAtendimento()).statusCode, 409);
+    assert.equal(ambiente.db.get(pathFaturamentoAtendimento()), undefined);
+  }
+  for (const segmento of ["comercio", "industria", "oficina"]) {
+    assert.equal((await criarAmbienteAtendimento({ segmento }).executarAtendimento()).statusCode, 403);
+  }
+  assert.equal((await criarAmbienteAtendimento({ atorUid: "guest", role: "producao" }).executarAtendimento()).statusCode, 403);
+  assert.equal((await criarAmbienteAtendimento({ atorUid: "guest", role: "financeiro" }).executarAtendimento()).statusCode, 201);
+});
+
+test("valor invalido impede persistencia; zero e legado sem concluidoEm permanecem validos", async () => {
+  assert.equal((await criarAmbienteAtendimento({ valorServico: -1 }).executarAtendimento()).statusCode, 422);
+  const ambiente = criarAmbienteAtendimento({ valorServico: 0 });
+  assert.equal((await ambiente.executarAtendimento()).statusCode, 201);
+  const fat = ambiente.db.get(pathFaturamentoAtendimento());
+  assert.equal(fat.totais.valorLiquido, 0);
+  assert.equal("concluidoEm" in fat, false);
+});
+
+test("endereco HTTP final de atendimento esta montado e exige autenticacao", async () => {
+  const app = require("../../server");
+  const server = app.listen(0);
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/faturamentos/atendimento`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+    });
+    assert.equal(response.status, 401);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test("owner lista somente faturamentos da empresa autorizada", async () => {

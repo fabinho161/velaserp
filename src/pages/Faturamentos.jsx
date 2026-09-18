@@ -249,6 +249,8 @@ export default function Faturamentos() {
   );
   const kpis = useMemo(() => calcularKpisFaturamento(faturamentos), [faturamentos]);
   const statusSelecionado = texto(faturamentoSelecionado?.status || "rascunho").toLowerCase();
+  const isServico = faturamentoSelecionado?.origem?.tipo === "atendimento" ||
+    faturamentoSelecionado?.itens?.some((item) => item.tipoItem === "servico");
   const detalheSomenteLeitura = statusSelecionado !== "rascunho" || !podeEditarContexto;
   const operacaoSelecionada = faturamentoSelecionado?.contextoFiscal?.operacao || {};
   const pendenciasSelecionadas = Array.isArray(faturamentoSelecionado?.pendencias)
@@ -538,7 +540,7 @@ export default function Faturamentos() {
       <div className="billing-header">
         <div>
           <h1 className="page-title">Central de Faturamento</h1>
-          <p>Prepare operações comerciais para o fluxo fiscal, sem emitir documentos fiscais.</p>
+          <p>Organize rascunhos fiscais e suas pendências, sem emitir documentos fiscais.</p>
         </div>
         <button type="button" onClick={carregarLista} disabled={loading}>
           Atualizar
@@ -702,7 +704,8 @@ export default function Faturamentos() {
                   <h3>Dados Gerais</h3>
                   <div className="billing-info-grid">
                     {renderInfo("Origem", formatarOrigemFaturamento(faturamentoSelecionado.origem))}
-                    {renderInfo("Número", faturamentoSelecionado.origem?.numeroDocumento)}
+                    {!isServico && renderInfo("Número", faturamentoSelecionado.origem?.numeroDocumento)}
+                    {isServico && renderInfo("Competência operacional", dataBR(operacaoSelecionada.competenciaOperacional))}
                     {renderInfo("Data da operação", dataBR(operacaoSelecionada.dataOperacao))}
                     {renderInfo("Segmento", operacaoSelecionada.segmento)}
                     {renderInfo("Status", formatarStatusFaturamento(faturamentoSelecionado.status))}
@@ -713,9 +716,10 @@ export default function Faturamentos() {
                 </section>
 
                 <section className="billing-detail-section">
-                  <h3>Emitente</h3>
+                  <h3>{isServico ? "Prestador" : "Emitente"}</h3>
                   <div className="billing-info-grid">
                     {renderInfo("CNPJ", faturamentoSelecionado.contextoFiscal?.emitente?.cnpj)}
+                    {isServico && renderInfo("Inscrição municipal", faturamentoSelecionado.contextoFiscal?.emitente?.inscricaoMunicipal)}
                     {renderInfo("Regime tributário", faturamentoSelecionado.contextoFiscal?.emitente?.regimeTributario)}
                     {renderInfo("UF", faturamentoSelecionado.contextoFiscal?.emitente?.uf)}
                     {renderInfo("Município", faturamentoSelecionado.contextoFiscal?.emitente?.municipio)}
@@ -724,10 +728,15 @@ export default function Faturamentos() {
                 </section>
 
                 <section className="billing-detail-section">
-                  <h3>Destinatário</h3>
+                  <h3>{isServico ? "Tomador" : "Destinatário"}</h3>
                   <div className="billing-info-grid">
                     {renderInfo("Nome", faturamentoSelecionado.contextoFiscal?.destinatario?.nome)}
-                    {renderInfo("Documento", faturamentoSelecionado.contextoFiscal?.destinatario?.documento)}
+                    {isServico ? (
+                      <>
+                        {renderInfo("CPF", faturamentoSelecionado.contextoFiscal?.destinatario?.cpf)}
+                        {renderInfo("CNPJ", faturamentoSelecionado.contextoFiscal?.destinatario?.cnpj)}
+                      </>
+                    ) : renderInfo("Documento", faturamentoSelecionado.contextoFiscal?.destinatario?.documento)}
                     {renderInfo("E-mail", faturamentoSelecionado.contextoFiscal?.destinatario?.email)}
                     {renderInfo("Telefone", faturamentoSelecionado.contextoFiscal?.destinatario?.telefone)}
                     {renderInfo("Endereço", faturamentoSelecionado.contextoFiscal?.destinatario?.endereco)}
@@ -739,7 +748,7 @@ export default function Faturamentos() {
                 </section>
 
                 <section className="billing-detail-section">
-                  <h3>Itens</h3>
+                  <h3>{isServico ? "Serviço" : "Itens"}</h3>
                   <div className="table-wrapper">
                     <table>
                       <thead>
@@ -750,8 +759,8 @@ export default function Faturamentos() {
                           <th>Unitário</th>
                           <th>Desconto</th>
                           <th>Total</th>
-                          <th>NCM</th>
-                          <th>Unidade tributável</th>
+                          {!isServico && <th>NCM</th>}
+                          {!isServico && <th>Unidade tributável</th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -763,8 +772,8 @@ export default function Faturamentos() {
                             <td>{moedaBR(item.valorUnitario)}</td>
                             <td>{moedaBR(item.desconto)}</td>
                             <td>{moedaBR(item.total)}</td>
-                            <td>{item.fiscalSnapshot?.ncm || "-"}</td>
-                            <td>{item.fiscalSnapshot?.unidadeTributavel || "-"}</td>
+                            {!isServico && <td>{item.fiscalSnapshot?.ncm || "-"}</td>}
+                            {!isServico && <td>{item.fiscalSnapshot?.unidadeTributavel || "-"}</td>}
                           </tr>
                         ))}
                       </tbody>
@@ -772,7 +781,16 @@ export default function Faturamentos() {
                   </div>
                 </section>
 
-                <section className="billing-detail-section">
+                {isServico && <section className="billing-detail-section">
+                  <h3>Prestação do serviço</h3>
+                  <div className="billing-info-grid">
+                    {renderInfo("Competência operacional", dataBR(operacaoSelecionada.competenciaOperacional))}
+                    {renderInfo("Local da prestação", operacaoSelecionada.localPrestacao || "Pendente")}
+                    {renderInfo("Classificação do serviço", "Pendente")}
+                  </div>
+                </section>}
+
+                {!isServico && <section className="billing-detail-section">
                   <h3>Contexto Fiscal da Operação</h3>
                   <div className="billing-context-grid">
                     <label>
@@ -845,9 +863,9 @@ export default function Faturamentos() {
                       Motivo: {textoOpcional(faturamentoSelecionado.motivoCancelamento)}
                     </p>
                   )}
-                </section>
+                </section>}
 
-                <section className="billing-detail-section">
+                {!isServico && <section className="billing-detail-section">
                   <h3>Determinação Fiscal</h3>
                   {determinacaoFiscalSelecionada ? (
                     <>
@@ -953,9 +971,9 @@ export default function Faturamentos() {
                       Determinação fiscal ainda não realizada.
                     </p>
                   )}
-                </section>
+                </section>}
 
-                <section className="billing-detail-section">
+                {!isServico && <section className="billing-detail-section">
                   <h3>Classificação Tributária</h3>
                   {statusSelecionado === "rascunho" && podeDeterminarFiscal && (
                     <div className="billing-manual-classification">
@@ -1081,7 +1099,7 @@ export default function Faturamentos() {
                       Classificação tributária ainda não realizada.
                     </p>
                   )}
-                </section>
+                </section>}
 
                 <section className="billing-detail-section">
                   <h3>Pendências</h3>
@@ -1109,12 +1127,12 @@ export default function Faturamentos() {
                 )}
 
                 <div className="billing-detail-actions">
-                  {statusSelecionado === "rascunho" && podeEditarContexto && (
+                  {statusSelecionado === "rascunho" && podeEditarContexto && !isServico && (
                     <button type="button" onClick={salvarContexto} disabled={Boolean(acaoEmAndamento)}>
                       Salvar contexto
                     </button>
                   )}
-                  {statusSelecionado === "rascunho" && podeDeterminarFiscal && (
+                  {statusSelecionado === "rascunho" && podeDeterminarFiscal && !isServico && (
                     <button
                       type="button"
                       onClick={determinarFiscal}
@@ -1125,7 +1143,7 @@ export default function Faturamentos() {
                         : "Determinar fiscal"}
                     </button>
                   )}
-                  {statusSelecionado === "rascunho" && podeDeterminarFiscal && !classificacaoTributariaSelecionada?.itens?.some((item) => item.origemClassificacao === "manual") && (
+                  {statusSelecionado === "rascunho" && podeDeterminarFiscal && !isServico && !classificacaoTributariaSelecionada?.itens?.some((item) => item.origemClassificacao === "manual") && (
                     <button
                       type="button"
                       onClick={classificarTributacao}
@@ -1136,7 +1154,7 @@ export default function Faturamentos() {
                         : "Classificar tributação"}
                     </button>
                   )}
-                  {statusSelecionado === "rascunho" && podeEditarContexto && (
+                  {statusSelecionado === "rascunho" && podeEditarContexto && !isServico && (
                     <button type="button" onClick={preparar} disabled={Boolean(acaoEmAndamento)}>
                       Preparar faturamento
                     </button>

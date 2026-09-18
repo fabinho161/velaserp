@@ -90,6 +90,12 @@ export const criarFaturamento = ({ empresaId, vendaId }) =>
     body: JSON.stringify({ empresaId, vendaId }),
   });
 
+export const criarFaturamentoAtendimento = ({ empresaId, agendamentoId }) =>
+  requisitarFaturamento("/api/faturamentos/atendimento", {
+    method: "POST",
+    body: JSON.stringify({ empresaId, agendamentoId }),
+  });
+
 export const salvarContextoOperacional = ({ empresaId, faturamentoId, contexto }) =>
   requisitarFaturamento(
     `/api/faturamentos/${encodeURIComponent(faturamentoId)}/contexto-operacional`,

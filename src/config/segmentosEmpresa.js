@@ -68,6 +68,7 @@ export const SEGMENTOS_EMPRESA = {
       "servicos",
       "agenda",
       "atendimentos",
+      "faturamento",
       "financeiro",
       "relatorios",
       "configuracoes",

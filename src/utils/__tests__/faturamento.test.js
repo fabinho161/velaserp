@@ -11,10 +11,66 @@ import {
   classificarTributacaoFaturamento,
   criarContextoOperacionalFaturamento,
   criarFaturamentoVenda,
+  criarFaturamentoAtendimento,
+  ehFaturamentoServico,
   determinarFiscalFaturamento,
   derivarDestinoOperacao,
   validarPreparacaoFaturamento,
 } from "../faturamento.js";
+
+test("atendimento concluido gera rascunho unitario com snapshots historicos e pendencias de servico", () => {
+  const agendamento = {
+    id: "agenda-1", status: "concluido", clienteId: "cliente-1", clienteNome: "Nome antigo",
+    clienteTelefone: "62999990000", servicoId: "servico-1", servicoNome: "Serviço antigo",
+    valorServico: 100, data: "2026-09-01",
+  };
+  const faturamento = criarFaturamentoAtendimento({
+    agendamento,
+    cliente: { nome: "Nome novo", documento: "12345678900", fiscal: { tipoPessoa: "pessoa_fisica", cpf: "11122233344" } },
+    fiscalEmpresa: { cnpj: "11222333000144", inscricaoMunicipal: "123", municipio: "Itumbiara" },
+  });
+  assert.equal(faturamento.status, "rascunho");
+  assert.deepEqual(faturamento.origem, { tipo: "atendimento", documentoId: "agenda-1", numeroDocumento: "" });
+  assert.equal(faturamento.contextoFiscal.destinatario.nome, "Nome antigo");
+  assert.equal(faturamento.contextoFiscal.destinatario.cpf, "11122233344");
+  assert.equal(faturamento.contextoFiscal.destinatario.cnpj, "");
+  assert.equal(faturamento.contextoFiscal.operacao.competenciaOperacional, "2026-09-01");
+  assert.equal(faturamento.contextoFiscal.operacao.localPrestacao, null);
+  assert.equal(faturamento.itens[0].tipoItem, "servico");
+  assert.equal(faturamento.itens[0].descricao, "Serviço antigo");
+  assert.equal(faturamento.itens[0].quantidade, 1);
+  assert.equal(faturamento.itens[0].valorUnitario, 100);
+  assert.equal(faturamento.totais.valorLiquido, 100);
+  assert.equal(faturamento.itens[0].fiscalSnapshot, null);
+  assert.equal("ncm" in faturamento.itens[0], false);
+  assert.equal("cfopEfetivo" in faturamento.itens[0], false);
+  assert.equal(ehFaturamentoServico(faturamento), true);
+  assert.equal(validarPreparacaoFaturamento(faturamento).valido, false);
+  assert.equal(validarPreparacaoFaturamento(faturamento).pendencias.includes("item_ncm_ausente"), false);
+  assert.equal(faturamento.pendencias.includes("classificacao_servico_ausente"), true);
+  assert.equal(faturamento.pendencias.includes("local_prestacao_ausente"), true);
+  assert.equal(faturamento.pendencias.includes("competencia_fiscal_pendente"), true);
+  assert.equal(faturamento.pendencias.includes("tomador_fiscal_incompleto"), false);
+  assert.equal(Object.isFrozen(faturamento), true);
+  agendamento.valorServico = 200;
+  assert.equal(faturamento.totais.valorLiquido, 100);
+});
+
+test("servico gratuito fica zero e dados fiscais ausentes viram pendencias sem inferencia", () => {
+  const base = { id: "a", status: "concluido", clienteId: "c", clienteNome: "Cliente", servicoId: "s", servicoNome: "Cortesia", valorServico: 0, data: "2026-09-01" };
+  const faturamento = criarFaturamentoAtendimento({ agendamento: base, cliente: { documento: "11122233344" } });
+  assert.equal(faturamento.totais.valorLiquido, 0);
+  assert.equal(faturamento.contextoFiscal.destinatario.cpf, "");
+  assert.equal(faturamento.pendencias.includes("tomador_fiscal_incompleto"), true);
+  assert.equal(faturamento.pendencias.includes("prestador_fiscal_incompleto"), true);
+  assert.equal("concluidoEm" in faturamento, false);
+  for (const status of ["agendado", "confirmado", "em_atendimento", "cancelado"]) {
+    assert.throws(() => criarFaturamentoAtendimento({ agendamento: { ...base, status } }), /Atendimento concluido/);
+  }
+  for (const valorServico of [-1, "100", undefined]) {
+    assert.throws(() => criarFaturamentoAtendimento({ agendamento: { ...base, valorServico } }), /historicos validos/);
+  }
+});
 import { criarFiscalSnapshotItemVenda } from "../fiscalVenda.js";
 
 const fiscalEmpresaSnapshot = () => ({

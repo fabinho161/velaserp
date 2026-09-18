@@ -9,9 +9,15 @@ export const ORIGEM_FATURAMENTO_OPCOES = Object.freeze([
   { valor: "todos", label: "Todas as origens" },
   { valor: "venda", label: "Venda" },
   { valor: "venda_pecas", label: "Venda de Peças" },
+  { valor: "atendimento", label: "Atendimento" },
 ]);
 
 export const LABELS_PENDENCIAS_FATURAMENTO = Object.freeze({
+  classificacao_servico_ausente: "Classificação fiscal do serviço ainda não informada.",
+  local_prestacao_ausente: "Local efetivo da prestação ainda não informado.",
+  competencia_fiscal_pendente: "Competência fiscal do serviço ainda precisa ser confirmada.",
+  tomador_fiscal_incompleto: "Dados fiscais do tomador estão incompletos.",
+  prestador_fiscal_incompleto: "Dados fiscais do prestador estão incompletos.",
   emitente_snapshot_ausente: "Dados fiscais do emitente não foram registrados nesta operação.",
   destinatario_snapshot_ausente: "Dados do destinatário não foram registrados nesta operação.",
   item_fiscal_snapshot_ausente: "Um ou mais itens não possuem dados fiscais registrados nesta operação.",
@@ -101,6 +107,7 @@ export const formatarOrigemFaturamento = (origem) => {
   const labels = {
     venda: "Venda",
     venda_pecas: "Venda de Peças",
+    atendimento: "Atendimento",
   };
 
   return labels[tipo] || "Venda";

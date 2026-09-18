@@ -4,6 +4,14 @@ const PENDENCIAS_FATURAMENTO = Object.freeze({
   ITEM_FISCAL_SNAPSHOT_AUSENTE: "item_fiscal_snapshot_ausente",
 });
 
+const PENDENCIAS_SERVICO = Object.freeze({
+  CLASSIFICACAO_AUSENTE: "classificacao_servico_ausente",
+  LOCAL_PRESTACAO_AUSENTE: "local_prestacao_ausente",
+  COMPETENCIA_FISCAL_PENDENTE: "competencia_fiscal_pendente",
+  TOMADOR_FISCAL_INCOMPLETO: "tomador_fiscal_incompleto",
+  PRESTADOR_FISCAL_INCOMPLETO: "prestador_fiscal_incompleto",
+});
+
 const PENDENCIAS_PREPARACAO_FATURAMENTO = Object.freeze({
   ...PENDENCIAS_FATURAMENTO,
   EMITENTE_CNPJ_AUSENTE: "emitente_cnpj_ausente",
@@ -292,6 +300,94 @@ const criarFaturamentoVenda = ({ venda = {}, segmento = "" } = {}) => {
   };
 
   return congelarProfundo(faturamento);
+};
+
+const ehFaturamentoServico = (faturamento = {}) =>
+  faturamento.origem?.tipo === "atendimento" ||
+  (Array.isArray(faturamento.itens) && faturamento.itens.some((item) => item?.tipoItem === "servico"));
+
+const criarFaturamentoAtendimento = ({ agendamento = {}, cliente = null, fiscalEmpresa = null } = {}) => {
+  const valor = agendamento.valorServico;
+  if (agendamento.status !== "concluido" || !textoPreenchido(agendamento.id) ||
+      !textoPreenchido(agendamento.clienteId) || !textoPreenchido(agendamento.servicoId) ||
+      !textoPreenchido(agendamento.servicoNome) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(textoSeguro(agendamento.data)) ||
+      typeof valor !== "number" || !Number.isFinite(valor) || valor < 0) {
+    throw criarErroDominio("atendimento_invalido", "Atendimento concluido sem dados historicos validos.");
+  }
+
+  const fiscalTomador = ehObjeto(cliente?.fiscal) ? cliente.fiscal : {};
+  const enderecoFiscal = ehObjeto(fiscalTomador.enderecoFiscal) ? fiscalTomador.enderecoFiscal : {};
+  const destinatario = {
+    versao: 1,
+    clienteId: textoSeguro(agendamento.clienteId),
+    nome: textoSeguro(agendamento.clienteNome),
+    telefone: textoSeguro(agendamento.clienteTelefone),
+    tipoPessoa: textoSeguro(fiscalTomador.tipoPessoa),
+    cpf: textoSeguro(fiscalTomador.cpf),
+    cnpj: textoSeguro(fiscalTomador.cnpj),
+    inscricaoEstadual: textoSeguro(fiscalTomador.inscricaoEstadual),
+    indicadorIECadastral: textoSeguro(fiscalTomador.indicadorIECadastral),
+    enderecoFiscal: {
+      paisCodigo: textoSeguro(enderecoFiscal.paisCodigo),
+      paisNome: textoSeguro(enderecoFiscal.paisNome),
+      municipioCodigo: textoSeguro(enderecoFiscal.municipioCodigo),
+      municipioNome: textoSeguro(cliente?.cidade),
+      uf: textoSeguro(cliente?.uf),
+    },
+  };
+  const fiscal = ehObjeto(fiscalEmpresa) ? fiscalEmpresa : {};
+  const emitente = {
+    versao: 1,
+    regimeTributario: textoSeguro(fiscal.regimeTributario),
+    cnpj: textoSeguro(fiscal.cnpj),
+    inscricaoEstadual: textoSeguro(fiscal.inscricaoEstadual),
+    inscricaoMunicipal: textoSeguro(fiscal.inscricaoMunicipal),
+    cnae: textoSeguro(fiscal.cnae),
+    uf: textoSeguro(fiscal.uf),
+    municipio: textoSeguro(fiscal.municipio),
+    ambienteFiscal: textoSeguro(fiscal.ambienteFiscal),
+  };
+  const pendencias = [
+    PENDENCIAS_SERVICO.CLASSIFICACAO_AUSENTE,
+    PENDENCIAS_SERVICO.LOCAL_PRESTACAO_AUSENTE,
+    PENDENCIAS_SERVICO.COMPETENCIA_FISCAL_PENDENTE,
+  ];
+  if (!destinatario.nome || (!destinatario.cpf && !destinatario.cnpj)) {
+    pendencias.push(PENDENCIAS_SERVICO.TOMADOR_FISCAL_INCOMPLETO);
+  }
+  if (!emitente.cnpj || !emitente.inscricaoMunicipal || !emitente.municipio) {
+    pendencias.push(PENDENCIAS_SERVICO.PRESTADOR_FISCAL_INCOMPLETO);
+  }
+
+  return congelarProfundo({
+    versao: VERSAO_FATURAMENTO,
+    origem: { tipo: "atendimento", documentoId: agendamento.id, numeroDocumento: "" },
+    contextoFiscal: {
+      versao: VERSAO_FATURAMENTO,
+      emitente,
+      destinatario,
+      operacao: {
+        tipoOperacao: "atendimento", segmento: "clientes",
+        dataOperacao: agendamento.data,
+        competenciaOperacional: agendamento.data,
+        localPrestacao: null,
+      },
+    },
+    itens: [{
+      tipoItem: "servico", origemItemId: agendamento.servicoId,
+      descricao: agendamento.servicoNome, quantidade: 1, unidade: "",
+      valorUnitario: valor, desconto: 0, total: valor,
+      servicoSnapshot: {
+        servicoId: agendamento.servicoId, nome: agendamento.servicoNome,
+        valorServico: valor,
+      },
+      fiscalSnapshot: null,
+    }],
+    totais: { valorBruto: valor, desconto: 0, valorLiquido: valor },
+    status: STATUS_INICIAL,
+    pendencias,
+  });
 };
 
 const normalizarUf = (uf) => {
@@ -641,6 +737,17 @@ const ordenarPendenciasPreparacao = (pendencias) => {
 };
 
 const validarPreparacaoFaturamento = (faturamento = {}) => {
+  if (ehFaturamentoServico(faturamento)) {
+    return congelarProfundo({
+      valido: false,
+      pendencias: [...new Set([
+        ...(Array.isArray(faturamento.pendencias) ? faturamento.pendencias : []),
+        PENDENCIAS_SERVICO.CLASSIFICACAO_AUSENTE,
+        PENDENCIAS_SERVICO.LOCAL_PRESTACAO_AUSENTE,
+        PENDENCIAS_SERVICO.COMPETENCIA_FISCAL_PENDENTE,
+      ])],
+    });
+  }
   const pendencias = new Set(Array.isArray(faturamento.pendencias)
     ? faturamento.pendencias
     : []);
@@ -956,6 +1063,9 @@ const classificarTributacaoFaturamento = (faturamento = {}) => {
 };
 
 const faturamentoApi = {
+  PENDENCIAS_SERVICO,
+  criarFaturamentoAtendimento,
+  ehFaturamentoServico,
   DESTINOS_OPERACAO,
   FINALIDADES_OPERACAO,
   FINALIDADES_OPERACAO_SUPORTADAS,
