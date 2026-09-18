@@ -71,6 +71,34 @@ test("servico gratuito fica zero e dados fiscais ausentes viram pendencias sem i
     assert.throws(() => criarFaturamentoAtendimento({ agendamento: { ...base, valorServico } }), /historicos validos/);
   }
 });
+
+test("faturamento congela apenas fatos fiscais do atendimento e nao infere competencia", () => {
+  const agendamento = {
+    id: "a", status: "concluido", clienteId: "c", clienteNome: "Cliente",
+    servicoId: "s", servicoNome: "Consulta", valorServico: 100, data: "2026-09-01",
+    dataRecebimento: "2026-09-05", criadoEm: "2026-08-01",
+    servicoFiscalSnapshot: { versao: 1, codigoTributacaoNacional: "001234", codigoTributacaoMunicipal: "", nbs: "", descricaoFiscal: "Consulta fiscal" },
+    localPrestacao: { tipo: "brasil", codigoMunicipio: "5209150", municipio: "Itumbiara", uf: "GO", codigoPais: "BR" },
+  };
+  const faturamento = criarFaturamentoAtendimento({ agendamento });
+  assert.equal(faturamento.itens[0].fiscalServicoSnapshot.codigoTributacaoNacional, "001234");
+  assert.equal(faturamento.itens[0].fiscalServicoSnapshot.nbs, "");
+  assert.equal(faturamento.itens[0].fiscalServicoSnapshot.codigoTributacaoMunicipal, "");
+  assert.equal(faturamento.contextoFiscal.operacao.competenciaOperacional, "2026-09-01");
+  assert.equal(faturamento.contextoFiscal.operacao.competenciaFiscal, null);
+  assert.equal(faturamento.contextoFiscal.operacao.localPrestacao.codigoMunicipio, "5209150");
+  assert.equal(faturamento.pendencias.includes("classificacao_servico_ausente"), false);
+  assert.equal(faturamento.pendencias.includes("local_prestacao_ausente"), false);
+  assert.equal(faturamento.pendencias.includes("competencia_fiscal_pendente"), true);
+  assert.equal(validarPreparacaoFaturamento(faturamento).valido, false);
+  agendamento.servicoFiscalSnapshot.codigoTributacaoNacional = "999999";
+  agendamento.localPrestacao.municipio = "Outro";
+  assert.equal(faturamento.itens[0].fiscalServicoSnapshot.codigoTributacaoNacional, "001234");
+  assert.equal(faturamento.contextoFiscal.operacao.localPrestacao.municipio, "Itumbiara");
+  const legado = criarFaturamentoAtendimento({ agendamento: { ...agendamento, servicoFiscalSnapshot: undefined, localPrestacao: undefined } });
+  assert.equal(legado.itens[0].fiscalServicoSnapshot, null);
+  assert.equal(legado.pendencias.includes("classificacao_servico_ausente"), true);
+});
 import { criarFiscalSnapshotItemVenda } from "../fiscalVenda.js";
 
 const fiscalEmpresaSnapshot = () => ({

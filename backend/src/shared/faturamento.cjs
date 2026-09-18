@@ -348,11 +348,31 @@ const criarFaturamentoAtendimento = ({ agendamento = {}, cliente = null, fiscalE
     municipio: textoSeguro(fiscal.municipio),
     ambienteFiscal: textoSeguro(fiscal.ambienteFiscal),
   };
+  const fiscalServico = ehObjeto(agendamento.servicoFiscalSnapshot)
+    ? agendamento.servicoFiscalSnapshot : null;
+  const fiscalServicoSnapshot = fiscalServico ? {
+    versao: 1,
+    codigoTributacaoNacional: textoSeguro(fiscalServico.codigoTributacaoNacional),
+    codigoTributacaoMunicipal: textoSeguro(fiscalServico.codigoTributacaoMunicipal),
+    nbs: textoSeguro(fiscalServico.nbs),
+    descricaoFiscal: textoSeguro(fiscalServico.descricaoFiscal),
+  } : null;
+  const localInformado = agendamento.localPrestacao;
+  const localPrestacao = ehObjeto(localInformado) && localInformado.tipo === "brasil" &&
+    /^\d{7}$/.test(textoSeguro(localInformado.codigoMunicipio)) &&
+    textoPreenchido(localInformado.municipio) && /^[A-Z]{2}$/.test(textoSeguro(localInformado.uf))
+    ? {
+      tipo: "brasil", codigoMunicipio: textoSeguro(localInformado.codigoMunicipio),
+      municipio: textoSeguro(localInformado.municipio), uf: textoSeguro(localInformado.uf),
+      codigoPais: "BR",
+    } : null;
   const pendencias = [
-    PENDENCIAS_SERVICO.CLASSIFICACAO_AUSENTE,
-    PENDENCIAS_SERVICO.LOCAL_PRESTACAO_AUSENTE,
     PENDENCIAS_SERVICO.COMPETENCIA_FISCAL_PENDENTE,
   ];
+  if (!fiscalServicoSnapshot?.codigoTributacaoNacional) {
+    pendencias.push(PENDENCIAS_SERVICO.CLASSIFICACAO_AUSENTE);
+  }
+  if (!localPrestacao) pendencias.push(PENDENCIAS_SERVICO.LOCAL_PRESTACAO_AUSENTE);
   if (!destinatario.nome || (!destinatario.cpf && !destinatario.cnpj)) {
     pendencias.push(PENDENCIAS_SERVICO.TOMADOR_FISCAL_INCOMPLETO);
   }
@@ -371,7 +391,8 @@ const criarFaturamentoAtendimento = ({ agendamento = {}, cliente = null, fiscalE
         tipoOperacao: "atendimento", segmento: "clientes",
         dataOperacao: agendamento.data,
         competenciaOperacional: agendamento.data,
-        localPrestacao: null,
+        competenciaFiscal: null,
+        localPrestacao,
       },
     },
     itens: [{
@@ -382,6 +403,7 @@ const criarFaturamentoAtendimento = ({ agendamento = {}, cliente = null, fiscalE
         servicoId: agendamento.servicoId, nome: agendamento.servicoNome,
         valorServico: valor,
       },
+      fiscalServicoSnapshot,
       fiscalSnapshot: null,
     }],
     totais: { valorBruto: valor, desconto: 0, valorLiquido: valor },
@@ -738,12 +760,15 @@ const ordenarPendenciasPreparacao = (pendencias) => {
 
 const validarPreparacaoFaturamento = (faturamento = {}) => {
   if (ehFaturamentoServico(faturamento)) {
+    const operacao = faturamento.contextoFiscal?.operacao || {};
+    const item = faturamento.itens?.find((atual) => atual?.tipoItem === "servico");
     return congelarProfundo({
       valido: false,
       pendencias: [...new Set([
         ...(Array.isArray(faturamento.pendencias) ? faturamento.pendencias : []),
-        PENDENCIAS_SERVICO.CLASSIFICACAO_AUSENTE,
-        PENDENCIAS_SERVICO.LOCAL_PRESTACAO_AUSENTE,
+        ...(!item?.fiscalServicoSnapshot?.codigoTributacaoNacional
+          ? [PENDENCIAS_SERVICO.CLASSIFICACAO_AUSENTE] : []),
+        ...(!operacao.localPrestacao ? [PENDENCIAS_SERVICO.LOCAL_PRESTACAO_AUSENTE] : []),
         PENDENCIAS_SERVICO.COMPETENCIA_FISCAL_PENDENTE,
       ])],
     });

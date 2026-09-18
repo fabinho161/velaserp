@@ -705,7 +705,6 @@ export default function Faturamentos() {
                   <div className="billing-info-grid">
                     {renderInfo("Origem", formatarOrigemFaturamento(faturamentoSelecionado.origem))}
                     {!isServico && renderInfo("Número", faturamentoSelecionado.origem?.numeroDocumento)}
-                    {isServico && renderInfo("Competência operacional", dataBR(operacaoSelecionada.competenciaOperacional))}
                     {renderInfo("Data da operação", dataBR(operacaoSelecionada.dataOperacao))}
                     {renderInfo("Segmento", operacaoSelecionada.segmento)}
                     {renderInfo("Status", formatarStatusFaturamento(faturamentoSelecionado.status))}
@@ -785,8 +784,14 @@ export default function Faturamentos() {
                   <h3>Prestação do serviço</h3>
                   <div className="billing-info-grid">
                     {renderInfo("Competência operacional", dataBR(operacaoSelecionada.competenciaOperacional))}
-                    {renderInfo("Local da prestação", operacaoSelecionada.localPrestacao || "Pendente")}
-                    {renderInfo("Classificação do serviço", "Pendente")}
+                    {renderInfo("Competência fiscal", operacaoSelecionada.competenciaFiscal ? dataBR(operacaoSelecionada.competenciaFiscal) : "Não informado")}
+                    {renderInfo("Local da prestação", operacaoSelecionada.localPrestacao
+                      ? `${operacaoSelecionada.localPrestacao.municipio || ""}/${operacaoSelecionada.localPrestacao.uf || ""} (${operacaoSelecionada.localPrestacao.codigoMunicipio || ""})`
+                      : "Não informado")}
+                    {renderInfo("Código de Tributação Nacional", faturamentoSelecionado.itens?.[0]?.fiscalServicoSnapshot?.codigoTributacaoNacional || "Não informado")}
+                    {renderInfo("Código de Tributação Municipal", faturamentoSelecionado.itens?.[0]?.fiscalServicoSnapshot?.codigoTributacaoMunicipal || "Não informado")}
+                    {renderInfo("NBS", faturamentoSelecionado.itens?.[0]?.fiscalServicoSnapshot?.nbs || "Não informado")}
+                    {renderInfo("Descrição fiscal", faturamentoSelecionado.itens?.[0]?.fiscalServicoSnapshot?.descricaoFiscal || "Não informado")}
                   </div>
                 </section>}
 

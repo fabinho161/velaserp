@@ -95,13 +95,22 @@ export const obterSnapshotServicoAgendamento = (agendamento, servico) => {
       servicoId: agendamento.servicoId,
       servicoNome: String(agendamento.servicoNome || ""),
       valorServico: Number(agendamento.valorServico ?? 0),
+      ...(agendamento.servicoFiscalSnapshot ? { servicoFiscalSnapshot: agendamento.servicoFiscalSnapshot } : {}),
     };
   }
   if (!servico) return null;
+  const fiscal = servico.fiscal;
   return {
     servicoId: servico.id,
     servicoNome: String(servico.nome || "").trim(),
     valorServico: Number(servico.valor || 0),
+    ...(fiscal ? { servicoFiscalSnapshot: {
+      versao: 1,
+      codigoTributacaoNacional: String(fiscal.codigoTributacaoNacional || "").trim(),
+      codigoTributacaoMunicipal: String(fiscal.codigoTributacaoMunicipal || "").trim(),
+      nbs: String(fiscal.nbs || "").trim(),
+      descricaoFiscal: String(fiscal.descricaoFiscal || "").trim(),
+    } } : {}),
   };
 };
 

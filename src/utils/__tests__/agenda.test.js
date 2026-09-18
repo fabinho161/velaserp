@@ -162,6 +162,19 @@ test("preserva snapshot do mesmo serviço e recota somente na troca", () => {
   assert.deepEqual(obterSnapshotServicoAgendamento(antigo, { id: "a" }), antigo);
 });
 
+test("congela dados fiscais explicitos do servico e preserva legado", () => {
+  const servico = { id: "s", nome: "Consulta", valor: 100, fiscal: {
+    codigoTributacaoNacional: "001234", codigoTributacaoMunicipal: "", nbs: "", descricaoFiscal: "Consulta",
+  } };
+  const snapshot = obterSnapshotServicoAgendamento(null, servico);
+  assert.equal(snapshot.servicoFiscalSnapshot.codigoTributacaoNacional, "001234");
+  servico.fiscal.codigoTributacaoNacional = "999999";
+  assert.equal(snapshot.servicoFiscalSnapshot.codigoTributacaoNacional, "001234");
+  assert.deepEqual(obterSnapshotServicoAgendamento(snapshot, servico), snapshot);
+  const legado = obterSnapshotServicoAgendamento(null, { id: "l", nome: "Legado", valor: 0 });
+  assert.equal("servicoFiscalSnapshot" in legado, false);
+});
+
 test("status legado é seguro e intervalo incompleto não gera conflito", () => {
   assert.equal(normalizarStatusAgendamento("desconhecido"), "agendado");
   assert.equal(agendamentosSobrepostos(

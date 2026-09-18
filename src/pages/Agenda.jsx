@@ -39,6 +39,9 @@ const agendamentoInicial = {
   horaFim: "",
   status: "agendado",
   observacoes: "",
+  localPrestacaoCodigoMunicipio: "",
+  localPrestacaoMunicipio: "",
+  localPrestacaoUf: "",
 };
 
 const PERFIS_ESCRITA_AGENDA = new Set(["administrador_empresa", "comercial"]);
@@ -353,6 +356,9 @@ export default function Agenda() {
       horaFim: obterHoraFimAgendamento(agendamento),
       status: agendamento.status || "agendado",
       observacoes: agendamento.observacoes || "",
+      localPrestacaoCodigoMunicipio: agendamento.localPrestacao?.codigoMunicipio || "",
+      localPrestacaoMunicipio: agendamento.localPrestacao?.municipio || "",
+      localPrestacaoUf: agendamento.localPrestacao?.uf || "",
     });
     setFimAutomatico(false);
     setModalAberto(true);
@@ -391,6 +397,13 @@ export default function Agenda() {
       horaFim: form.horaFim,
       status: agendamentoEditando?.status || "agendado",
       observacoes: normalizarTexto(form.observacoes),
+      localPrestacao: form.localPrestacaoCodigoMunicipio ? {
+        tipo: "brasil",
+        codigoMunicipio: normalizarTexto(form.localPrestacaoCodigoMunicipio),
+        municipio: normalizarTexto(form.localPrestacaoMunicipio),
+        uf: normalizarTexto(form.localPrestacaoUf).toUpperCase(),
+        codigoPais: "BR",
+      } : null,
       atualizadoEm: serverTimestamp(),
     };
   };
@@ -412,6 +425,13 @@ export default function Agenda() {
 
     if (!form.clienteId || !form.servicoId || !form.data || !form.horaInicio) {
       showToast("Preencha os campos obrigatórios.", "warning");
+      return;
+    }
+    if ([form.localPrestacaoCodigoMunicipio, form.localPrestacaoMunicipio, form.localPrestacaoUf].some(normalizarTexto) &&
+      (!/^\d{7}$/.test(normalizarTexto(form.localPrestacaoCodigoMunicipio)) ||
+       !normalizarTexto(form.localPrestacaoMunicipio) ||
+       !/^[A-Za-z]{2}$/.test(normalizarTexto(form.localPrestacaoUf)))) {
+      showToast("Informe código IBGE, município e UF do local da prestação.", "warning");
       return;
     }
     if (!form.horaFim) {
@@ -802,6 +822,24 @@ export default function Agenda() {
               </div>
 
               <div>Status: {getStatusLabel(form.status)}</div>
+
+              <div className="fornecedores-form-wide">
+                <strong>Local da prestação (opcional)</strong>
+                <div className="fornecedores-form-grid">
+                  <label>Código do município (IBGE)
+                    <input inputMode="numeric" maxLength={7} value={form.localPrestacaoCodigoMunicipio}
+                      onChange={(event) => atualizarCampo("localPrestacaoCodigoMunicipio", event.target.value)} disabled={somenteLeitura} />
+                  </label>
+                  <label>Município
+                    <input value={form.localPrestacaoMunicipio}
+                      onChange={(event) => atualizarCampo("localPrestacaoMunicipio", event.target.value)} disabled={somenteLeitura} />
+                  </label>
+                  <label>UF
+                    <input maxLength={2} value={form.localPrestacaoUf}
+                      onChange={(event) => atualizarCampo("localPrestacaoUf", event.target.value)} disabled={somenteLeitura} />
+                  </label>
+                </div>
+              </div>
 
               <label className="fornecedores-form-wide">
                 Observações

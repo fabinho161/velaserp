@@ -933,6 +933,38 @@ test("atendimento concluido cria um rascunho idempotente sem tocar conta a receb
   assert.equal(ambiente.db.transactions.flatMap((tx) => tx.writes).some((write) => write.path.includes("contasReceber")), false);
 });
 
+test("criacao usa snapshot do atendimento, nao cadastro atual do servico", async () => {
+  const ambiente = criarAmbienteAtendimento();
+  ambiente.db.set(pathAtendimento(), {
+    ...ambiente.db.get(pathAtendimento()),
+    servicoFiscalSnapshot: { versao: 1, codigoTributacaoNacional: "001234", codigoTributacaoMunicipal: "", nbs: "", descricaoFiscal: "Historico" },
+    localPrestacao: { tipo: "brasil", codigoMunicipio: "5209150", municipio: "Itumbiara", uf: "GO", codigoPais: "BR" },
+  });
+  ambiente.db.set("users/owner-1/empresas/empresa-1/servicos/servico-1", {
+    fiscal: { codigoTributacaoNacional: "999999" },
+  });
+  assert.equal((await ambiente.executarAtendimento()).statusCode, 201);
+  const fat = ambiente.db.get(pathFaturamentoAtendimento());
+  assert.equal(fat.itens[0].fiscalServicoSnapshot.codigoTributacaoNacional, "001234");
+  assert.equal(fat.contextoFiscal.operacao.localPrestacao.codigoMunicipio, "5209150");
+  assert.equal(fat.contextoFiscal.operacao.competenciaFiscal, null);
+  assert.equal(ambiente.db.transactions.flatMap((tx) => tx.reads).some((path) => path.includes("/servicos/")), false);
+  ambiente.db.set(pathAtendimento(), { ...ambiente.db.get(pathAtendimento()), servicoFiscalSnapshot: { codigoTributacaoNacional: "888888" } });
+  assert.equal((await ambiente.executarAtendimento()).statusCode, 200);
+  assert.equal(ambiente.db.get(pathFaturamentoAtendimento()).itens[0].fiscalServicoSnapshot.codigoTributacaoNacional, "001234");
+});
+
+test("atendimento legado nao e enriquecido pelo cadastro atual", async () => {
+  const ambiente = criarAmbienteAtendimento();
+  ambiente.db.set("users/owner-1/empresas/empresa-1/servicos/servico-1", {
+    fiscal: { codigoTributacaoNacional: "001234" },
+  });
+  assert.equal((await ambiente.executarAtendimento()).statusCode, 201);
+  const fat = ambiente.db.get(pathFaturamentoAtendimento());
+  assert.equal(fat.itens[0].fiscalServicoSnapshot, null);
+  assert.equal(fat.pendencias.includes("classificacao_servico_ausente"), true);
+});
+
 test("outros estados, segmento e role sem permissao sao negados", async () => {
   for (const status of ["agendado", "confirmado", "em_atendimento", "cancelado"]) {
     const ambiente = criarAmbienteAtendimento({ status });
