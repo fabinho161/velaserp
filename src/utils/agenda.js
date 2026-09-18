@@ -1,9 +1,45 @@
 export const STATUS_AGENDAMENTO = [
   "agendado",
   "confirmado",
+  "em_atendimento",
   "concluido",
   "cancelado",
 ];
+
+const TRANSICOES_AGENDAMENTO = {
+  agendado: ["confirmado", "em_atendimento", "concluido", "cancelado"],
+  confirmado: ["em_atendimento", "concluido", "cancelado"],
+  em_atendimento: ["concluido", "cancelado"],
+  concluido: [],
+  cancelado: [],
+};
+
+const MARCOS_AGENDAMENTO = {
+  confirmado: "confirmadoEm",
+  em_atendimento: "iniciadoEm",
+  concluido: "concluidoEm",
+  cancelado: "canceladoEm",
+};
+
+export const transicoesPermitidasAgendamento = (status) =>
+  [...(TRANSICOES_AGENDAMENTO[status] || [])];
+
+export const podeTransicionarStatusAgendamento = (atual, proximo) =>
+  transicoesPermitidasAgendamento(atual).includes(proximo);
+
+export const podeEditarDadosAgendamento = (status) =>
+  status === "agendado" || status === "confirmado";
+
+export const obterMarcoTransicaoAgendamento = (atual, proximo) =>
+  podeTransicionarStatusAgendamento(atual, proximo)
+    ? MARCOS_AGENDAMENTO[proximo] || null
+    : null;
+
+export const montarAtualizacaoStatusAgendamento = (agendamento, proximo, timestamp) => {
+  const marco = obterMarcoTransicaoAgendamento(agendamento?.status, proximo);
+  if (!marco || Object.hasOwn(agendamento, marco)) return null;
+  return { status: proximo, [marco]: timestamp, atualizadoEm: timestamp };
+};
 
 export const normalizarStatusAgendamento = (status = "agendado") => {
   const statusTratado = String(status || "agendado").trim().toLowerCase();

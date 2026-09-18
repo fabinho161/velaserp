@@ -19,8 +19,12 @@ import {
   existeConflitoAgendamento,
   normalizarStatusAgendamento,
   obterHoraFimAgendamento,
+  montarAtualizacaoStatusAgendamento,
   obterSnapshotServicoAgendamento,
+  podeEditarDadosAgendamento,
+  podeTransicionarStatusAgendamento,
   sugerirHoraFim,
+  transicoesPermitidasAgendamento,
 } from "../utils/agenda";
 import { moedaBR } from "../utils/formatters";
 
@@ -39,6 +43,7 @@ const PERFIS_ESCRITA_AGENDA = new Set(["administrador_empresa", "comercial"]);
 const STATUS_AGENDA = [
   { value: "agendado", label: "Agendado" },
   { value: "confirmado", label: "Confirmado" },
+  { value: "em_atendimento", label: "Em atendimento" },
   { value: "concluido", label: "Concluído" },
   { value: "cancelado", label: "Cancelado" },
 ];
@@ -69,14 +74,15 @@ const formatarDuracao = (valor) => {
 };
 
 const getStatusLabel = (status) => {
-  const statusNormalizado = normalizarStatusAgendamento(status);
-  return STATUS_AGENDA.find((item) => item.value === statusNormalizado)?.label || "Agendado";
+  if (!status) return "Agendado";
+  return STATUS_AGENDA.find((item) => item.value === status)?.label || "Status desconhecido";
 };
 
 const getStatusBadgeClass = (status) => {
   const classes = {
     agendado: "badge-info",
     confirmado: "badge-purple",
+    em_atendimento: "badge-info",
     concluido: "badge-success",
     cancelado: "badge-danger",
   };
@@ -85,6 +91,12 @@ const getStatusBadgeClass = (status) => {
 };
 
 const getClienteNome = (cliente = {}) => cliente.nome || cliente.clienteNome || "Cliente";
+const ACOES_STATUS = {
+  confirmado: "Confirmar",
+  em_atendimento: "Iniciar atendimento",
+  concluido: "Concluir atendimento",
+  cancelado: "Cancelar agendamento",
+};
 
 export default function Agenda() {
   const {
@@ -324,9 +336,6 @@ export default function Agenda() {
   };
 
   const abrirEdicaoAgendamento = (agendamento) => {
-    if (!podeEscreverAgenda) return;
-    if (normalizarStatusAgendamento(agendamento.status) === "cancelado") return;
-
     setAgendamentoEditando(agendamento);
     setForm({
       clienteId: agendamento.clienteId || "",
@@ -334,7 +343,7 @@ export default function Agenda() {
       data: agendamento.data || "",
       horaInicio: agendamento.horaInicio || "",
       horaFim: obterHoraFimAgendamento(agendamento),
-      status: normalizarStatusAgendamento(agendamento.status),
+      status: agendamento.status || "agendado",
       observacoes: agendamento.observacoes || "",
     });
     setFimAutomatico(false);
@@ -372,7 +381,7 @@ export default function Agenda() {
       data: form.data,
       horaInicio: form.horaInicio,
       horaFim: form.horaFim,
-      status: normalizarStatusAgendamento(form.status),
+      status: agendamentoEditando?.status || "agendado",
       observacoes: normalizarTexto(form.observacoes),
       atualizadoEm: serverTimestamp(),
     };
@@ -386,6 +395,10 @@ export default function Agenda() {
 
     if (!podeEscreverAgenda) {
       showToast("Você não tem permissão para salvar agendamentos.", "warning");
+      return;
+    }
+    if (agendamentoEditando && !podeEditarDadosAgendamento(agendamentoEditando.status)) {
+      showToast("Este atendimento está disponível somente para consulta.", "warning");
       return;
     }
 
@@ -450,10 +463,9 @@ export default function Agenda() {
 
   const atualizarStatusAgendamento = async (agendamento, status) => {
     if (!podeEscreverAgenda || !agendamentosRef || !agendamento?.id) return;
+    if (!podeTransicionarStatusAgendamento(agendamento.status, status)) return;
 
-    const statusNormalizado = normalizarStatusAgendamento(status);
-
-    if (statusNormalizado === "cancelado") {
+    if (status === "cancelado") {
       const confirmado = await confirmar(
         `Deseja cancelar o agendamento de ${agendamento.clienteNome || "cliente"}?`
       );
@@ -462,13 +474,15 @@ export default function Agenda() {
     }
 
     try {
-      await updateDoc(doc(agendamentosRef, agendamento.id), {
-        status: statusNormalizado,
-        atualizadoEm: serverTimestamp(),
-      });
+      const patch = montarAtualizacaoStatusAgendamento(agendamento, status, serverTimestamp());
+      if (!patch) {
+        showToast("Não foi possível alterar este atendimento.", "warning");
+        return;
+      }
+      await updateDoc(doc(agendamentosRef, agendamento.id), patch);
 
       showToast(
-        statusNormalizado === "cancelado"
+        status === "cancelado"
           ? "Agendamento cancelado com sucesso."
           : "Alterações salvas com sucesso.",
         "success"
@@ -478,6 +492,9 @@ export default function Agenda() {
       showToast("Não foi possível concluir a operação.", "error");
     }
   };
+
+  const somenteLeitura = !podeEscreverAgenda ||
+    Boolean(agendamentoEditando && !podeEditarDadosAgendamento(agendamentoEditando.status));
 
   return (
     <div className="page fornecedores-page agenda-page">
@@ -599,12 +616,12 @@ export default function Agenda() {
               <tbody>
                 {agendamentosFiltrados.map((agendamento) => {
                   const status = normalizarStatusAgendamento(agendamento.status);
-                  const podeEditar = podeEscreverAgenda && status !== "cancelado";
+                  const podeEditar = podeEscreverAgenda && podeEditarDadosAgendamento(agendamento.status);
 
                   return (
                     <tr
                       key={agendamento.id}
-                      className={podeEditar ? "agenda-table-row" : undefined}
+                      className="agenda-table-row"
                       onDoubleClick={() => abrirEdicaoAgendamento(agendamento)}
                     >
                       <td>{formatarData(agendamento.data)}</td>
@@ -624,35 +641,20 @@ export default function Agenda() {
                         </span>
                       </td>
                       <td onDoubleClick={(event) => event.stopPropagation()}>
-                        {podeEditar ? (
-                          <ActionMenu
+                        <ActionMenu
                             label="Abrir ações do agendamento"
                             items={[
                               {
-                                label: "Editar agendamento",
+                                label: podeEditar ? "Editar agendamento" : "Visualizar atendimento",
                                 onClick: () => abrirEdicaoAgendamento(agendamento),
                               },
-                              status !== "confirmado" && {
-                                label: "Marcar como confirmado",
-                                onClick: () =>
-                                  atualizarStatusAgendamento(agendamento, "confirmado"),
-                              },
-                              status !== "concluido" && {
-                                label: "Marcar como concluído",
-                                onClick: () =>
-                                  atualizarStatusAgendamento(agendamento, "concluido"),
-                              },
-                              {
-                                label: "Cancelar agendamento",
-                                danger: true,
-                                onClick: () =>
-                                  atualizarStatusAgendamento(agendamento, "cancelado"),
-                              },
-                            ].filter(Boolean)}
+                              ...(podeEscreverAgenda ? transicoesPermitidasAgendamento(agendamento.status).map((proximo) => ({
+                                label: ACOES_STATUS[proximo],
+                                danger: proximo === "cancelado",
+                                onClick: () => atualizarStatusAgendamento(agendamento, proximo),
+                              })) : []),
+                            ]}
                           />
-                        ) : (
-                          "-"
-                        )}
                       </td>
                     </tr>
                   );
@@ -697,7 +699,7 @@ export default function Agenda() {
                 <select
                   value={form.clienteId}
                   onChange={(event) => atualizarCampo("clienteId", event.target.value)}
-                  disabled={carregandoDependencias}
+                  disabled={carregandoDependencias || somenteLeitura}
                 >
                   <option value="">Selecione</option>
                   {clientes.map((cliente) => (
@@ -716,6 +718,7 @@ export default function Agenda() {
                 <select
                   value={form.servicoId}
                   onChange={(event) => atualizarCampo("servicoId", event.target.value)}
+                  disabled={somenteLeitura}
                 >
                   <option value="">Selecione</option>
                   {servicos.map((servico) => (
@@ -735,6 +738,7 @@ export default function Agenda() {
                   type="date"
                   value={form.data}
                   onChange={(event) => atualizarCampo("data", event.target.value)}
+                  disabled={somenteLeitura}
                 />
               </label>
 
@@ -744,6 +748,7 @@ export default function Agenda() {
                   type="time"
                   value={form.horaInicio}
                   onChange={(event) => atualizarCampo("horaInicio", event.target.value)}
+                  disabled={somenteLeitura}
                 />
               </label>
 
@@ -753,6 +758,7 @@ export default function Agenda() {
                   type="time"
                   value={form.horaFim}
                   onChange={(event) => atualizarCampo("horaFim", event.target.value)}
+                  disabled={somenteLeitura}
                 />
               </label>
 
@@ -760,19 +766,7 @@ export default function Agenda() {
                 Duração: {formatarDuracao(calcularDuracaoAgendamento(form.horaInicio, form.horaFim))}
               </div>
 
-              <label>
-                Status
-                <select
-                  value={form.status}
-                  onChange={(event) => atualizarCampo("status", event.target.value)}
-                >
-                  {STATUS_AGENDA.map((status) => (
-                    <option key={status.value} value={status.value}>
-                      {status.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div>Status: {getStatusLabel(form.status)}</div>
 
               <label className="fornecedores-form-wide">
                 Observações
@@ -781,17 +775,20 @@ export default function Agenda() {
                   onChange={(event) => atualizarCampo("observacoes", event.target.value)}
                   placeholder="Informações importantes para o atendimento"
                   rows={4}
+                  disabled={somenteLeitura}
                 />
               </label>
             </div>
 
             <div className="modal-actions">
               <button type="button" className="confirm-secondary" onClick={fecharModal}>
-                Cancelar
+                {somenteLeitura ? "Fechar" : "Cancelar"}
               </button>
-              <button type="button" onClick={salvarAgendamento} disabled={salvando}>
-                {salvando ? "Salvando..." : "Salvar agendamento"}
-              </button>
+              {!somenteLeitura && (
+                <button type="button" onClick={salvarAgendamento} disabled={salvando}>
+                  {salvando ? "Salvando..." : "Salvar agendamento"}
+                </button>
+              )}
             </div>
           </div>
         </div>

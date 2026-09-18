@@ -32,7 +32,21 @@ service cloud.firestore {
     }
 
     function isValidAgendaStatus(status) {
-      return ["agendado", "confirmado", "concluido", "cancelado"].hasAny([status]);
+      return ["agendado", "confirmado", "em_atendimento", "concluido", "cancelado"].hasAny([status]);
+    }
+
+    function isValidAgendaTransition(before, after) {
+      return (before == "agendado" && ["confirmado", "em_atendimento", "concluido", "cancelado"].hasAny([after])) ||
+        (before == "confirmado" && ["em_atendimento", "concluido", "cancelado"].hasAny([after])) ||
+        (before == "em_atendimento" && ["concluido", "cancelado"].hasAny([after]));
+    }
+
+    function hasValidAgendaMilestone(marco) {
+      return !resource.data.keys().hasAny([marco]) &&
+        request.resource.data.keys().hasAny([marco]) &&
+        request.resource.data[marco] == request.time &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(["status", "atualizadoEm", marco]);
     }
 
     function hasValidAgendaPayload() {
@@ -51,7 +65,11 @@ service cloud.firestore {
           "observacoes",
           "criadoEm",
           "atualizadoEm",
-          "criadoPor"
+          "criadoPor",
+          "confirmadoEm",
+          "iniciadoEm",
+          "concluidoEm",
+          "canceladoEm"
         ]) &&
         request.resource.data.clienteId is string &&
         request.resource.data.clienteNome is string &&
@@ -74,6 +92,10 @@ service cloud.firestore {
 
     function hasValidAgendaCreate() {
       return hasValidAgendaPayload() &&
+        request.resource.data.status == "agendado" &&
+        !request.resource.data.keys().hasAny([
+          "confirmadoEm", "iniciadoEm", "concluidoEm", "canceladoEm"
+        ]) &&
         request.resource.data.criadoPor == request.auth.uid &&
         request.resource.data.criadoEm == request.time &&
         request.resource.data.atualizadoEm == request.time;
@@ -84,8 +106,22 @@ service cloud.firestore {
         request.resource.data.criadoPor == resource.data.criadoPor &&
         request.resource.data.criadoEm == resource.data.criadoEm &&
         (
-          resource.data.status != "cancelado" ||
-          request.resource.data.status == "cancelado"
+          (
+            request.resource.data.status == resource.data.status &&
+            ["agendado", "confirmado"].hasAny([resource.data.status]) &&
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+              "confirmadoEm", "iniciadoEm", "concluidoEm", "canceladoEm"
+            ])
+          ) ||
+          (
+            isValidAgendaTransition(resource.data.status, request.resource.data.status) &&
+            (
+              (request.resource.data.status == "confirmado" && hasValidAgendaMilestone("confirmadoEm")) ||
+              (request.resource.data.status == "em_atendimento" && hasValidAgendaMilestone("iniciadoEm")) ||
+              (request.resource.data.status == "concluido" && hasValidAgendaMilestone("concluidoEm")) ||
+              (request.resource.data.status == "cancelado" && hasValidAgendaMilestone("canceladoEm"))
+            )
+          )
         ) &&
         request.resource.data.atualizadoEm == request.time;
     }

@@ -11,7 +11,12 @@ import {
   obterHoraFimAgendamento,
   obterIntervaloAgendamento,
   obterSnapshotServicoAgendamento,
+  obterMarcoTransicaoAgendamento,
+  montarAtualizacaoStatusAgendamento,
+  podeEditarDadosAgendamento,
+  podeTransicionarStatusAgendamento,
   sugerirHoraFim,
+  transicoesPermitidasAgendamento,
 } from "../agenda.js";
 
 const existente = {
@@ -173,4 +178,76 @@ test("ordena registros pela data e hora inicial sem depender da hora final", () 
   assert.deepEqual([...registros].sort(compararAgendamentosPorHorario), [
     registros[2], registros[1], registros[0],
   ]);
+});
+
+test("permite somente as transições operacionais explícitas", () => {
+  assert.deepEqual(transicoesPermitidasAgendamento("agendado"), [
+    "confirmado", "em_atendimento", "concluido", "cancelado",
+  ]);
+  assert.deepEqual(transicoesPermitidasAgendamento("confirmado"), [
+    "em_atendimento", "concluido", "cancelado",
+  ]);
+  assert.deepEqual(transicoesPermitidasAgendamento("em_atendimento"), [
+    "concluido", "cancelado",
+  ]);
+  for (const [de, para] of [
+    ["agendado", "confirmado"], ["agendado", "em_atendimento"],
+    ["agendado", "concluido"], ["agendado", "cancelado"],
+    ["confirmado", "em_atendimento"], ["confirmado", "concluido"],
+    ["confirmado", "cancelado"], ["em_atendimento", "concluido"],
+    ["em_atendimento", "cancelado"],
+  ]) assert.equal(podeTransicionarStatusAgendamento(de, para), true);
+});
+
+test("rejeita retrocessos, terminais e status desconhecido", () => {
+  for (const [de, para] of [
+    ["confirmado", "agendado"], ["em_atendimento", "confirmado"],
+    ["em_atendimento", "agendado"], ["concluido", "agendado"],
+    ["concluido", "cancelado"], ["cancelado", "concluido"],
+    ["cancelado", "agendado"], ["desconhecido", "concluido"],
+  ]) assert.equal(podeTransicionarStatusAgendamento(de, para), false);
+  assert.deepEqual(transicoesPermitidasAgendamento("concluido"), []);
+  assert.deepEqual(transicoesPermitidasAgendamento("cancelado"), []);
+  assert.deepEqual(transicoesPermitidasAgendamento("desconhecido"), []);
+});
+
+test("cada transição produz apenas seu marco próprio", () => {
+  assert.equal(obterMarcoTransicaoAgendamento("agendado", "confirmado"), "confirmadoEm");
+  assert.equal(obterMarcoTransicaoAgendamento("agendado", "em_atendimento"), "iniciadoEm");
+  assert.equal(obterMarcoTransicaoAgendamento("confirmado", "em_atendimento"), "iniciadoEm");
+  assert.equal(obterMarcoTransicaoAgendamento("confirmado", "concluido"), "concluidoEm");
+  assert.equal(obterMarcoTransicaoAgendamento("agendado", "concluido"), "concluidoEm");
+  assert.equal(obterMarcoTransicaoAgendamento("em_atendimento", "cancelado"), "canceladoEm");
+  assert.equal(obterMarcoTransicaoAgendamento("concluido", "cancelado"), null);
+});
+
+test("patch de status registra só o marco ocorrido e não sobrescreve marco existente", () => {
+  const timestamp = { servidor: true };
+  assert.deepEqual(montarAtualizacaoStatusAgendamento(
+    { status: "agendado" }, "em_atendimento", timestamp
+  ), { status: "em_atendimento", iniciadoEm: timestamp, atualizadoEm: timestamp });
+  assert.deepEqual(montarAtualizacaoStatusAgendamento(
+    { status: "confirmado", confirmadoEm: "anterior" }, "concluido", timestamp
+  ), { status: "concluido", concluidoEm: timestamp, atualizadoEm: timestamp });
+  assert.equal(montarAtualizacaoStatusAgendamento(
+    { status: "agendado", confirmadoEm: "anterior" }, "confirmado", timestamp
+  ), null);
+});
+
+test("edição operacional é bloqueada em estados terminais e em atendimento", () => {
+  assert.equal(podeEditarDadosAgendamento("agendado"), true);
+  assert.equal(podeEditarDadosAgendamento("confirmado"), true);
+  assert.equal(podeEditarDadosAgendamento("em_atendimento"), false);
+  assert.equal(podeEditarDadosAgendamento("concluido"), false);
+  assert.equal(podeEditarDadosAgendamento("cancelado"), false);
+  assert.equal(podeEditarDadosAgendamento("desconhecido"), false);
+});
+
+test("legados terminais sem marco continuam legíveis e sem ações", () => {
+  for (const status of ["concluido", "cancelado"]) {
+    const legado = { horaInicio: "14:00", status };
+    assert.equal(normalizarStatusAgendamento(legado.status), status);
+    assert.deepEqual(transicoesPermitidasAgendamento(legado.status), []);
+    assert.equal(obterHoraFimAgendamento(legado), "");
+  }
 });
