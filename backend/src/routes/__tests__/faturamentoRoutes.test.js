@@ -5,6 +5,7 @@ const {
   criarHandlerClassificarTributacaoFaturamento,
   criarHandlerSalvarClassificacaoManual,
   criarHandlerListarCatalogoTributario,
+  criarHandlerListarCatalogoServicos,
   criarHandlerCancelarFaturamento,
   criarHandlerCriarFaturamento,
   criarHandlerCriarFaturamentoAtendimento,
@@ -334,6 +335,7 @@ const criarAmbiente = ({
     agora: () => "2026-09-16T12:00:00Z",
   });
   const catalogoHandler = criarHandlerListarCatalogoTributario({ getDb: () => db });
+  const catalogoServicosHandler = criarHandlerListarCatalogoServicos({ getDb: () => db });
   const contextoHandler = criarHandlerSalvarContextoOperacionalFaturamento({
     getDb: () => db,
     criarTimestampServidor: () => SERVER_TIMESTAMP,
@@ -388,6 +390,7 @@ const criarAmbiente = ({
     classificarTributacaoHandler,
     classificacaoManualHandler,
     catalogoHandler,
+    catalogoServicosHandler,
     contextoHandler,
     listarHandler,
     obterHandler,
@@ -530,6 +533,34 @@ test("catalogo autenticado retorna somente opcoes necessarias e respeita vinculo
   const negado = criarRes();
   await ambiente.catalogoHandler(ambiente.req({ empresaId: "outra" }), negado);
   assert.equal(negado.statusCode, 404);
+});
+
+test("catalogo de servicos exige empresa de servicos e retorna resposta reduzida", async () => {
+  const ambiente = criarAmbiente({ empresa: { segmento: "clientes" } });
+  const res = criarRes();
+  await ambiente.catalogoServicosHandler(ambiente.req({ empresaId: "empresa-1" }), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.tipo, "nfse_servicos_nacional");
+  assert.equal(res.body.versao, "v1.01-20260122");
+  assert.equal(res.body.itens.length, 338);
+  assert.deepEqual(Object.keys(res.body.itens[0]).sort(), ["codigoTributacaoNacional", "descricao"]);
+
+  const segmentoNegado = criarAmbiente({ empresa: { segmento: "comercio" } });
+  const negado = criarRes();
+  await segmentoNegado.catalogoServicosHandler(segmentoNegado.req({ empresaId: "empresa-1" }), negado);
+  assert.equal(negado.statusCode, 403);
+
+  const vinculoInativo = criarAmbiente({
+    atorUid: "usuario-inativo",
+    empresa: { segmento: "clientes" },
+    usuarioEmpresa: { role: "financeiro", status: "inativo" },
+  });
+  const inativo = criarRes();
+  await vinculoInativo.catalogoServicosHandler(
+    vinculoInativo.req({ empresaId: "empresa-1" }),
+    inativo
+  );
+  assert.equal(inativo.statusCode, 403);
 });
 
 test("classificacao manual e atomica, auditada, idempotente e preserva venda", async () => {
@@ -992,6 +1023,16 @@ test("revisao fiscal do servico e transacional, restrita e nao altera fontes ope
   assert.equal((await executar({ competenciaFiscal: "2026-09-02" })).body.alterou, false);
   assert.equal(ambiente.db.get(pathFaturamentoAtendimento()).contextoFiscalServico.historico.length, 1);
   assert.equal((await executar({ cfopEfetivo: "5101" })).statusCode, 400);
+  assert.equal((await executar({ classificacaoFiscalServico: {
+    codigoTributacaoNacional: "999999",
+  } })).statusCode, 400);
+  const classificacao = await executar({ classificacaoFiscalServico: {
+    codigoTributacaoNacional: "010101", codigoTributacaoMunicipal: "",
+    nbs: "", descricaoFiscal: "Analise e desenvolvimento de sistemas",
+  } });
+  assert.equal(classificacao.statusCode, 200);
+  assert.equal(ambiente.db.get(pathFaturamentoAtendimento())
+    .contextoFiscalServico.classificacaoFiscalServico.catalogo.versao, "v1.01-20260122");
 });
 
 test("comercial e visualizacao nao revisam servico; financeiro ativo pode", async () => {
@@ -1037,6 +1078,10 @@ test("endereco HTTP final da revisao fiscal de servico exige autenticacao", asyn
       method: "PUT", headers: { "Content-Type": "application/json" }, body: "{}",
     });
     assert.equal(response.status, 401);
+    const catalogo = await fetch(
+      `http://127.0.0.1:${server.address().port}/api/faturamentos/catalogo-servicos?empresaId=empresa-1`
+    );
+    assert.equal(catalogo.status, 401);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

@@ -14,6 +14,7 @@ const { normalizarRoleEmpresa } = require("../utils/perfisEmpresa");
 const { CATALOGO_IBS_CBS_2025_002_V1_60 } = require("../shared/catalogoTributario.cjs");
 const { classificarManualmente } = require("../shared/classificacaoManual.cjs");
 const { revisarContextoFiscalServico } = require("../shared/contextoFiscalServico.cjs");
+const { CATALOGO_SERVICOS_NFSE_V1_01_20260122 } = require("../shared/catalogoServicos.cjs");
 
 const router = express.Router();
 
@@ -1242,6 +1243,33 @@ const criarHandlerListarCatalogoTributario = ({ getDb: getDbDependencia = getDb 
   }
 };
 
+const criarHandlerListarCatalogoServicos = ({ getDb: getDbDependencia = getDb } = {}) => async (req, res) => {
+  const atorUid = normalizarId(req.user?.uid);
+  if (!atorUid) return res.status(401).json({ ok: false, codigo: "token_ausente" });
+  try {
+    const empresaId = validarIdFirestore("empresaId", req.query?.empresaId);
+    const db = getDbDependencia();
+    await db.runTransaction(async (transaction) => {
+      const acesso = await resolverAcessoEmpresa({ db, transaction, atorUid, empresaId });
+      if (normalizarSegmentoEmpresa(acesso.empresa.segmento) !== "clientes" ||
+          !usuarioAtivoPodeLerFaturamento({ atorUid, ...acesso })) {
+        throw criarErroHttp(403, "Sem permissao.", "sem_permissao");
+      }
+    });
+    const catalogo = CATALOGO_SERVICOS_NFSE_V1_01_20260122;
+    return res.status(200).json({
+      ok: true,
+      tipo: catalogo.tipo,
+      versao: catalogo.versaoCatalogo,
+      referencia: catalogo.referencia,
+      itens: catalogo.itens.map(({ codigoTributacaoNacional, descricao }) =>
+        ({ codigoTributacaoNacional, descricao })),
+    });
+  } catch (error) {
+    return montarRespostaErro(res, error);
+  }
+};
+
 const criarHandlerSalvarClassificacaoManual = ({
   getDb: getDbDependencia = getDb,
   agora = () => new Date().toISOString(),
@@ -1288,6 +1316,7 @@ const criarHandlerSalvarClassificacaoManual = ({
 const criarHandlerSalvarContextoServico = ({
   getDb: getDbDependencia = getDb,
   agora = () => new Date().toISOString(),
+  catalogoServicos = CATALOGO_SERVICOS_NFSE_V1_01_20260122,
 } = {}) => async (req, res) => {
   const atorUid = normalizarId(req.user?.uid);
   if (!atorUid) return res.status(401).json({ ok: false, codigo: "token_ausente" });
@@ -1313,7 +1342,9 @@ const criarHandlerSalvarContextoServico = ({
       }
       let revisado;
       try {
-        revisado = revisarContextoFiscalServico({ faturamento, revisao, atorUid, agora: agora() });
+        revisado = revisarContextoFiscalServico({
+          faturamento, revisao, atorUid, agora: agora(), catalogoServicos,
+        });
       } catch (error) {
         throw criarErroHttp(400, "Revisao fiscal invalida.", error.codigo || "revisao_invalida");
       }
@@ -1447,6 +1478,7 @@ const criarHandlerCancelarFaturamento = ({
 };
 
 router.get("/catalogo-tributario", authFirebase, criarHandlerListarCatalogoTributario());
+router.get("/catalogo-servicos", authFirebase, criarHandlerListarCatalogoServicos());
 router.get("/", authFirebase, criarHandlerListarFaturamentos());
 router.get("/:faturamentoId", authFirebase, criarHandlerObterFaturamento());
 router.post("/", authFirebase, criarHandlerCriarFaturamento());
@@ -1474,6 +1506,7 @@ router.post("/:faturamentoId/cancelar", authFirebase, criarHandlerCancelarFatura
 module.exports = router;
 module.exports.criarHandlerListarFaturamentos = criarHandlerListarFaturamentos;
 module.exports.criarHandlerObterFaturamento = criarHandlerObterFaturamento;
+module.exports.criarHandlerListarCatalogoServicos = criarHandlerListarCatalogoServicos;
 module.exports.criarHandlerCriarFaturamento = criarHandlerCriarFaturamento;
 module.exports.criarHandlerCriarFaturamentoAtendimento = criarHandlerCriarFaturamentoAtendimento;
 module.exports.criarHandlerPrepararFaturamento = criarHandlerPrepararFaturamento;

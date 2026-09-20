@@ -78,6 +78,11 @@ export const listarCatalogoTributario = ({ empresaId }) => {
   return requisitarFaturamento(`/api/faturamentos/catalogo-tributario?${params.toString()}`);
 };
 
+export const listarCatalogoServicos = ({ empresaId }) => {
+  const params = new URLSearchParams({ empresaId });
+  return requisitarFaturamento(`/api/faturamentos/catalogo-servicos?${params.toString()}`);
+};
+
 export const salvarClassificacaoManual = ({ empresaId, faturamentoId, itens }) =>
   requisitarFaturamento(`/api/faturamentos/${encodeURIComponent(faturamentoId)}/classificacao-tributaria`, {
     method: "PUT",

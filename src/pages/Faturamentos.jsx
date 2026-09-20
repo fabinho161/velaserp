@@ -16,6 +16,7 @@ import {
   classificarTributacaoFaturamento as solicitarClassificacaoTributaria,
   determinarFiscalFaturamento as solicitarDeterminacaoFiscal,
   listarFaturamentos,
+  listarCatalogoServicos,
   listarCatalogoTributario,
   obterFaturamento,
   prepararFaturamento,
@@ -184,6 +185,7 @@ export default function Faturamentos() {
   const [formContexto, setFormContexto] = useState(CONTEXTO_FORM_INICIAL);
   const [formServico, setFormServico] = useState(SERVICO_FORM_INICIAL);
   const [catalogoTributario, setCatalogoTributario] = useState(null);
+  const [catalogoServicos, setCatalogoServicos] = useState(null);
   const [classificacoesForm, setClassificacoesForm] = useState({});
 
   const isOwnerEmpresa = Boolean(user?.uid && empresaOwnerUid === user.uid);
@@ -224,6 +226,7 @@ export default function Faturamentos() {
     setMotivoCancelamento("");
     setFormContexto(CONTEXTO_FORM_INICIAL);
     setFormServico(SERVICO_FORM_INICIAL);
+    setCatalogoServicos(null);
     setClassificacoesForm({});
     navigate("/faturamentos");
   };
@@ -276,6 +279,14 @@ export default function Faturamentos() {
   const statusSelecionado = texto(faturamentoSelecionado?.status || "rascunho").toLowerCase();
   const isServico = faturamentoSelecionado?.origem?.tipo === "atendimento" ||
     faturamentoSelecionado?.itens?.some((item) => item.tipoItem === "servico");
+  useEffect(() => {
+    if (!empresaId || !faturamentoId || !isServico) return undefined;
+    let ativo = true;
+    listarCatalogoServicos({ empresaId })
+      .then((data) => { if (ativo) setCatalogoServicos(data); })
+      .catch(() => { if (ativo) setCatalogoServicos(null); });
+    return () => { ativo = false; };
+  }, [empresaId, faturamentoId, isServico]);
   const detalheSomenteLeitura = statusSelecionado !== "rascunho" || !podeEditarContexto;
   const operacaoSelecionada = faturamentoSelecionado?.contextoFiscal?.operacao || {};
   const pendenciasSelecionadas = Array.isArray(faturamentoSelecionado?.pendencias)
@@ -881,9 +892,27 @@ export default function Faturamentos() {
                         onChange={(event) => setFormServico((atual) => ({ ...atual, confirmarClassificacao: event.target.checked }))} />
                         Confirmar classificação manual
                       </label>
+                      <label>Código de Tributação Nacional
+                        <input
+                          list="catalogo-servicos-nfse"
+                          value={formServico.codigoTributacaoNacional}
+                          onChange={(event) => setFormServico((atual) => ({
+                            ...atual, codigoTributacaoNacional: event.target.value,
+                          }))}
+                        />
+                        <datalist id="catalogo-servicos-nfse">
+                          {(catalogoServicos?.itens || []).map((item) => <option
+                            key={item.codigoTributacaoNacional}
+                            value={item.codigoTributacaoNacional}
+                          >{item.descricao}</option>)}
+                        </datalist>
+                        <small>{catalogoServicos
+                          ? `Catálogo oficial ${catalogoServicos.versao}`
+                          : "Catálogo oficial indisponível para consulta."}</small>
+                      </label>
                       {[
                         ["codigoMunicipio", "Código IBGE do local fiscal"], ["municipio", "Município da prestação"],
-                        ["uf", "UF da prestação"], ["codigoTributacaoNacional", "Código de Tributação Nacional"],
+                        ["uf", "UF da prestação"],
                         ["codigoTributacaoMunicipal", "Código de Tributação Municipal"], ["nbs", "NBS"],
                         ["descricaoFiscal", "Descrição fiscal"],
                       ].map(([campo, label]) => <label key={campo}>{label}

@@ -1,6 +1,7 @@
 "use strict";
 
 const { PENDENCIAS_SERVICO } = require("./faturamento.cjs");
+const { buscarServicoPorCodigo, validarCatalogoServicos } = require("./catalogoServicos.cjs");
 
 const CAMPOS_REVISAO = new Set(["competenciaFiscal", "localPrestacaoFiscal", "classificacaoFiscalServico"]);
 const PENDENCIAS_REVISAO = new Set([
@@ -31,7 +32,7 @@ const validarChaves = (valor, permitidas) => {
   if (!objeto(valor) || Object.keys(valor).some((chave) => !permitidas.includes(chave))) falha("campo_invalido");
 };
 
-const revisarContextoFiscalServico = ({ faturamento, revisao, atorUid, agora }) => {
+const revisarContextoFiscalServico = ({ faturamento, revisao, atorUid, agora, catalogoServicos }) => {
   validarChaves(revisao, [...CAMPOS_REVISAO]);
   if (Object.keys(revisao).length === 0 || !atorUid || !agora) falha("revisao_invalida");
   const anterior = objeto(faturamento.contextoFiscalServico) ? faturamento.contextoFiscalServico : {};
@@ -86,6 +87,13 @@ const revisarContextoFiscalServico = ({ faturamento, revisao, atorUid, agora }) 
       descricaoFiscal: texto(classificacao.descricaoFiscal || "", 500),
     };
     if (!validada.codigoTributacaoNacional) falha("codigo_tributacao_nacional_ausente");
+    if (!validarCatalogoServicos(catalogoServicos)) falha("catalogo_servicos_indisponivel");
+    const itemCatalogo = buscarServicoPorCodigo(validada.codigoTributacaoNacional, catalogoServicos);
+    if (!itemCatalogo) falha("codigo_tributacao_nacional_inexistente");
+    validada.catalogo = {
+      tipo: catalogoServicos.tipo,
+      versao: catalogoServicos.versaoCatalogo,
+    };
     const antes = novo.classificacaoFiscalServico || null;
     const conteudoAnterior = antes && Object.fromEntries(Object.keys(validada).map((campo) => [campo, antes[campo]]));
     auditar("classificacaoFiscalServico", conteudoAnterior, validada);
