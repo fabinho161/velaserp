@@ -13,6 +13,7 @@ import {
   obterSnapshotServicoAgendamento,
   obterMarcoTransicaoAgendamento,
   montarAtualizacaoStatusAgendamento,
+  montarPayloadAgendamento,
   podeEditarDadosAgendamento,
   podeTransicionarStatusAgendamento,
   sugerirHoraFim,
@@ -173,6 +174,55 @@ test("congela dados fiscais explicitos do servico e preserva legado", () => {
   assert.deepEqual(obterSnapshotServicoAgendamento(snapshot, servico), snapshot);
   const legado = obterSnapshotServicoAgendamento(null, { id: "l", nome: "Legado", valor: 0 });
   assert.equal("servicoFiscalSnapshot" in legado, false);
+});
+
+test("payload novo nunca contem undefined em campos opcionais aninhados", () => {
+  const form = {
+    clienteId: "c", servicoId: "s", data: "2026-09-20", horaInicio: "10:00", horaFim: "11:00",
+    observacoes: "", localPrestacaoCodigoMunicipio: "", localPrestacaoMunicipio: "", localPrestacaoUf: "",
+  };
+  const cliente = { id: "c", nome: "Cliente" };
+  const fiscalParcial = { versao: 1, codigoTributacaoNacional: "001234", nbs: undefined };
+  const fiscalCompleto = {
+    versao: 1, codigoTributacaoNacional: "001234", codigoTributacaoMunicipal: "123",
+    nbs: "456", descricaoFiscal: "Consulta",
+  };
+  const semLocal = { ...form };
+  const comLocal = { ...form, localPrestacaoCodigoMunicipio: "5209150",
+    localPrestacaoMunicipio: "Itumbiara", localPrestacaoUf: "GO" };
+  const valorIndefinido = (valor, caminho = "payload") => {
+    assert.notEqual(valor, undefined, caminho);
+    if (valor && typeof valor === "object") {
+      for (const [chave, interno] of Object.entries(valor)) valorIndefinido(interno, `${caminho}.${chave}`);
+    }
+  };
+
+  for (const [fiscal, dadosLocal] of [
+    [undefined, semLocal], [fiscalParcial, semLocal], [fiscalCompleto, semLocal],
+    [undefined, comLocal], [fiscalParcial, comLocal], [fiscalCompleto, comLocal],
+  ]) {
+    const servico = { id: "s", nome: "Consulta", valor: 100, ...(fiscal ? { fiscal } : {}) };
+    const payload = montarPayloadAgendamento({ form: dadosLocal, cliente, servico });
+    assert.ok(payload);
+    valorIndefinido(payload);
+    assert.equal(payload.localPrestacao?.codigoMunicipio || null,
+      dadosLocal.localPrestacaoCodigoMunicipio || null);
+    assert.equal("servicoFiscalSnapshot" in payload, Boolean(fiscal));
+  }
+  assert.equal(montarPayloadAgendamento({ form: { ...form, localPrestacaoMunicipio: "Parcial" },
+    cliente, servico: { id: "s", nome: "Consulta", valor: 100 } }), null);
+  assert.equal(montarPayloadAgendamento({ form, cliente, servico: { nome: "Sem ID", valor: 100 } }), null);
+  assert.equal(montarPayloadAgendamento({ form, servico: { id: "s", nome: "Consulta", valor: 100 } }), null);
+});
+
+test("snapshot fiscal legado parcialmente indefinido nao e repassado cru na edicao", () => {
+  const agendamento = {
+    servicoId: "s", servicoNome: "Consulta", valorServico: 100,
+    servicoFiscalSnapshot: { versao: 1, codigoTributacaoNacional: "001234", nbs: undefined },
+  };
+  const snapshot = obterSnapshotServicoAgendamento(agendamento, { id: "s" });
+  assert.equal("nbs" in snapshot.servicoFiscalSnapshot, false);
+  assert.equal(snapshot.servicoFiscalSnapshot.codigoTributacaoNacional, "001234");
 });
 
 test("status legado é seguro e intervalo incompleto não gera conflito", () => {

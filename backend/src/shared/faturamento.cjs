@@ -8,6 +8,9 @@ const PENDENCIAS_SERVICO = Object.freeze({
   CLASSIFICACAO_AUSENTE: "classificacao_servico_ausente",
   LOCAL_PRESTACAO_AUSENTE: "local_prestacao_ausente",
   COMPETENCIA_FISCAL_PENDENTE: "competencia_fiscal_pendente",
+  COMPETENCIA_FISCAL_AUSENTE: "competencia_fiscal_ausente",
+  CODIGO_NACIONAL_AUSENTE: "codigo_tributacao_nacional_ausente",
+  DETERMINACAO_TRIBUTARIA_PENDENTE: "determinacao_tributaria_servico_pendente",
   TOMADOR_FISCAL_INCOMPLETO: "tomador_fiscal_incompleto",
   PRESTADOR_FISCAL_INCOMPLETO: "prestador_fiscal_incompleto",
 });
@@ -367,10 +370,12 @@ const criarFaturamentoAtendimento = ({ agendamento = {}, cliente = null, fiscalE
       codigoPais: "BR",
     } : null;
   const pendencias = [
-    PENDENCIAS_SERVICO.COMPETENCIA_FISCAL_PENDENTE,
+    PENDENCIAS_SERVICO.COMPETENCIA_FISCAL_AUSENTE,
+    PENDENCIAS_SERVICO.DETERMINACAO_TRIBUTARIA_PENDENTE,
   ];
   if (!fiscalServicoSnapshot?.codigoTributacaoNacional) {
     pendencias.push(PENDENCIAS_SERVICO.CLASSIFICACAO_AUSENTE);
+    pendencias.push(PENDENCIAS_SERVICO.CODIGO_NACIONAL_AUSENTE);
   }
   if (!localPrestacao) pendencias.push(PENDENCIAS_SERVICO.LOCAL_PRESTACAO_AUSENTE);
   if (!destinatario.nome || (!destinatario.cpf && !destinatario.cnpj)) {
@@ -760,16 +765,24 @@ const ordenarPendenciasPreparacao = (pendencias) => {
 
 const validarPreparacaoFaturamento = (faturamento = {}) => {
   if (ehFaturamentoServico(faturamento)) {
-    const operacao = faturamento.contextoFiscal?.operacao || {};
-    const item = faturamento.itens?.find((atual) => atual?.tipoItem === "servico");
+    const decisao = faturamento.contextoFiscalServico || {};
+    const competencia = faturamento.contextoFiscal?.operacao?.competenciaFiscal;
+    const pendenciasAntigas = new Set([
+      PENDENCIAS_SERVICO.CLASSIFICACAO_AUSENTE,
+      PENDENCIAS_SERVICO.CODIGO_NACIONAL_AUSENTE,
+      PENDENCIAS_SERVICO.LOCAL_PRESTACAO_AUSENTE,
+      PENDENCIAS_SERVICO.COMPETENCIA_FISCAL_PENDENTE,
+      PENDENCIAS_SERVICO.COMPETENCIA_FISCAL_AUSENTE,
+    ]);
     return congelarProfundo({
       valido: false,
       pendencias: [...new Set([
-        ...(Array.isArray(faturamento.pendencias) ? faturamento.pendencias : []),
-        ...(!item?.fiscalServicoSnapshot?.codigoTributacaoNacional
-          ? [PENDENCIAS_SERVICO.CLASSIFICACAO_AUSENTE] : []),
-        ...(!operacao.localPrestacao ? [PENDENCIAS_SERVICO.LOCAL_PRESTACAO_AUSENTE] : []),
-        PENDENCIAS_SERVICO.COMPETENCIA_FISCAL_PENDENTE,
+        ...(Array.isArray(faturamento.pendencias) ? faturamento.pendencias : []).filter((codigo) => !pendenciasAntigas.has(codigo)),
+        ...(!decisao.classificacaoFiscalServico ? [PENDENCIAS_SERVICO.CLASSIFICACAO_AUSENTE] : []),
+        ...(!decisao.classificacaoFiscalServico?.codigoTributacaoNacional ? [PENDENCIAS_SERVICO.CODIGO_NACIONAL_AUSENTE] : []),
+        ...(!decisao.localPrestacaoFiscal ? [PENDENCIAS_SERVICO.LOCAL_PRESTACAO_AUSENTE] : []),
+        ...(!competencia ? [PENDENCIAS_SERVICO.COMPETENCIA_FISCAL_AUSENTE] : []),
+        PENDENCIAS_SERVICO.DETERMINACAO_TRIBUTARIA_PENDENTE,
       ])],
     });
   }

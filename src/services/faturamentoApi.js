@@ -108,6 +108,12 @@ export const salvarContextoOperacional = ({ empresaId, faturamentoId, contexto }
     }
   );
 
+export const salvarContextoServico = ({ empresaId, faturamentoId, revisao }) =>
+  requisitarFaturamento(`/api/faturamentos/${encodeURIComponent(faturamentoId)}/contexto-servico`, {
+    method: "PUT",
+    body: JSON.stringify({ empresaId, revisao }),
+  });
+
 export const prepararFaturamento = ({ empresaId, faturamentoId }) =>
   requisitarFaturamento(
     `/api/faturamentos/${encodeURIComponent(faturamentoId)}/preparar`,

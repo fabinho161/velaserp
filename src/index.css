@@ -8316,6 +8316,17 @@ button,
   grid-column: span 2;
 }
 
+.billing-context-grid .billing-service-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.billing-service-confirm input[type="checkbox"] {
+  width: auto;
+  flex: 0 0 auto;
+}
+
 .billing-state-note,
 .billing-empty-note {
   color: #64748b;

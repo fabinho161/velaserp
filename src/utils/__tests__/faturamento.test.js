@@ -49,7 +49,7 @@ test("atendimento concluido gera rascunho unitario com snapshots historicos e pe
   assert.equal(validarPreparacaoFaturamento(faturamento).pendencias.includes("item_ncm_ausente"), false);
   assert.equal(faturamento.pendencias.includes("classificacao_servico_ausente"), true);
   assert.equal(faturamento.pendencias.includes("local_prestacao_ausente"), true);
-  assert.equal(faturamento.pendencias.includes("competencia_fiscal_pendente"), true);
+  assert.equal(faturamento.pendencias.includes("competencia_fiscal_ausente"), true);
   assert.equal(faturamento.pendencias.includes("tomador_fiscal_incompleto"), false);
   assert.equal(Object.isFrozen(faturamento), true);
   agendamento.valorServico = 200;
@@ -89,7 +89,7 @@ test("faturamento congela apenas fatos fiscais do atendimento e nao infere compe
   assert.equal(faturamento.contextoFiscal.operacao.localPrestacao.codigoMunicipio, "5209150");
   assert.equal(faturamento.pendencias.includes("classificacao_servico_ausente"), false);
   assert.equal(faturamento.pendencias.includes("local_prestacao_ausente"), false);
-  assert.equal(faturamento.pendencias.includes("competencia_fiscal_pendente"), true);
+  assert.equal(faturamento.pendencias.includes("competencia_fiscal_ausente"), true);
   assert.equal(validarPreparacaoFaturamento(faturamento).valido, false);
   agendamento.servicoFiscalSnapshot.codigoTributacaoNacional = "999999";
   agendamento.localPrestacao.municipio = "Outro";

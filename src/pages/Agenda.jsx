@@ -23,7 +23,7 @@ import {
   normalizarStatusAgendamento,
   obterHoraFimAgendamento,
   montarAtualizacaoStatusAgendamento,
-  obterSnapshotServicoAgendamento,
+  montarPayloadAgendamento,
   podeEditarDadosAgendamento,
   podeTransicionarStatusAgendamento,
   sugerirHoraFim,
@@ -376,36 +376,15 @@ export default function Agenda() {
     limparModal();
   };
 
-  const montarPayloadAgendamento = () => {
-    const mesmoCliente = agendamentoEditando?.clienteId === form.clienteId;
+  const montarPayloadAtual = () => {
     const cliente = clientes.find((item) => item.id === form.clienteId);
     const servico = servicos.find((item) => item.id === form.servicoId);
-    const snapshotServico = obterSnapshotServicoAgendamento(
-      agendamentoEditando,
-      servico || (agendamentoEditando?.servicoId === form.servicoId ? { id: form.servicoId } : null)
-    );
-    if ((!cliente && !mesmoCliente) || !snapshotServico) return null;
-
-    return {
-      clienteId: mesmoCliente ? agendamentoEditando.clienteId : cliente.id,
-      clienteNome: mesmoCliente ? String(agendamentoEditando.clienteNome || "") : getClienteNome(cliente),
-      clienteTelefone: mesmoCliente ? String(agendamentoEditando.clienteTelefone || "") : normalizarTexto(cliente.telefone),
-      ...snapshotServico,
-      duracaoMinutos: calcularDuracaoAgendamento(form.horaInicio, form.horaFim),
-      data: form.data,
-      horaInicio: form.horaInicio,
-      horaFim: form.horaFim,
-      status: agendamentoEditando?.status || "agendado",
-      observacoes: normalizarTexto(form.observacoes),
-      localPrestacao: form.localPrestacaoCodigoMunicipio ? {
-        tipo: "brasil",
-        codigoMunicipio: normalizarTexto(form.localPrestacaoCodigoMunicipio),
-        municipio: normalizarTexto(form.localPrestacaoMunicipio),
-        uf: normalizarTexto(form.localPrestacaoUf).toUpperCase(),
-        codigoPais: "BR",
-      } : null,
+    return montarPayloadAgendamento({
+      form, agendamentoEditando,
+      cliente,
+      servico: servico || (agendamentoEditando?.servicoId === form.servicoId ? { id: form.servicoId } : null),
       atualizadoEm: serverTimestamp(),
-    };
+    });
   };
 
   const salvarAgendamento = async () => {
@@ -443,7 +422,7 @@ export default function Agenda() {
       return;
     }
 
-    const payload = montarPayloadAgendamento();
+    const payload = montarPayloadAtual();
 
     if (
       !payload ||

@@ -13,6 +13,7 @@ const {
   criarHandlerObterFaturamento,
   criarHandlerPrepararFaturamento,
   criarHandlerSalvarContextoOperacionalFaturamento,
+  criarHandlerSalvarContextoServico,
 } = require("../faturamentoRoutes");
 
 const pathAtendimento = (id = "agenda-1") => `users/owner-1/empresas/empresa-1/agendamentos/${id}`;
@@ -963,6 +964,82 @@ test("atendimento legado nao e enriquecido pelo cadastro atual", async () => {
   const fat = ambiente.db.get(pathFaturamentoAtendimento());
   assert.equal(fat.itens[0].fiscalServicoSnapshot, null);
   assert.equal(fat.pendencias.includes("classificacao_servico_ausente"), true);
+});
+
+test("revisao fiscal do servico e transacional, restrita e nao altera fontes operacionais", async () => {
+  const ambiente = criarAmbienteAtendimento();
+  assert.equal((await ambiente.executarAtendimento()).statusCode, 201);
+  const handler = criarHandlerSalvarContextoServico({ getDb: () => ambiente.db,
+    agora: () => "2026-09-18T12:00:00Z" });
+  const executar = async (revisao) => {
+    const res = criarRes();
+    await handler(ambiente.req({ empresaId: "empresa-1", revisao },
+      { faturamentoId: "atendimento_agenda-1_preparacao_v1" }), res);
+    return res;
+  };
+  const origem = ambiente.db.get(pathAtendimento());
+  const resposta = await executar({ competenciaFiscal: "2026-09-02" });
+  assert.equal(resposta.statusCode, 200);
+  assert.equal(resposta.body.alterou, true);
+  const fat = ambiente.db.get(pathFaturamentoAtendimento());
+  assert.equal(fat.status, "rascunho");
+  assert.equal(fat.contextoFiscal.operacao.competenciaFiscal, "2026-09-02");
+  assert.deepEqual(ambiente.db.get(pathAtendimento()), origem);
+  assert.equal(ambiente.db.transactions.flatMap((tx) => tx.writes).some((write) =>
+    /contasReceber|\/servicos\//.test(write.path)), false);
+  const leiturasRevisao = ambiente.db.transactions.at(-1).reads;
+  assert.equal(leiturasRevisao.some((path) => /\/agendamentos\/|\/clientesComerciais\/|\/servicos\/|\/contasReceber\//.test(path)), false);
+  assert.equal((await executar({ competenciaFiscal: "2026-09-02" })).body.alterou, false);
+  assert.equal(ambiente.db.get(pathFaturamentoAtendimento()).contextoFiscalServico.historico.length, 1);
+  assert.equal((await executar({ cfopEfetivo: "5101" })).statusCode, 400);
+});
+
+test("comercial e visualizacao nao revisam servico; financeiro ativo pode", async () => {
+  for (const [role, esperado] of [["comercial", 403], ["visualizacao", 403], ["financeiro", 200]]) {
+    const ambiente = criarAmbienteAtendimento({ atorUid: "convidado", role });
+    ambiente.db.set(pathFaturamentoAtendimento(), {
+      ...ambiente.db.get(pathFaturamentoAtendimento()),
+      origem: { tipo: "atendimento" }, status: "rascunho", contextoFiscal: { operacao: { competenciaFiscal: null } },
+      pendencias: [],
+    });
+    const handler = criarHandlerSalvarContextoServico({ getDb: () => ambiente.db,
+      agora: () => "2026-09-18T12:00:00Z" });
+    const res = criarRes();
+    await handler(ambiente.req({ empresaId: "empresa-1", revisao: { competenciaFiscal: "2026-09-01" } },
+      { faturamentoId: "atendimento_agenda-1_preparacao_v1" }), res);
+    assert.equal(res.statusCode, esperado, role);
+  }
+});
+
+test("revisao de servico rejeita faturamento nao rascunho e origem venda", async () => {
+  const ambiente = criarAmbienteAtendimento();
+  const handler = criarHandlerSalvarContextoServico({ getDb: () => ambiente.db,
+    agora: () => "2026-09-18T12:00:00Z" });
+  const executar = async (id) => {
+    const res = criarRes();
+    await handler(ambiente.req({ empresaId: "empresa-1", revisao: { competenciaFiscal: "2026-09-01" } },
+      { faturamentoId: id }), res);
+    return res;
+  };
+  ambiente.db.set(pathFaturamentoAtendimento(), { origem: { tipo: "atendimento" }, status: "preparado" });
+  assert.equal((await executar("atendimento_agenda-1_preparacao_v1")).statusCode, 409);
+  ambiente.db.set(pathFaturamentoAtendimento(), { origem: { tipo: "atendimento" }, status: "cancelado" });
+  assert.equal((await executar("atendimento_agenda-1_preparacao_v1")).statusCode, 409);
+  ambiente.db.set(pathFaturamentoAtendimento(), { origem: { tipo: "venda" }, status: "rascunho" });
+  assert.equal((await executar("atendimento_agenda-1_preparacao_v1")).statusCode, 409);
+});
+
+test("endereco HTTP final da revisao fiscal de servico exige autenticacao", async () => {
+  const app = require("../../server");
+  const server = app.listen(0);
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/faturamentos/qualquer/contexto-servico`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: "{}",
+    });
+    assert.equal(response.status, 401);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test("outros estados, segmento e role sem permissao sao negados", async () => {

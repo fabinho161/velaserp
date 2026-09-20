@@ -90,27 +90,60 @@ export const obterHoraFimAgendamento = (agendamento = {}) => {
 };
 
 export const obterSnapshotServicoAgendamento = (agendamento, servico) => {
-  if (agendamento?.servicoId === servico?.id) {
+  const copiarFiscal = (fiscal) => {
+    if (!fiscal || typeof fiscal !== "object" || Array.isArray(fiscal)) return {};
+    const servicoFiscalSnapshot = { versao: 1 };
+    for (const campo of ["codigoTributacaoNacional", "codigoTributacaoMunicipal", "nbs", "descricaoFiscal"]) {
+      if (fiscal[campo] !== undefined && fiscal[campo] !== null) {
+        servicoFiscalSnapshot[campo] = String(fiscal[campo]).trim();
+      }
+    }
+    return { servicoFiscalSnapshot };
+  };
+  if (agendamento?.servicoId && agendamento.servicoId === servico?.id) {
     return {
       servicoId: agendamento.servicoId,
       servicoNome: String(agendamento.servicoNome || ""),
       valorServico: Number(agendamento.valorServico ?? 0),
-      ...(agendamento.servicoFiscalSnapshot ? { servicoFiscalSnapshot: agendamento.servicoFiscalSnapshot } : {}),
+      ...copiarFiscal(agendamento.servicoFiscalSnapshot),
     };
   }
-  if (!servico) return null;
-  const fiscal = servico.fiscal;
+  if (!servico?.id) return null;
   return {
     servicoId: servico.id,
     servicoNome: String(servico.nome || "").trim(),
     valorServico: Number(servico.valor || 0),
-    ...(fiscal ? { servicoFiscalSnapshot: {
-      versao: 1,
-      codigoTributacaoNacional: String(fiscal.codigoTributacaoNacional || "").trim(),
-      codigoTributacaoMunicipal: String(fiscal.codigoTributacaoMunicipal || "").trim(),
-      nbs: String(fiscal.nbs || "").trim(),
-      descricaoFiscal: String(fiscal.descricaoFiscal || "").trim(),
-    } } : {}),
+    ...copiarFiscal(servico.fiscal),
+  };
+};
+
+export const montarPayloadAgendamento = ({ form, agendamentoEditando = null, cliente = null, servico = null, atualizadoEm }) => {
+  const mesmoCliente = Boolean(agendamentoEditando?.clienteId && agendamentoEditando.clienteId === form?.clienteId);
+  const snapshotServico = obterSnapshotServicoAgendamento(agendamentoEditando, servico);
+  const clienteId = mesmoCliente ? agendamentoEditando.clienteId : cliente?.id;
+  if (!clienteId || !snapshotServico?.servicoId || !form?.data || !form.horaInicio || !form.horaFim) return null;
+
+  const texto = (valor) => String(valor ?? "").trim();
+  const codigoMunicipio = texto(form.localPrestacaoCodigoMunicipio);
+  const municipio = texto(form.localPrestacaoMunicipio);
+  const uf = texto(form.localPrestacaoUf).toUpperCase();
+  if ((codigoMunicipio || municipio || uf) &&
+    (!/^\d{7}$/.test(codigoMunicipio) || !municipio || !/^[A-Z]{2}$/.test(uf))) return null;
+
+  return {
+    clienteId,
+    clienteNome: mesmoCliente ? texto(agendamentoEditando.clienteNome) :
+      (cliente.nome || cliente.clienteNome || "Cliente"),
+    clienteTelefone: mesmoCliente ? texto(agendamentoEditando.clienteTelefone) : texto(cliente.telefone),
+    ...snapshotServico,
+    duracaoMinutos: calcularDuracaoAgendamento(form.horaInicio, form.horaFim),
+    data: form.data,
+    horaInicio: form.horaInicio,
+    horaFim: form.horaFim,
+    status: agendamentoEditando?.status || "agendado",
+    observacoes: texto(form.observacoes),
+    localPrestacao: codigoMunicipio ? { tipo: "brasil", codigoMunicipio, municipio, uf, codigoPais: "BR" } : null,
+    ...(atualizadoEm !== undefined ? { atualizadoEm } : {}),
   };
 };
 

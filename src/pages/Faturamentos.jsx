@@ -21,6 +21,7 @@ import {
   prepararFaturamento,
   salvarContextoOperacional,
   salvarClassificacaoManual,
+  salvarContextoServico,
 } from "../services/faturamentoApi";
 import {
   FINALIDADES_OPERACAO,
@@ -57,6 +58,26 @@ const CONTEXTO_FORM_INICIAL = {
   consumidorFinal: "",
   indicadorIEDestinatario: "",
   naturezaOperacao: "",
+};
+
+const SERVICO_FORM_INICIAL = {
+  competenciaFiscal: "", codigoMunicipio: "", municipio: "", uf: "",
+  codigoTributacaoNacional: "", codigoTributacaoMunicipal: "", nbs: "", descricaoFiscal: "",
+  confirmarLocal: false, confirmarClassificacao: false,
+};
+
+const obterFormServico = (faturamento) => {
+  const contexto = faturamento?.contextoFiscalServico || {};
+  const local = contexto.localPrestacaoFiscal || faturamento?.contextoFiscal?.operacao?.localPrestacao || {};
+  const classificacao = contexto.classificacaoFiscalServico || faturamento?.itens?.[0]?.fiscalServicoSnapshot || {};
+  return {
+    competenciaFiscal: faturamento?.contextoFiscal?.operacao?.competenciaFiscal || "",
+    codigoMunicipio: local.codigoMunicipio || "", municipio: local.municipio || "", uf: local.uf || "",
+    codigoTributacaoNacional: classificacao.codigoTributacaoNacional || "",
+    codigoTributacaoMunicipal: classificacao.codigoTributacaoMunicipal || "",
+    nbs: classificacao.nbs || "", descricaoFiscal: classificacao.descricaoFiscal || "",
+    confirmarLocal: false, confirmarClassificacao: false,
+  };
 };
 
 const texto = (valor) => String(valor || "").trim();
@@ -161,6 +182,7 @@ export default function Faturamentos() {
     dataFinal: "",
   });
   const [formContexto, setFormContexto] = useState(CONTEXTO_FORM_INICIAL);
+  const [formServico, setFormServico] = useState(SERVICO_FORM_INICIAL);
   const [catalogoTributario, setCatalogoTributario] = useState(null);
   const [classificacoesForm, setClassificacoesForm] = useState({});
 
@@ -176,6 +198,7 @@ export default function Faturamentos() {
       isAdminMaster ||
       ["administrador_empresa", "financeiro"].includes(perfilEmpresaAtual));
   const podeDeterminarFiscal = podeCancelar;
+  const podeRevisarServico = podeCancelar;
 
   const carregarLista = useCallback(async () => {
     if (!empresaId) return;
@@ -200,6 +223,7 @@ export default function Faturamentos() {
     setFaturamentoSelecionado(null);
     setMotivoCancelamento("");
     setFormContexto(CONTEXTO_FORM_INICIAL);
+    setFormServico(SERVICO_FORM_INICIAL);
     setClassificacoesForm({});
     navigate("/faturamentos");
   };
@@ -214,6 +238,7 @@ export default function Faturamentos() {
 
       setFaturamentoSelecionado(faturamento);
       setFormContexto(faturamento ? obterFormContexto(faturamento) : CONTEXTO_FORM_INICIAL);
+      setFormServico(faturamento ? obterFormServico(faturamento) : SERVICO_FORM_INICIAL);
       setClassificacoesForm(Object.fromEntries((faturamento?.classificacaoTributaria?.itens || [])
         .filter((item) => item.origemClassificacao === "manual")
         .map((item) => [item.indice, { cst: item.ibsCbs?.cst || "",
@@ -283,6 +308,41 @@ export default function Faturamentos() {
 
   const atualizarContexto = (campo, valor) => {
     setFormContexto((atual) => ({ ...atual, [campo]: valor }));
+  };
+
+  const salvarRevisaoServico = async () => {
+    if (!empresaId || !faturamentoSelecionado?.id || !podeRevisarServico ||
+        statusSelecionado !== "rascunho" || acaoEmAndamento) return;
+    const revisao = {};
+    if (formServico.competenciaFiscal) revisao.competenciaFiscal = formServico.competenciaFiscal;
+    if (formServico.confirmarLocal) {
+      revisao.localPrestacaoFiscal = {
+        tipo: "brasil", codigoMunicipio: formServico.codigoMunicipio,
+        municipio: formServico.municipio, uf: formServico.uf.toUpperCase(), codigoPais: "BR",
+      };
+    }
+    if (formServico.confirmarClassificacao) {
+      revisao.classificacaoFiscalServico = {
+        codigoTributacaoNacional: formServico.codigoTributacaoNacional,
+        codigoTributacaoMunicipal: formServico.codigoTributacaoMunicipal,
+        nbs: formServico.nbs, descricaoFiscal: formServico.descricaoFiscal,
+      };
+    }
+    if (Object.keys(revisao).length === 0) {
+      showToast("Informe ao menos um dado fiscal para confirmar.", "warning");
+      return;
+    }
+    setAcaoEmAndamento("contexto-servico");
+    try {
+      await salvarContextoServico({ empresaId, faturamentoId: faturamentoSelecionado.id, revisao });
+      showToast("Contexto fiscal do serviço salvo.", "success");
+      await carregarLista();
+      await carregarDetalhe(faturamentoSelecionado.id);
+    } catch (error) {
+      showToast(error.message || "Não foi possível salvar o contexto fiscal.", "error");
+    } finally {
+      setAcaoEmAndamento("");
+    }
   };
 
   const salvarContexto = async () => {
@@ -781,18 +841,60 @@ export default function Faturamentos() {
                 </section>
 
                 {isServico && <section className="billing-detail-section">
-                  <h3>Prestação do serviço</h3>
+                  <h3>Contexto Fiscal do Serviço</h3>
                   <div className="billing-info-grid">
                     {renderInfo("Competência operacional", dataBR(operacaoSelecionada.competenciaOperacional))}
                     {renderInfo("Competência fiscal", operacaoSelecionada.competenciaFiscal ? dataBR(operacaoSelecionada.competenciaFiscal) : "Não informado")}
-                    {renderInfo("Local da prestação", operacaoSelecionada.localPrestacao
+                    {renderInfo("Local histórico da prestação", operacaoSelecionada.localPrestacao
                       ? `${operacaoSelecionada.localPrestacao.municipio || ""}/${operacaoSelecionada.localPrestacao.uf || ""} (${operacaoSelecionada.localPrestacao.codigoMunicipio || ""})`
                       : "Não informado")}
-                    {renderInfo("Código de Tributação Nacional", faturamentoSelecionado.itens?.[0]?.fiscalServicoSnapshot?.codigoTributacaoNacional || "Não informado")}
-                    {renderInfo("Código de Tributação Municipal", faturamentoSelecionado.itens?.[0]?.fiscalServicoSnapshot?.codigoTributacaoMunicipal || "Não informado")}
-                    {renderInfo("NBS", faturamentoSelecionado.itens?.[0]?.fiscalServicoSnapshot?.nbs || "Não informado")}
-                    {renderInfo("Descrição fiscal", faturamentoSelecionado.itens?.[0]?.fiscalServicoSnapshot?.descricaoFiscal || "Não informado")}
+                    {renderInfo("Local fiscal confirmado", faturamentoSelecionado.contextoFiscalServico?.localPrestacaoFiscal
+                      ? `${faturamentoSelecionado.contextoFiscalServico.localPrestacaoFiscal.municipio}/${faturamentoSelecionado.contextoFiscalServico.localPrestacaoFiscal.uf} (${faturamentoSelecionado.contextoFiscalServico.localPrestacaoFiscal.codigoMunicipio})`
+                      : "Não informado")}
+                    {renderInfo("Código nacional do snapshot", faturamentoSelecionado.itens?.[0]?.fiscalServicoSnapshot?.codigoTributacaoNacional || "Não informado")}
+                    {renderInfo("Código municipal do snapshot", faturamentoSelecionado.itens?.[0]?.fiscalServicoSnapshot?.codigoTributacaoMunicipal || "Não informado")}
+                    {renderInfo("NBS do snapshot", faturamentoSelecionado.itens?.[0]?.fiscalServicoSnapshot?.nbs || "Não informado")}
+                    {renderInfo("Descrição fiscal do snapshot", faturamentoSelecionado.itens?.[0]?.fiscalServicoSnapshot?.descricaoFiscal || "Não informado")}
+                    {renderInfo("Código nacional confirmado", faturamentoSelecionado.contextoFiscalServico?.classificacaoFiscalServico?.codigoTributacaoNacional || "Não informado")}
+                    {renderInfo("Código municipal confirmado", faturamentoSelecionado.contextoFiscalServico?.classificacaoFiscalServico?.codigoTributacaoMunicipal || "Não informado")}
+                    {renderInfo("NBS confirmada", faturamentoSelecionado.contextoFiscalServico?.classificacaoFiscalServico?.nbs || "Não informado")}
+                    {renderInfo("Descrição fiscal confirmada", faturamentoSelecionado.contextoFiscalServico?.classificacaoFiscalServico?.descricaoFiscal || "Não informado")}
+                    {renderInfo("Confirmação", faturamentoSelecionado.contextoFiscalServico?.classificacaoFiscalServico?.confirmadoPor
+                      ? `Manual por ${faturamentoSelecionado.contextoFiscalServico.classificacaoFiscalServico.confirmadoPor}` : "Não informado")}
                   </div>
+                  {statusSelecionado === "rascunho" && podeRevisarServico && <details
+                    open={faturamentoSelecionado?.origem?.tipo === "atendimento" && pendenciasSelecionadas.length > 0}
+                  >
+                    <summary>Revisar contexto fiscal</summary>
+                    <p>Os dados históricos abaixo são sugestões e somente serão confirmados mediante sua seleção.</p>
+                    <p>Classificação manual sem validação por catálogo oficial.</p>
+                    <div className="billing-context-grid">
+                      <label>Data efetiva da prestação
+                        <input type="date" value={formServico.competenciaFiscal}
+                          onChange={(event) => setFormServico((atual) => ({ ...atual, competenciaFiscal: event.target.value }))} />
+                      </label>
+                      <label className="billing-service-confirm"><input type="checkbox" checked={formServico.confirmarLocal}
+                        onChange={(event) => setFormServico((atual) => ({ ...atual, confirmarLocal: event.target.checked }))} />
+                        Confirmar local fiscal
+                      </label>
+                      <label className="billing-service-confirm"><input type="checkbox" checked={formServico.confirmarClassificacao}
+                        onChange={(event) => setFormServico((atual) => ({ ...atual, confirmarClassificacao: event.target.checked }))} />
+                        Confirmar classificação manual
+                      </label>
+                      {[
+                        ["codigoMunicipio", "Código IBGE do local fiscal"], ["municipio", "Município da prestação"],
+                        ["uf", "UF da prestação"], ["codigoTributacaoNacional", "Código de Tributação Nacional"],
+                        ["codigoTributacaoMunicipal", "Código de Tributação Municipal"], ["nbs", "NBS"],
+                        ["descricaoFiscal", "Descrição fiscal"],
+                      ].map(([campo, label]) => <label key={campo}>{label}
+                        <input value={formServico[campo]} onChange={(event) =>
+                          setFormServico((atual) => ({ ...atual, [campo]: event.target.value }))} />
+                      </label>)}
+                    </div>
+                    <button type="button" onClick={salvarRevisaoServico} disabled={Boolean(acaoEmAndamento)}>
+                      Confirmar revisão fiscal
+                    </button>
+                  </details>}
                 </section>}
 
                 {!isServico && <section className="billing-detail-section">

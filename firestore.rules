@@ -49,6 +49,40 @@ service cloud.firestore {
           .hasOnly(["status", "atualizadoEm", marco]);
     }
 
+    function hasValidAgendaLocalPrestacao() {
+      return !request.resource.data.keys().hasAny(["localPrestacao"]) ||
+        request.resource.data.localPrestacao == null ||
+        (
+          request.resource.data.localPrestacao is map &&
+          request.resource.data.localPrestacao.keys().hasOnly([
+            "tipo", "codigoMunicipio", "municipio", "uf", "codigoPais"
+          ]) &&
+          request.resource.data.localPrestacao.keys().hasAll([
+            "tipo", "codigoMunicipio", "municipio", "uf", "codigoPais"
+          ]) &&
+          request.resource.data.localPrestacao.tipo == "brasil" &&
+          request.resource.data.localPrestacao.codigoMunicipio is string &&
+          request.resource.data.localPrestacao.municipio is string &&
+          request.resource.data.localPrestacao.uf is string &&
+          request.resource.data.localPrestacao.codigoPais == "BR"
+        );
+    }
+
+    function hasValidAgendaServicoFiscalSnapshot() {
+      return !request.resource.data.keys().hasAny(["servicoFiscalSnapshot"]) ||
+        (
+          request.resource.data.servicoFiscalSnapshot is map &&
+          request.resource.data.servicoFiscalSnapshot.keys().hasOnly([
+            "versao", "codigoTributacaoNacional", "codigoTributacaoMunicipal", "nbs", "descricaoFiscal"
+          ]) &&
+          request.resource.data.servicoFiscalSnapshot.versao == 1 &&
+          request.resource.data.servicoFiscalSnapshot.get("codigoTributacaoNacional", "") is string &&
+          request.resource.data.servicoFiscalSnapshot.get("codigoTributacaoMunicipal", "") is string &&
+          request.resource.data.servicoFiscalSnapshot.get("nbs", "") is string &&
+          request.resource.data.servicoFiscalSnapshot.get("descricaoFiscal", "") is string
+        );
+    }
+
     function hasValidAgendaPayload() {
       return request.resource.data.keys().hasOnly([
           "clienteId",
@@ -63,6 +97,8 @@ service cloud.firestore {
           "duracaoMinutos",
           "status",
           "observacoes",
+          "localPrestacao",
+          "servicoFiscalSnapshot",
           "criadoEm",
           "atualizadoEm",
           "criadoPor",
@@ -87,6 +123,8 @@ service cloud.firestore {
         request.resource.data.status is string &&
         isValidAgendaStatus(request.resource.data.status) &&
         request.resource.data.observacoes is string &&
+        hasValidAgendaLocalPrestacao() &&
+        hasValidAgendaServicoFiscalSnapshot() &&
         request.resource.data.criadoPor is string;
     }
 
