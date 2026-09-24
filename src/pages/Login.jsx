@@ -20,7 +20,7 @@ const LABELS_SEGMENTO_CADASTRO = {
   comercio: "Comércio",
   industria: "Indústria",
   oficina: "Oficina",
-  clientes: "Prestação de Serviços",
+  clientes: "Gestão de Serviços",
 };
 const OPCOES_SEGMENTO_CADASTRO = Object.values(SEGMENTOS_EMPRESA).map((segmento) => ({
   id: segmento.id,

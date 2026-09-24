@@ -60,15 +60,13 @@ export const SEGMENTOS_EMPRESA = {
   },
   clientes: {
     id: "clientes",
-    nome: "Clientes",
-    descricao: "Gestao de clientes, agenda, atendimentos e financeiro.",
+    nome: "Gestão de Serviços",
+    descricao: "Gestão de clientes, agenda, atendimentos e financeiro.",
     modulos: [
       "dashboard",
       "clientes",
       "servicos",
       "agenda",
-      "atendimentos",
-      "faturamento",
       "financeiro",
       "relatorios",
       "configuracoes",

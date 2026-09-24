@@ -5,7 +5,6 @@ const {
   classificarTributacaoFaturamento,
   criarContextoOperacionalFaturamento,
   criarFaturamentoVenda,
-  criarFaturamentoAtendimento,
   ehFaturamentoServico,
   determinarFiscalFaturamento,
   validarPreparacaoFaturamento,
@@ -521,67 +520,14 @@ const criarHandlerObterFaturamento = ({
   }
 };
 
-const criarHandlerCriarFaturamentoAtendimento = ({
-  getDb: getDbDependencia = getDb,
-  criarTimestampServidor = () => FieldValue.serverTimestamp(),
-} = {}) => async (req, res) => {
+const criarHandlerCriarFaturamentoAtendimento = () => async (req, res) => {
   const atorUid = normalizarId(req.user?.uid);
   if (!atorUid) return res.status(401).json({ ok: false, codigo: "token_ausente" });
-  try {
-    const empresaId = validarIdFirestore("empresaId", req.body?.empresaId);
-    const agendamentoId = validarIdFirestore("agendamentoId", req.body?.agendamentoId);
-    const db = getDbDependencia();
-    const resultado = await db.runTransaction(async (transaction) => {
-      const acesso = await resolverAcessoEmpresa({ db, transaction, atorUid, empresaId });
-      if (normalizarSegmentoEmpresa(acesso.empresa.segmento) !== "clientes" ||
-          !usuarioAtivoPodePrepararFaturamento({ atorUid, ...acesso })) {
-        throw criarErroHttp(403, "Operacao indisponivel para esta empresa.", "sem_permissao");
-      }
-      const agendamentoRef = acesso.empresaRef.collection("agendamentos").doc(agendamentoId);
-      const faturamentoRef = acesso.empresaRef.collection("faturamentos")
-        .doc(criarIdFaturamentoAtendimento(agendamentoId));
-      const [agendamentoSnap, faturamentoSnap] = await Promise.all([
-        transaction.get(agendamentoRef), transaction.get(faturamentoRef),
-      ]);
-      if (!snapshotExiste(agendamentoSnap) || dadosSnapshot(agendamentoSnap).status !== "concluido") {
-        throw criarErroHttp(409, "Atendimento nao concluido ou inexistente.", "atendimento_indisponivel");
-      }
-      if (snapshotExiste(faturamentoSnap)) {
-        const existente = dadosSnapshot(faturamentoSnap);
-        if (existente.origem?.tipo !== "atendimento" || existente.origem.documentoId !== agendamentoId) {
-          throw criarErroHttp(409, "Origem do faturamento inconsistente.", "origem_divergente");
-        }
-        return { faturamentoId: faturamentoRef.id, status: existente.status || "rascunho", reutilizado: true };
-      }
-      const agendamento = { ...dadosSnapshot(agendamentoSnap), id: agendamentoId };
-      const clienteRef = acesso.empresaRef.collection("clientesComerciais").doc(agendamento.clienteId || "_ausente");
-      const fiscalRef = acesso.empresaRef.collection("configuracoes").doc("fiscal");
-      const [clienteSnap, fiscalSnap] = await Promise.all([
-        transaction.get(clienteRef), transaction.get(fiscalRef),
-      ]);
-      let core;
-      try {
-        core = criarFaturamentoAtendimento({
-          agendamento,
-          cliente: dadosSnapshot(clienteSnap),
-          fiscalEmpresa: dadosSnapshot(fiscalSnap),
-        });
-      } catch (error) {
-        throw criarErroHttp(422, error.message, error.codigo || "atendimento_invalido");
-      }
-      const timestamp = criarTimestampServidor();
-      transaction.create(faturamentoRef, {
-        ...core,
-        idempotencyKey: `${empresaId}:atendimento:${agendamentoId}:preparacao:v${VERSAO_PREPARACAO}`,
-        criadoEm: timestamp, atualizadoEm: timestamp, criadoPor: atorUid,
-        persistencia: { versao: 1, versaoPreparacao: VERSAO_PREPARACAO },
-      });
-      return { faturamentoId: faturamentoRef.id, status: "rascunho", reutilizado: false };
-    });
-    return res.status(resultado.reutilizado ? 200 : 201).json({ ok: true, ...resultado });
-  } catch (error) {
-    return montarRespostaErro(res, error);
-  }
+  return res.status(410).json({
+    ok: false,
+    error: "Faturamento fiscal de atendimentos foi descontinuado.",
+    codigo: "faturamento_atendimento_descontinuado",
+  });
 };
 
 const criarHandlerCriarFaturamento = ({

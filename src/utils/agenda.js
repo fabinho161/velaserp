@@ -90,22 +90,11 @@ export const obterHoraFimAgendamento = (agendamento = {}) => {
 };
 
 export const obterSnapshotServicoAgendamento = (agendamento, servico) => {
-  const copiarFiscal = (fiscal) => {
-    if (!fiscal || typeof fiscal !== "object" || Array.isArray(fiscal)) return {};
-    const servicoFiscalSnapshot = { versao: 1 };
-    for (const campo of ["codigoTributacaoNacional", "codigoTributacaoMunicipal", "nbs", "descricaoFiscal"]) {
-      if (fiscal[campo] !== undefined && fiscal[campo] !== null) {
-        servicoFiscalSnapshot[campo] = String(fiscal[campo]).trim();
-      }
-    }
-    return { servicoFiscalSnapshot };
-  };
   if (agendamento?.servicoId && agendamento.servicoId === servico?.id) {
     return {
       servicoId: agendamento.servicoId,
       servicoNome: String(agendamento.servicoNome || ""),
       valorServico: Number(agendamento.valorServico ?? 0),
-      ...copiarFiscal(agendamento.servicoFiscalSnapshot),
     };
   }
   if (!servico?.id) return null;
@@ -113,7 +102,6 @@ export const obterSnapshotServicoAgendamento = (agendamento, servico) => {
     servicoId: servico.id,
     servicoNome: String(servico.nome || "").trim(),
     valorServico: Number(servico.valor || 0),
-    ...copiarFiscal(servico.fiscal),
   };
 };
 
@@ -124,12 +112,6 @@ export const montarPayloadAgendamento = ({ form, agendamentoEditando = null, cli
   if (!clienteId || !snapshotServico?.servicoId || !form?.data || !form.horaInicio || !form.horaFim) return null;
 
   const texto = (valor) => String(valor ?? "").trim();
-  const codigoMunicipio = texto(form.localPrestacaoCodigoMunicipio);
-  const municipio = texto(form.localPrestacaoMunicipio);
-  const uf = texto(form.localPrestacaoUf).toUpperCase();
-  if ((codigoMunicipio || municipio || uf) &&
-    (!/^\d{7}$/.test(codigoMunicipio) || !municipio || !/^[A-Z]{2}$/.test(uf))) return null;
-
   return {
     clienteId,
     clienteNome: mesmoCliente ? texto(agendamentoEditando.clienteNome) :
@@ -142,7 +124,6 @@ export const montarPayloadAgendamento = ({ form, agendamentoEditando = null, cli
     horaFim: form.horaFim,
     status: agendamentoEditando?.status || "agendado",
     observacoes: texto(form.observacoes),
-    localPrestacao: codigoMunicipio ? { tipo: "brasil", codigoMunicipio, municipio, uf, codigoPais: "BR" } : null,
     ...(atualizadoEm !== undefined ? { atualizadoEm } : {}),
   };
 };

@@ -12,7 +12,7 @@ const LABELS_SEGMENTO = {
   comercio: "Comércio",
   industria: "Indústria",
   oficina: "Oficina",
-  clientes: "Prestação de Serviços",
+  clientes: "Gestão de Serviços",
 };
 
 export default function EmpresaSwitcher() {

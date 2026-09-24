@@ -15,6 +15,7 @@ import { useToast } from "../context/useToast";
 import { db } from "../firebase";
 import { normalizarSegmentoEmpresa } from "../config/segmentosEmpresa.js";
 import { moedaBR } from "../utils/formatters";
+import { montarDadosOperacionaisServico } from "../utils/servicos.js";
 
 const servicoInicial = {
   nome: "",
@@ -22,7 +23,6 @@ const servicoInicial = {
   valor: "",
   tempoEstimadoMinutos: "",
   status: "ativo",
-  fiscal: { codigoTributacaoNacional: "", codigoTributacaoMunicipal: "", nbs: "", descricaoFiscal: "" },
 };
 
 const PERFIS_ESCRITA_SERVICOS = new Set([
@@ -159,12 +159,6 @@ export default function Servicos() {
       valor: servico.valor ?? "",
       tempoEstimadoMinutos: servico.tempoEstimadoMinutos ?? "",
       status: normalizarStatus(servico.status),
-      fiscal: {
-        codigoTributacaoNacional: servico.fiscal?.codigoTributacaoNacional || "",
-        codigoTributacaoMunicipal: servico.fiscal?.codigoTributacaoMunicipal || "",
-        nbs: servico.fiscal?.nbs || "",
-        descricaoFiscal: servico.fiscal?.descricaoFiscal || "",
-      },
     });
     setModalAberto(true);
   };
@@ -192,26 +186,9 @@ export default function Servicos() {
     }));
   };
 
-  const atualizarCampoFiscal = (campo, valor) => {
-    setForm((atual) => ({ ...atual, fiscal: { ...atual.fiscal, [campo]: valor } }));
-  };
-
   const montarPayloadServico = () => {
-    const tempoTratado = normalizarTexto(form.tempoEstimadoMinutos);
-
     return {
-      nome: normalizarTexto(form.nome),
-      descricao: normalizarTexto(form.descricao),
-      valor: Number(form.valor),
-      tempoEstimadoMinutos: tempoTratado ? Number(tempoTratado) : "",
-      status: normalizarStatus(form.status),
-      ...(isPrestacaoServicos ? { fiscal: {
-        versao: 1,
-        codigoTributacaoNacional: normalizarTexto(form.fiscal.codigoTributacaoNacional),
-        codigoTributacaoMunicipal: normalizarTexto(form.fiscal.codigoTributacaoMunicipal),
-        nbs: normalizarTexto(form.fiscal.nbs),
-        descricaoFiscal: normalizarTexto(form.fiscal.descricaoFiscal),
-      } } : {}),
+      ...montarDadosOperacionaisServico(form),
       atualizadoEm: serverTimestamp(),
     };
   };
@@ -306,7 +283,7 @@ export default function Servicos() {
         <div>
           <span className="badge badge-info fornecedores-eyebrow">
             <Wrench size={14} />
-            {isPrestacaoServicos ? "Prestação de Serviços" : "Oficina"}
+            {isPrestacaoServicos ? "Gestão de Serviços" : "Oficina"}
           </span>
           <h1 className="page-title">Serviços</h1>
           <p className="page-subtitle">
@@ -544,18 +521,6 @@ export default function Servicos() {
                 />
               </label>
             </div>
-
-            {isPrestacaoServicos && <div className="fornecedores-form-grid">
-              {[
-                ["codigoTributacaoNacional", "Código de Tributação Nacional"],
-                ["codigoTributacaoMunicipal", "Código de Tributação Municipal"],
-                ["nbs", "NBS"],
-                ["descricaoFiscal", "Descrição fiscal"],
-              ].map(([campo, label]) => <label key={campo}>
-                {label}
-                <input value={form.fiscal[campo]} onChange={(event) => atualizarCampoFiscal(campo, event.target.value)} />
-              </label>)}
-            </div>}
 
             <div className="modal-actions">
               <button type="button" className="confirm-secondary" onClick={cancelarModal}>

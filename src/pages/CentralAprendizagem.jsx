@@ -30,7 +30,7 @@ const LABELS_SEGMENTO = {
   comercio: "Comércio",
   industria: "Indústria",
   oficina: "Oficina",
-  clientes: "Prestação de Serviços",
+  clientes: "Gestão de Serviços",
 };
 
 const normalizar = (valor) =>

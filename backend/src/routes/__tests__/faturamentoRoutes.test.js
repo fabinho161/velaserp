@@ -16,6 +16,7 @@ const {
   criarHandlerSalvarContextoOperacionalFaturamento,
   criarHandlerSalvarContextoServico,
 } = require("../faturamentoRoutes");
+const { criarFaturamentoAtendimento } = require("../../shared/faturamento.cjs");
 
 const pathAtendimento = (id = "agenda-1") => `users/owner-1/empresas/empresa-1/agendamentos/${id}`;
 const pathFaturamentoAtendimento = (id = "agenda-1") =>
@@ -947,59 +948,51 @@ const criarAmbienteAtendimento = ({ status = "concluido", segmento = "clientes",
   return { ...ambiente, executarAtendimento };
 };
 
-test("atendimento concluido cria um rascunho idempotente sem tocar conta a receber", async () => {
+test("faturamento fiscal de atendimento foi descontinuado sem escrever dados", async () => {
   const ambiente = criarAmbienteAtendimento();
-  const [primeiro, segundo] = await Promise.all([
-    ambiente.executarAtendimento(), ambiente.executarAtendimento(),
-  ]);
-  assert.deepEqual([primeiro.statusCode, segundo.statusCode], [201, 200]);
-  const fat = ambiente.db.get(pathFaturamentoAtendimento());
-  assert.equal(fat.origem.tipo, "atendimento");
-  assert.equal(fat.origem.documentoId, "agenda-1");
-  assert.equal(fat.status, "rascunho");
-  assert.equal(fat.totais.valorLiquido, 100);
-  assert.equal(fat.contextoFiscal.destinatario.nome, "Nome historico");
-  assert.equal(fat.itens[0].descricao, "Servico historico");
-  assert.equal(fat.itens[0].tipoItem, "servico");
-  assert.equal(ambiente.db.transactions.flatMap((tx) => tx.reads).some((path) => path.includes("contasReceber")), false);
-  assert.equal(ambiente.db.transactions.flatMap((tx) => tx.writes).some((write) => write.path.includes("contasReceber")), false);
+  const resposta = await ambiente.executarAtendimento();
+  assert.equal(resposta.statusCode, 410);
+  assert.equal(resposta.body.codigo, "faturamento_atendimento_descontinuado");
+  assert.equal(ambiente.db.get(pathFaturamentoAtendimento()), undefined);
+  assert.equal(ambiente.db.transactions.length, 0);
 });
 
-test("criacao usa snapshot do atendimento, nao cadastro atual do servico", async () => {
+test("helper historico de atendimento permanece compativel com snapshots antigos", () => {
   const ambiente = criarAmbienteAtendimento();
-  ambiente.db.set(pathAtendimento(), {
+  const agendamento = {
     ...ambiente.db.get(pathAtendimento()),
+    id: "agenda-1",
     servicoFiscalSnapshot: { versao: 1, codigoTributacaoNacional: "001234", codigoTributacaoMunicipal: "", nbs: "", descricaoFiscal: "Historico" },
     localPrestacao: { tipo: "brasil", codigoMunicipio: "5209150", municipio: "Itumbiara", uf: "GO", codigoPais: "BR" },
+  };
+  const fat = criarFaturamentoAtendimento({
+    agendamento,
+    cliente: ambiente.db.get("users/owner-1/empresas/empresa-1/clientesComerciais/cliente-1"),
+    fiscalEmpresa: ambiente.db.get("users/owner-1/empresas/empresa-1/configuracoes/fiscal"),
   });
-  ambiente.db.set("users/owner-1/empresas/empresa-1/servicos/servico-1", {
-    fiscal: { codigoTributacaoNacional: "999999" },
-  });
-  assert.equal((await ambiente.executarAtendimento()).statusCode, 201);
-  const fat = ambiente.db.get(pathFaturamentoAtendimento());
   assert.equal(fat.itens[0].fiscalServicoSnapshot.codigoTributacaoNacional, "001234");
   assert.equal(fat.contextoFiscal.operacao.localPrestacao.codigoMunicipio, "5209150");
   assert.equal(fat.contextoFiscal.operacao.competenciaFiscal, null);
-  assert.equal(ambiente.db.transactions.flatMap((tx) => tx.reads).some((path) => path.includes("/servicos/")), false);
-  ambiente.db.set(pathAtendimento(), { ...ambiente.db.get(pathAtendimento()), servicoFiscalSnapshot: { codigoTributacaoNacional: "888888" } });
-  assert.equal((await ambiente.executarAtendimento()).statusCode, 200);
-  assert.equal(ambiente.db.get(pathFaturamentoAtendimento()).itens[0].fiscalServicoSnapshot.codigoTributacaoNacional, "001234");
 });
 
-test("atendimento legado nao e enriquecido pelo cadastro atual", async () => {
+test("atendimento legado sem fiscal permanece legivel sem enriquecimento", () => {
   const ambiente = criarAmbienteAtendimento();
-  ambiente.db.set("users/owner-1/empresas/empresa-1/servicos/servico-1", {
-    fiscal: { codigoTributacaoNacional: "001234" },
+  const fat = criarFaturamentoAtendimento({
+    agendamento: { ...ambiente.db.get(pathAtendimento()), id: "agenda-1" },
+    cliente: ambiente.db.get("users/owner-1/empresas/empresa-1/clientesComerciais/cliente-1"),
+    fiscalEmpresa: ambiente.db.get("users/owner-1/empresas/empresa-1/configuracoes/fiscal"),
   });
-  assert.equal((await ambiente.executarAtendimento()).statusCode, 201);
-  const fat = ambiente.db.get(pathFaturamentoAtendimento());
   assert.equal(fat.itens[0].fiscalServicoSnapshot, null);
   assert.equal(fat.pendencias.includes("classificacao_servico_ausente"), true);
 });
 
 test("revisao fiscal do servico e transacional, restrita e nao altera fontes operacionais", async () => {
   const ambiente = criarAmbienteAtendimento();
-  assert.equal((await ambiente.executarAtendimento()).statusCode, 201);
+  ambiente.db.set(pathFaturamentoAtendimento(), criarFaturamentoAtendimento({
+    agendamento: { ...ambiente.db.get(pathAtendimento()), id: "agenda-1" },
+    cliente: ambiente.db.get("users/owner-1/empresas/empresa-1/clientesComerciais/cliente-1"),
+    fiscalEmpresa: ambiente.db.get("users/owner-1/empresas/empresa-1/configuracoes/fiscal"),
+  }));
   const handler = criarHandlerSalvarContextoServico({ getDb: () => ambiente.db,
     agora: () => "2026-09-18T12:00:00Z" });
   const executar = async (revisao) => {
@@ -1087,26 +1080,15 @@ test("endereco HTTP final da revisao fiscal de servico exige autenticacao", asyn
   }
 });
 
-test("outros estados, segmento e role sem permissao sao negados", async () => {
-  for (const status of ["agendado", "confirmado", "em_atendimento", "cancelado"]) {
-    const ambiente = criarAmbienteAtendimento({ status });
-    assert.equal((await ambiente.executarAtendimento()).statusCode, 409);
+test("endpoint descontinuado rejeita todos os estados segmentos e perfis", async () => {
+  for (const opcoes of [
+    { status: "agendado" }, { status: "cancelado" }, { segmento: "comercio" },
+    { segmento: "oficina" }, { atorUid: "guest", role: "financeiro" },
+  ]) {
+    const ambiente = criarAmbienteAtendimento(opcoes);
+    assert.equal((await ambiente.executarAtendimento()).statusCode, 410);
     assert.equal(ambiente.db.get(pathFaturamentoAtendimento()), undefined);
   }
-  for (const segmento of ["comercio", "industria", "oficina"]) {
-    assert.equal((await criarAmbienteAtendimento({ segmento }).executarAtendimento()).statusCode, 403);
-  }
-  assert.equal((await criarAmbienteAtendimento({ atorUid: "guest", role: "producao" }).executarAtendimento()).statusCode, 403);
-  assert.equal((await criarAmbienteAtendimento({ atorUid: "guest", role: "financeiro" }).executarAtendimento()).statusCode, 201);
-});
-
-test("valor invalido impede persistencia; zero e legado sem concluidoEm permanecem validos", async () => {
-  assert.equal((await criarAmbienteAtendimento({ valorServico: -1 }).executarAtendimento()).statusCode, 422);
-  const ambiente = criarAmbienteAtendimento({ valorServico: 0 });
-  assert.equal((await ambiente.executarAtendimento()).statusCode, 201);
-  const fat = ambiente.db.get(pathFaturamentoAtendimento());
-  assert.equal(fat.totais.valorLiquido, 0);
-  assert.equal("concluidoEm" in fat, false);
 });
 
 test("endereco HTTP final de atendimento esta montado e exige autenticacao", async () => {

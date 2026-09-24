@@ -4,6 +4,7 @@ import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
 import { usePlano } from "../hooks/usePlano";
 import { PERMISSOES_EMPRESA } from "../config/perfisEmpresa";
+import { normalizarSegmentoEmpresa } from "../config/segmentosEmpresa.js";
 
 
 const EMPRESA_PADRAO = {
@@ -75,6 +76,8 @@ export default function Configuracoes() {
   const [confirmacaoExclusao, setConfirmacaoExclusao] = useState("");
   const [excluindoEmpresa, setExcluindoEmpresa] = useState(false);
   const empresaAtual = empresas.find((empresa) => empresa.id === empresaId);
+  const exibirConfiguracoesFiscais =
+    normalizarSegmentoEmpresa(empresaAtual?.segmento) !== "clientes";
   const nomeEmpresaAtual = empresaAtual?.nome || form.nome || "";
   const usuarioOwnerReal =
     Boolean(user?.uid && empresaId && empresaOwnerUid === user.uid);
@@ -346,7 +349,7 @@ export default function Configuracoes() {
         </div>
       </div>
 
-      <div className="card config-section config-section-full">
+      {exibirConfiguracoesFiscais && <div className="card config-section config-section-full">
         <h3>Configuracoes Fiscais</h3>
         <p className="config-section-description">
           Cadastre os dados fiscais basicos da empresa para preparar o ERP para relatorios tributarios futuros.
@@ -538,7 +541,7 @@ export default function Configuracoes() {
             {salvandoFiscal ? "Salvando..." : "Salvar Configuracoes Fiscais"}
           </button>
         </div>
-      </div>
+      </div>}
 
       <div className="card config-section config-section-full">
         <h3>Personalização do Sistema</h3>

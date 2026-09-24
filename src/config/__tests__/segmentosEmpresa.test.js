@@ -58,9 +58,10 @@ test("vendaPecas pertence somente ao segmento oficina", () => {
   assert.equal(segmentoPossuiModulo("clientes", "vendaPecas"), false);
 });
 
-test("faturamento pertence aos quatro segmentos", () => {
+test("faturamento nao pertence a gestao de servicos", () => {
   assert.equal(segmentoPossuiModulo("comercio", "faturamento"), true);
   assert.equal(segmentoPossuiModulo("industria", "faturamento"), true);
   assert.equal(segmentoPossuiModulo("oficina", "faturamento"), true);
-  assert.equal(segmentoPossuiModulo("clientes", "faturamento"), true);
+  assert.equal(segmentoPossuiModulo("clientes", "faturamento"), false);
+  assert.equal(segmentoPossuiModulo("clientes", "atendimentos"), false);
 });

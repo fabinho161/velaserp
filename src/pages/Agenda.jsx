@@ -8,14 +8,12 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { CalendarDays, CheckCircle2, Filter, Plus, Search } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import ActionMenu from "../components/ActionMenu";
 import { useConfirmacao } from "../context/useConfirmacao";
 import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
 import { db } from "../firebase";
 import { concluirAtendimento } from "../services/financeiroServicosApi";
-import { criarFaturamentoAtendimento } from "../services/faturamentoApi";
 import {
   calcularDuracaoAgendamento,
   compararAgendamentosPorHorario,
@@ -39,9 +37,6 @@ const agendamentoInicial = {
   horaFim: "",
   status: "agendado",
   observacoes: "",
-  localPrestacaoCodigoMunicipio: "",
-  localPrestacaoMunicipio: "",
-  localPrestacaoUf: "",
 };
 
 const PERFIS_ESCRITA_AGENDA = new Set(["administrador_empresa", "comercial"]);
@@ -110,12 +105,10 @@ export default function Agenda() {
     empresaOwnerUid,
     isAdminMaster,
     perfilEmpresaAtual,
-    usuarioEmpresaSomenteLeitura,
     user,
   } = useERP();
   const { showToast } = useToast();
   const { confirmar } = useConfirmacao();
-  const navigate = useNavigate();
 
   const [agendamentos, setAgendamentos] = useState([]);
   const [clientesSnapshot, setClientesSnapshot] = useState({ chave: "", lista: [] });
@@ -133,9 +126,6 @@ export default function Agenda() {
   const ownerUid = empresaOwnerUid || user?.uid || null;
   const podeEscreverAgenda =
     isAdminMaster || PERFIS_ESCRITA_AGENDA.has(perfilEmpresaAtual);
-  const podeGerarFaturamento = !usuarioEmpresaSomenteLeitura &&
-    (user?.uid === ownerUid || isAdminMaster ||
-      ["administrador_empresa", "financeiro", "comercial"].includes(perfilEmpresaAtual));
   const chaveDependencias =
     podeEscreverAgenda && ownerUid && empresaId ? `${ownerUid}/${empresaId}` : "";
   const clientes =
@@ -356,9 +346,6 @@ export default function Agenda() {
       horaFim: obterHoraFimAgendamento(agendamento),
       status: agendamento.status || "agendado",
       observacoes: agendamento.observacoes || "",
-      localPrestacaoCodigoMunicipio: agendamento.localPrestacao?.codigoMunicipio || "",
-      localPrestacaoMunicipio: agendamento.localPrestacao?.municipio || "",
-      localPrestacaoUf: agendamento.localPrestacao?.uf || "",
     });
     setFimAutomatico(false);
     setModalAberto(true);
@@ -404,13 +391,6 @@ export default function Agenda() {
 
     if (!form.clienteId || !form.servicoId || !form.data || !form.horaInicio) {
       showToast("Preencha os campos obrigatórios.", "warning");
-      return;
-    }
-    if ([form.localPrestacaoCodigoMunicipio, form.localPrestacaoMunicipio, form.localPrestacaoUf].some(normalizarTexto) &&
-      (!/^\d{7}$/.test(normalizarTexto(form.localPrestacaoCodigoMunicipio)) ||
-       !normalizarTexto(form.localPrestacaoMunicipio) ||
-       !/^[A-Za-z]{2}$/.test(normalizarTexto(form.localPrestacaoUf)))) {
-      showToast("Informe código IBGE, município e UF do local da prestação.", "warning");
       return;
     }
     if (!form.horaFim) {
@@ -512,17 +492,6 @@ export default function Agenda() {
     }
   };
 
-  const gerarFaturamentoAtendimento = async (agendamento) => {
-    if (!podeGerarFaturamento || agendamento.status !== "concluido" || !empresaId) return;
-    try {
-      const resultado = await criarFaturamentoAtendimento({ empresaId, agendamentoId: agendamento.id });
-      showToast(resultado.reutilizado ? "Faturamento existente aberto." : "Rascunho de faturamento criado.", "success");
-      navigate(`/faturamentos/${encodeURIComponent(resultado.faturamentoId)}`);
-    } catch (error) {
-      showToast(error.message || "Não foi possível gerar o faturamento.", "error");
-    }
-  };
-
   const somenteLeitura = !podeEscreverAgenda ||
     Boolean(agendamentoEditando && !podeEditarDadosAgendamento(agendamentoEditando.status));
 
@@ -532,7 +501,7 @@ export default function Agenda() {
         <div>
           <span className="badge badge-info fornecedores-eyebrow">
             <CalendarDays size={14} />
-            Prestação de Serviços
+            Gestão de Serviços
           </span>
           <h1 className="page-title">Agenda</h1>
           <p className="page-subtitle">
@@ -683,10 +652,6 @@ export default function Agenda() {
                                 danger: proximo === "cancelado",
                                 onClick: () => atualizarStatusAgendamento(agendamento, proximo),
                               })) : []),
-                              ...(status === "concluido" && podeGerarFaturamento ? [{
-                                label: "Gerar faturamento",
-                                onClick: () => gerarFaturamentoAtendimento(agendamento),
-                              }] : []),
                             ]}
                           />
                       </td>
@@ -801,24 +766,6 @@ export default function Agenda() {
               </div>
 
               <div>Status: {getStatusLabel(form.status)}</div>
-
-              <div className="fornecedores-form-wide">
-                <strong>Local da prestação (opcional)</strong>
-                <div className="fornecedores-form-grid">
-                  <label>Código do município (IBGE)
-                    <input inputMode="numeric" maxLength={7} value={form.localPrestacaoCodigoMunicipio}
-                      onChange={(event) => atualizarCampo("localPrestacaoCodigoMunicipio", event.target.value)} disabled={somenteLeitura} />
-                  </label>
-                  <label>Município
-                    <input value={form.localPrestacaoMunicipio}
-                      onChange={(event) => atualizarCampo("localPrestacaoMunicipio", event.target.value)} disabled={somenteLeitura} />
-                  </label>
-                  <label>UF
-                    <input maxLength={2} value={form.localPrestacaoUf}
-                      onChange={(event) => atualizarCampo("localPrestacaoUf", event.target.value)} disabled={somenteLeitura} />
-                  </label>
-                </div>
-              </div>
 
               <label className="fornecedores-form-wide">
                 Observações

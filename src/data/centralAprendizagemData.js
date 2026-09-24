@@ -230,7 +230,7 @@ export const primeirosPassos = [
     passos: [
       "Criar conta.",
       "Informar o nome da empresa.",
-      "Escolher o tipo do negocio: Comercio, Industria, Oficina ou Prestação de Serviços.",
+      "Escolher o tipo do negocio: Comercio, Industria, Oficina ou Gestão de Serviços.",
       "Conferir os modulos exibidos para o segmento atual.",
       "Criar outras empresas pelo seletor quando o plano permitir.",
       "Conferir o Segmento atual abaixo da empresa selecionada.",
@@ -1017,16 +1017,16 @@ export const tutoriaisPorModulo = [
     segmentos: ["comercio", "industria", "oficina"],
   }),
   artigo({
-    modulo: "Prestação de Serviços",
+    modulo: "Gestão de Serviços",
     categoria: "Operação",
     resumo: "Fluxo atual com clientes, serviços, agenda, financeiro, relatórios e configurações.",
     objetivo: "Orientar empresas de serviços pelo que já está disponível na vertical.",
     acesso: "Use Dashboard, Clientes, Serviços, Agenda, Financeiro, Relatórios e Configurações.",
     conteudo:
-      "A vertical Prestação de Serviços usa internamente o segmento clientes. O fluxo atual organiza clientes, serviços do catálogo, agenda de atendimentos, financeiro, relatórios e configurações da empresa. Atendimentos avançados, chat e integração completa com WhatsApp ainda não são módulos operacionais ativos.",
+      "A vertical Gestão de Serviços usa internamente o segmento clientes. O fluxo organiza clientes, serviços do catálogo, agenda, atendimentos e financeiro. O atendimento concluído gera uma conta a receber, e o recebimento é registrado explicitamente no Financeiro.",
     passos: ["Cadastre clientes.", "Cadastre serviços.", "Crie agendamentos com cliente, serviço, data e horário.", "Acompanhe financeiro e relatórios conforme o plano e o perfil do usuário."],
     cuidados: ["Não trate recursos futuros como disponíveis.", "Permissões de perfil continuam valendo dentro da empresa.", "Atendimentos não deve ser apresentado como módulo ativo enquanto não existir tela funcional."],
-    palavrasChave: ["prestação de serviços", "clientes", "serviços", "agenda", "financeiro", "relatórios"],
+    palavrasChave: ["gestão de serviços", "clientes", "serviços", "agenda", "financeiro", "relatórios"],
     segmentos: ["clientes"],
   }),
   artigo({
