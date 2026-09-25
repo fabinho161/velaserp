@@ -15,9 +15,14 @@ import { useConfirmacao } from "../context/useConfirmacao";
 import { usePlano } from "../hooks/usePlano";
 import { useTableSort } from "../hooks/useTableSort";
 import { normalizarSegmentoEmpresa } from "../config/segmentosEmpresa.js";
+import { PERMISSOES_EMPRESA } from "../config/perfisEmpresa.js";
 import { dataBR, moedaBR, numeroBR } from "../utils/formatters";
 import { INDICADORES_IE_DESTINATARIO } from "../utils/faturamento.js";
 import { prepararFiscalCliente, TIPOS_PESSOA_FISCAL } from "../utils/fiscalCliente.js";
+import {
+  montarAlteracaoStatusCliente,
+  montarDadosClientePersistencia,
+} from "../utils/clientesCRM.js";
 
 const TIPOS_CLIENTE = ["Final", "Revendedor", "Distribuidor", "Outro"];
 const STATUS_RELACIONAMENTO = ["Ativo", "Atenção", "Inativo"];
@@ -123,6 +128,8 @@ export default function ClientesCRM() {
     empresaId,
     empresaOwnerUid,
     empresas = [],
+    isAdminMaster,
+    temPermissaoEmpresaAtual,
     clientesComerciais = [],
     vendas = [],
     addItem,
@@ -160,6 +167,9 @@ export default function ClientesCRM() {
   ) || null;
   const isPrestacaoServicos =
     normalizarSegmentoEmpresa(empresaAtual?.segmento) === "clientes";
+  const podeEscreverClientes =
+    isAdminMaster || temPermissaoEmpresaAtual(PERMISSOES_EMPRESA.crm);
+  const podeExcluirClientes = false;
 
   const vendasValidas = useMemo(
     () =>
@@ -320,9 +330,10 @@ export default function ClientesCRM() {
       ) {
         return false;
       }
-      if (filtroTipo && cliente.tipo !== filtroTipo) return false;
+      if (!isPrestacaoServicos && filtroTipo && cliente.tipo !== filtroTipo) return false;
       if (
-        (isPrestacaoServicos || podeUsarCRMFollowUp) &&
+        !isPrestacaoServicos &&
+        podeUsarCRMFollowUp &&
         filtroRelacionamento &&
         cliente.statusRelacionamento !== filtroRelacionamento
       ) {
@@ -423,11 +434,13 @@ export default function ClientesCRM() {
   };
 
   const abrirNovoCliente = () => {
+    if (!podeEscreverClientes) return;
     limparFormulario();
     setModalAberto(true);
   };
 
   const editarCliente = (cliente) => {
+    if (!podeEscreverClientes) return;
     setClienteEditandoId(cliente.id);
     setForm({
       nome: cliente.nome || "",
@@ -479,6 +492,7 @@ export default function ClientesCRM() {
   };
 
   const salvarCliente = async () => {
+    if (!podeEscreverClientes) return;
     const nome = form.nome.trim();
     const telefoneNormalizado = normalizarTelefone(form.telefone);
 
@@ -503,49 +517,37 @@ export default function ClientesCRM() {
       return;
     }
 
-    let fiscalCliente;
-    try {
-      fiscalCliente = prepararFiscalCliente(form.fiscal, { uf: form.uf });
-    } catch (error) {
-      showToast(error.message, "warning");
-      return;
-    }
-
     const clienteAnterior = clienteEditandoId
       ? clientesComerciais.find((cliente) => cliente.id === clienteEditandoId)
       : null;
-    const clienteAtivo = form.ativo !== false;
-    let statusRelacionamento = form.statusRelacionamento;
 
-    if (!clienteAtivo) {
-      statusRelacionamento = "Inativo";
-    } else if (statusRelacionamento === "Inativo") {
-      statusRelacionamento = "Ativo";
+    let fiscalCliente = null;
+    if (!isPrestacaoServicos || !clienteAnterior) {
+      try {
+        fiscalCliente = prepararFiscalCliente(form.fiscal, { uf: form.uf });
+      } catch (error) {
+        showToast(error.message, "warning");
+        return;
+      }
     }
 
-    const dadosCliente = {
-      ...form,
-      nome,
-      uf: String(form.uf || "").trim().toUpperCase(),
-      telefone: form.telefone.trim(),
-      email: form.email.trim(),
-      cidade: form.cidade.trim(),
-      endereco: form.endereco.trim(),
-      documento: form.documento.trim(),
-      fiscal: fiscalCliente,
+    const dadosCliente = montarDadosClientePersistencia({
+      form: { ...form, nome },
+      fiscalCliente,
+      isPrestacaoServicos,
+      clienteExistente: clienteAnterior,
       empresaId,
       userId: user?.uid || "",
-      ativo: clienteAtivo,
-      statusRelacionamento,
-      updatedAt: new Date(),
-    };
+    });
 
     if (clienteEditandoId) {
       await updateItem("clientesComerciais", clienteEditandoId, dadosCliente);
 
-      if (clienteAnterior?.ativo === false && clienteAtivo) {
+      const atualizouStatus = Object.hasOwn(dadosCliente, "ativo");
+
+      if (atualizouStatus && clienteAnterior?.ativo === false && dadosCliente.ativo !== false) {
         showToast("Cliente reativado com sucesso.", "success");
-      } else if (clienteAnterior?.ativo !== false && !clienteAtivo) {
+      } else if (atualizouStatus && clienteAnterior?.ativo !== false && dadosCliente.ativo === false) {
         showToast("Cliente desativado.", "success");
       } else {
         showToast("Cliente atualizado com sucesso.", "success");
@@ -561,22 +563,27 @@ export default function ClientesCRM() {
     fecharModal();
   };
 
-  const desativarCliente = async (cliente) => {
+  const alterarStatusCliente = async (cliente, ativo) => {
+    if (!podeEscreverClientes) return;
+
+    const acao = ativo ? "reativar" : "desativar";
     const confirmado = await confirmar(
-      isPrestacaoServicos
-        ? `Deseja desativar ${cliente.nome}? O histórico de relacionamento será preservado.`
-        : `Deseja desativar ${cliente.nome}? O histórico de compras será preservado.`
+      ativo
+        ? `Deseja reativar ${cliente.nome}?`
+        : isPrestacaoServicos
+          ? `Deseja desativar ${cliente.nome}? O histórico de relacionamento será preservado.`
+          : `Deseja desativar ${cliente.nome}? O histórico de compras será preservado.`
     );
 
     if (!confirmado) return;
 
-    await updateItem("clientesComerciais", cliente.id, {
-      ativo: false,
-      statusRelacionamento: "Inativo",
-      updatedAt: new Date(),
-    });
+    await updateItem(
+      "clientesComerciais",
+      cliente.id,
+      montarAlteracaoStatusCliente(ativo)
+    );
 
-    showToast("Cliente desativado.", "success");
+    showToast(`Cliente ${acao === "reativar" ? "reativado" : "desativado"}.`, "success");
   };
 
   const obterMovimentacaoCliente = (cliente) => {
@@ -696,12 +703,12 @@ export default function ClientesCRM() {
           </h1>
           <p className="page-subtitle">
             {isPrestacaoServicos
-              ? "Gerencie seus clientes, relacionamento e próximos contatos."
+              ? "Gerencie os dados dos clientes atendidos pela empresa."
               : "Acompanhe clientes comerciais, histórico de compras e oportunidades de recompra."}
           </p>
         </div>
 
-        {podeUsarCRMBasico && (
+        {podeUsarCRMBasico && podeEscreverClientes && (
           <button type="button" onClick={abrirNovoCliente}>
             <UserPlus size={18} />
             Novo cliente
@@ -741,17 +748,6 @@ export default function ClientesCRM() {
             <small>Preservados no cadastro</small>
           </div>
 
-          <div className="card metric-card metric-amber">
-            <p>Contatos de hoje</p>
-            <h2>{resumo.contatosHoje}</h2>
-            <small>Relacionamento programado</small>
-          </div>
-
-          <div className="card metric-card metric-green">
-            <p>Próximos contatos</p>
-            <h2>{resumo.proximosContatos}</h2>
-            <small>Clientes ativos com data futura</small>
-          </div>
         </div>
       ) : podeUsarCRMInteligente && (
         <div className="crm-summary-grid">
@@ -826,16 +822,18 @@ export default function ClientesCRM() {
             </select>
           )}
 
-          <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
-            <option value="">Tipo de cliente</option>
-            {TIPOS_CLIENTE.map((tipo) => (
-              <option key={tipo} value={tipo}>
-                {tipo}
-              </option>
-            ))}
-          </select>
+          {!isPrestacaoServicos && (
+            <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
+              <option value="">Tipo de cliente</option>
+              {TIPOS_CLIENTE.map((tipo) => (
+                <option key={tipo} value={tipo}>
+                  {tipo}
+                </option>
+              ))}
+            </select>
+          )}
 
-          {(isPrestacaoServicos || podeUsarCRMFollowUp) && (
+          {!isPrestacaoServicos && podeUsarCRMFollowUp && (
             <select
               value={filtroRelacionamento}
               onChange={(e) => setFiltroRelacionamento(e.target.value)}
@@ -871,11 +869,9 @@ export default function ClientesCRM() {
               <tr>
                 <th>{renderCabecalhoOrdenavel("Cliente", "nome")}</th>
                 <th>Telefone</th>
-                <th>{renderCabecalhoOrdenavel("Tipo", "tipo")}</th>
+                {isPrestacaoServicos && <th>E-mail</th>}
+                {!isPrestacaoServicos && <th>{renderCabecalhoOrdenavel("Tipo", "tipo")}</th>}
                 <th>{renderCabecalhoOrdenavel("Cidade/UF", "cidade")}</th>
-                {isPrestacaoServicos && (
-                  <th>{renderCabecalhoOrdenavel("Relacionamento", "relacionamento")}</th>
-                )}
                 {!isPrestacaoServicos && (
                   <th>{renderCabecalhoOrdenavel("Última compra", "ultimaCompra")}</th>
                 )}
@@ -894,11 +890,8 @@ export default function ClientesCRM() {
                 {!isPrestacaoServicos && podeUsarCRMInteligente && (
                   <th>{renderCabecalhoOrdenavel("Status recompra", "statusRecompra")}</th>
                 )}
-                {(isPrestacaoServicos || podeUsarCRMFollowUp) && (
+                {!isPrestacaoServicos && podeUsarCRMFollowUp && (
                   <th>{renderCabecalhoOrdenavel("Próxima ação", "proximaAcao")}</th>
-                )}
-                {isPrestacaoServicos && (
-                  <th>{renderCabecalhoOrdenavel("Data próxima ação", "dataProximaAcao")}</th>
                 )}
                 {isPrestacaoServicos && (
                   <th>{renderCabecalhoOrdenavel("Status", "status")}</th>
@@ -915,7 +908,7 @@ export default function ClientesCRM() {
                   <tr
                     key={cliente.id}
                     className="crm-client-row"
-                    onDoubleClick={() => editarCliente(cliente)}
+                    onDoubleClick={() => podeEscreverClientes && editarCliente(cliente)}
                   >
                     <td>
                       <strong>{cliente.nome}</strong>
@@ -924,11 +917,9 @@ export default function ClientesCRM() {
                       )}
                     </td>
                     <td>{cliente.telefone || "-"}</td>
-                    <td>{cliente.tipo || "-"}</td>
+                    {isPrestacaoServicos && <td>{cliente.email || "-"}</td>}
+                    {!isPrestacaoServicos && <td>{cliente.tipo || "-"}</td>}
                     <td>{[cliente.cidade, cliente.uf].filter(Boolean).join("/") || "-"}</td>
-                    {isPrestacaoServicos && (
-                      <td>{cliente.statusRelacionamento || "-"}</td>
-                    )}
                     {!isPrestacaoServicos && (
                       <td>{formatarData(metricas.dataUltimaCompra)}</td>
                     )}
@@ -959,10 +950,10 @@ export default function ClientesCRM() {
                         </span>
                       </td>
                     )}
-                    {(isPrestacaoServicos || podeUsarCRMFollowUp) && (
+                    {!isPrestacaoServicos && podeUsarCRMFollowUp && (
                       <td>
                         {cliente.proximaAcao || "-"}
-                        {!isPrestacaoServicos && cliente.dataProximaAcao && (
+                        {cliente.dataProximaAcao && (
                           <small className="crm-next-action-date">
                             {formatarData(cliente.dataProximaAcao)}
                           </small>
@@ -970,16 +961,12 @@ export default function ClientesCRM() {
                       </td>
                     )}
                     {isPrestacaoServicos && (
-                      <td>{formatarData(cliente.dataProximaAcao)}</td>
-                    )}
-                    {isPrestacaoServicos && (
                       <td>{cliente.ativo === false ? "Inativo" : "Ativo"}</td>
                     )}
                     <td onDoubleClick={(event) => event.stopPropagation()}>
-                      <ActionMenu
-                        label="Abrir ações do cliente"
-                        items={[
-                          {
+                      {(() => {
+                        const acoesCliente = [
+                          podeEscreverClientes && {
                             label: "Editar cliente",
                             onClick: () => editarCliente(cliente),
                           },
@@ -992,19 +979,30 @@ export default function ClientesCRM() {
                             disabled: !normalizarTelefone(cliente.telefone),
                             onClick: () => abrirWhatsapp(cliente),
                           },
-                          {
-                            label: "Desativar cliente",
-                            danger: true,
-                            disabled: cliente.ativo === false,
-                            onClick: () => desativarCliente(cliente),
+                          podeEscreverClientes && {
+                            label: cliente.ativo === false
+                              ? "Reativar cliente"
+                              : "Desativar cliente",
+                            danger: cliente.ativo !== false,
+                            onClick: () => alterarStatusCliente(
+                              cliente,
+                              cliente.ativo === false
+                            ),
                           },
-                          {
+                          podeExcluirClientes && {
                             label: "Excluir cliente",
                             danger: true,
                             onClick: () => solicitarExclusaoCliente(cliente),
                           },
-                        ].filter(Boolean)}
-                      />
+                        ].filter(Boolean);
+
+                        return acoesCliente.length > 0 ? (
+                          <ActionMenu
+                            label="Abrir ações do cliente"
+                            items={acoesCliente}
+                          />
+                        ) : null;
+                      })()}
                     </td>
                   </tr>
                 );
@@ -1015,7 +1013,7 @@ export default function ClientesCRM() {
                   <td
                     colSpan={
                       isPrestacaoServicos
-                        ? 9
+                        ? 6
                         : podeUsarCRMInteligente
                         ? podeUsarCRMFollowUp
                           ? 12
@@ -1077,7 +1075,7 @@ export default function ClientesCRM() {
                 />
               </label>
 
-              <details className="crm-fiscal-details crm-field-full">
+              {!isPrestacaoServicos && <details className="crm-fiscal-details crm-field-full">
                 <summary>Dados fiscais do destinatário</summary>
                 <div className="crm-form-grid">
                   <label>
@@ -1154,7 +1152,7 @@ export default function ClientesCRM() {
                     </label>
                   )}
                 </div>
-              </details>
+              </details>}
 
               <label>
                 Cidade
@@ -1173,21 +1171,23 @@ export default function ClientesCRM() {
                 />
               </label>
 
-              <label>
-                Tipo
-                <select
-                  value={form.tipo}
-                  onChange={(e) => setForm({ ...form, tipo: e.target.value })}
-                >
-                  {TIPOS_CLIENTE.map((tipo) => (
-                    <option key={tipo} value={tipo}>
-                      {tipo}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {!isPrestacaoServicos && (
+                <label>
+                  Tipo
+                  <select
+                    value={form.tipo}
+                    onChange={(e) => setForm({ ...form, tipo: e.target.value })}
+                  >
+                    {TIPOS_CLIENTE.map((tipo) => (
+                      <option key={tipo} value={tipo}>
+                        {tipo}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
-              {clienteEditandoId && (
+              {!isPrestacaoServicos && clienteEditandoId && (
                 <label className="crm-toggle-field">
                   <input
                     type="checkbox"
@@ -1217,7 +1217,7 @@ export default function ClientesCRM() {
                 </label>
               )}
 
-              {(isPrestacaoServicos || podeUsarCRMFollowUp) && (
+              {!isPrestacaoServicos && podeUsarCRMFollowUp && (
                 <label>
                   Relacionamento
                   <select
@@ -1243,7 +1243,7 @@ export default function ClientesCRM() {
                 />
               </label>
 
-              {(isPrestacaoServicos || podeUsarCRMFollowUp) && (
+              {!isPrestacaoServicos && podeUsarCRMFollowUp && (
                 <>
                   <label>
                     Próxima ação
@@ -1264,17 +1264,20 @@ export default function ClientesCRM() {
                     />
                   </label>
 
-                  <label className="crm-field-full">
-                    Observações
-                    <textarea
-                      rows="3"
-                      value={form.observacoes}
-                      onChange={(e) =>
-                        setForm({ ...form, observacoes: e.target.value })
-                      }
-                    />
-                  </label>
                 </>
+              )}
+
+              {(isPrestacaoServicos || podeUsarCRMFollowUp) && (
+                <label className="crm-field-full">
+                  Observações
+                  <textarea
+                    rows="3"
+                    value={form.observacoes}
+                    onChange={(e) =>
+                      setForm({ ...form, observacoes: e.target.value })
+                    }
+                  />
+                </label>
               )}
             </div>
 
