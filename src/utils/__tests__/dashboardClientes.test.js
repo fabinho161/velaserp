@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   calcularDashboardClientes,
   obterAcoesRapidasDashboardClientes,
@@ -8,6 +10,11 @@ import {
   resumirFinanceiroDashboard,
   resolverTipoDashboard,
 } from "../dashboardClientes.js";
+
+const firestoreRules = readFileSync(
+  fileURLToPath(new URL("../../../firestore.rules", import.meta.url)),
+  "utf8",
+);
 
 const hoje = "2026-09-24";
 const agenda = [
@@ -77,4 +84,19 @@ test("estados vazios e valores ausentes permanecem seguros", () => {
   assert.equal(resultado.financeiro.aReceber, 0);
   assert.equal(Number.isNaN(resultado.financeiro.ticketMedioRecebido), false);
   assert.deepEqual(resultado.servicosMaisRealizados, []);
+});
+
+test("Rules alinham leitura financeira do Dashboard com o perfil financeiro", () => {
+  assert.match(
+    firestoreRules,
+    /modulo == "financeiro"\s*&&\s*isCompanyRole\(role, perfil, \["financeiro"\]\)/,
+  );
+  assert.match(
+    firestoreRules,
+    /match \/contasReceber\/\{contaId\}[\s\S]*?isCompanySegment\(userId, empresaId, "clientes"\)[\s\S]*?canReadModule\(userId, empresaId, "financeiro"\)/,
+  );
+  assert.match(
+    firestoreRules,
+    /match \/agendaControles\/\{dataControle\}\s*\{\s*allow read, write: if false;/,
+  );
 });

@@ -194,6 +194,10 @@ service cloud.firestore {
           ])
         ) ||
         (
+          modulo == "financeiro" &&
+          isCompanyRole(role, perfil, ["financeiro"])
+        ) ||
+        (
           (modulo == "veiculos" || modulo == "servicos" || modulo == "ordensServico") &&
           isCompanyRole(role, perfil, [
             "financeiro",
