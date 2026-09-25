@@ -1,15 +1,12 @@
-import { auth } from "../firebase";
+import { fetchAutenticado } from "./apiAutenticada.js";
 
 const API_URL = import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_URL || "http://localhost:10000";
 
 const requisitar = async (path, { method = "POST", dados } = {}) => {
-  const usuario = auth.currentUser;
-  if (!usuario) throw new Error("Sua sessão expirou. Entre novamente.");
-  const response = await fetch(`${API_URL}/api/agenda${path}`, {
+  const response = await fetchAutenticado(`${API_URL}/api/agenda${path}`, {
     method,
     headers: {
-      Authorization: `Bearer ${await usuario.getIdToken()}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(dados),
