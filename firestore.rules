@@ -770,7 +770,9 @@ service cloud.firestore {
           allow read: if hasCompanyRole(userId, empresaId, [
             "administrador_empresa",
             "producao",
-            "comercial"
+            "comercial",
+            "financeiro",
+            "visualizacao"
           ]);
           allow create, update: if canWriteModule(userId, empresaId, "clientesComerciais");
           allow delete: if false;

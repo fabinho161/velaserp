@@ -69,10 +69,6 @@ export function useParametros() {
         setState(docSnap.data().items);
       } else {
         setState(defaultValues);
-        // Optionally, create the document with default values if it doesn't exist
-        setDoc(paramRef, { items: defaultValues }, { merge: true }).catch(error => {
-          console.error(`Erro ao criar documento de parâmetro padrão para ${paramType}:`, error);
-        });
       }
     }, (error) => {
       console.error(`Erro ao ouvir ${paramType}:`, error);
