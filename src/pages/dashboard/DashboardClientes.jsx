@@ -32,6 +32,7 @@ import {
   obterAcoesRapidasDashboardClientes,
   obterDataLocalISO,
 } from "../../utils/dashboardClientes.js";
+import { registrarErroFirestore } from "../../utils/firestoreDiagnostico.js";
 
 const PERFIS_OPERACAO_AGENDA = new Set(["administrador_empresa", "comercial"]);
 const PERFIS_OPERACAO_SERVICOS = new Set(["administrador_empresa", "comercial", "producao"]);
@@ -97,12 +98,19 @@ export default function DashboardClientes() {
         carregado: true,
       }),
       (error) => {
-        console.error("Erro ao carregar agenda do Dashboard:", error);
+        registrarErroFirestore({
+          origem: "DashboardClientes",
+          colecao: "agendamentos",
+          operacao: "list:onSnapshot",
+          error,
+          perfil: perfilEmpresaAtual,
+          segmento: "clientes",
+        });
         setAgendaSnapshot({ chave: chaveEmpresa, lista: [], carregado: true });
         showToast("Não foi possível carregar os dados da agenda.", "error");
       }
     );
-  }, [chaveEmpresa, empresaId, ownerUid, podeVerAgenda, showToast]);
+  }, [chaveEmpresa, empresaId, ownerUid, podeVerAgenda, perfilEmpresaAtual, showToast]);
 
   useEffect(() => {
     if (!chaveEmpresa || !podeVerFinanceiro) return undefined;
@@ -114,12 +122,19 @@ export default function DashboardClientes() {
         carregado: true,
       }),
       (error) => {
-        console.error("Erro ao carregar financeiro do Dashboard:", error);
+        registrarErroFirestore({
+          origem: "DashboardClientes",
+          colecao: "contasReceber",
+          operacao: "list:onSnapshot",
+          error,
+          perfil: perfilEmpresaAtual,
+          segmento: "clientes",
+        });
         setContasSnapshot({ chave: chaveEmpresa, lista: [], carregado: true });
         showToast("Não foi possível carregar o resumo financeiro.", "error");
       }
     );
-  }, [chaveEmpresa, empresaId, ownerUid, podeVerFinanceiro, showToast]);
+  }, [chaveEmpresa, empresaId, ownerUid, podeVerFinanceiro, perfilEmpresaAtual, showToast]);
 
   const agendaCarregada = !podeVerAgenda ||
     (agendaSnapshot.chave === chaveEmpresa && agendaSnapshot.carregado);

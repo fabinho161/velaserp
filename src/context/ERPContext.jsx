@@ -29,6 +29,7 @@ import {
   normalizarSegmentoEmpresa,
   segmentoPossuiModulo,
 } from "../config/segmentosEmpresa.js";
+import { registrarErroFirestore } from "../utils/firestoreDiagnostico.js";
 
 const assinaturaPadrao = assinaturaGratisPadrao;
 const API_URL =
@@ -295,17 +296,38 @@ const garantirUsuarioDonoEmpresa = async ({ ownerUid, empresaId, usuario }) => {
     "usuariosEmpresa",
     usuario.uid
   );
-  const snapshot = await getDoc(usuarioEmpresaRef);
+  let snapshot;
+  try {
+    snapshot = await getDoc(usuarioEmpresaRef);
+  } catch (error) {
+    registrarErroFirestore({
+      origem: "ERPContext",
+      colecao: "usuariosEmpresa/{ownerUid}",
+      operacao: "get:getDoc",
+      error,
+    });
+    throw error;
+  }
   const dadosAtuais = snapshot.exists() ? snapshot.data() : {};
 
-  await setDoc(
-    usuarioEmpresaRef,
-    {
-      ...montarDadosDonoEmpresa(usuario, dadosAtuais),
-      criadoEm: dadosAtuais.criadoEm || new Date(),
-    },
-    { merge: true }
-  );
+  try {
+    await setDoc(
+      usuarioEmpresaRef,
+      {
+        ...montarDadosDonoEmpresa(usuario, dadosAtuais),
+        criadoEm: dadosAtuais.criadoEm || new Date(),
+      },
+      { merge: true }
+    );
+  } catch (error) {
+    registrarErroFirestore({
+      origem: "ERPContext",
+      colecao: "usuariosEmpresa/{ownerUid}",
+      operacao: "merge:setDoc",
+      error,
+    });
+    throw error;
+  }
 };
 
 export function ERPProvider({ children }) {
@@ -407,11 +429,13 @@ export function ERPProvider({ children }) {
       }
 
       const prepararUsuario = async () => {
+        let operacao = "get:getDoc";
         try {
           const userRef = doc(db, "users", usuario.uid);
           const userSnapshot = await getDoc(userRef);
 
           if (!userSnapshot.exists()) {
+            operacao = "create:setDoc";
             await setDoc(userRef, {
               email: usuario.email || "",
               nome: usuario.displayName || "",
@@ -419,6 +443,7 @@ export function ERPProvider({ children }) {
               criadoEm: new Date(),
             });
           } else {
+            operacao = "merge:setDoc";
             await setDoc(userRef, {
               email: usuario.email || "",
               nome: usuario.displayName || userSnapshot.data()?.nome || "",
@@ -426,7 +451,12 @@ export function ERPProvider({ children }) {
           }
 
         } catch (error) {
-          console.error("Erro ao preparar perfil do usuário:", error);
+          registrarErroFirestore({
+            origem: "ERPContext",
+            colecao: "users/{authUid}",
+            operacao,
+            error,
+          });
         }
       };
 
@@ -455,7 +485,12 @@ export function ERPProvider({ children }) {
         setPerfilCarregando(false);
       },
       (error) => {
-        console.error("Erro ao ouvir perfil do usuário:", error);
+        registrarErroFirestore({
+          origem: "ERPContext",
+          colecao: "users/{authUid}",
+          operacao: "get:onSnapshot",
+          error,
+        });
         setPerfilCarregando(false);
       }
     );
@@ -470,7 +505,12 @@ export function ERPProvider({ children }) {
         } : assinaturaPadrao);
       },
       (error) => {
-        console.error("Erro ao ouvir assinatura do usuário:", error);
+        registrarErroFirestore({
+          origem: "ERPContext",
+          colecao: "users/{authUid}/assinatura/plano",
+          operacao: "get:onSnapshot",
+          error,
+        });
         setAssinaturaUsuario(assinaturaPadrao);
       }
     );
@@ -634,8 +674,32 @@ const excluirEmpresa = useCallback(async (id) => {
         try {
           const vinculosRef = collection(db, "usuariosPorAuth", user.uid, "empresas");
           const ref = collection(db, "users", user.uid, "empresas");
-          const vinculosSnapshot = await getDocs(vinculosRef);
-          const snapshot = await getDocs(ref);
+          let vinculosSnapshot;
+          let snapshot;
+
+          try {
+            vinculosSnapshot = await getDocs(vinculosRef);
+          } catch (error) {
+            registrarErroFirestore({
+              origem: "ERPContext",
+              colecao: "usuariosPorAuth/{authUid}/empresas",
+              operacao: "list:getDocs",
+              error,
+            });
+            throw error;
+          }
+
+          try {
+            snapshot = await getDocs(ref);
+          } catch (error) {
+            registrarErroFirestore({
+              origem: "ERPContext",
+              colecao: "users/{authUid}/empresas",
+              operacao: "list:getDocs",
+              error,
+            });
+            throw error;
+          }
 
           if (snapshot.empty && vinculosSnapshot.empty) {
             const bloquearCriacaoAutomatica =
@@ -940,7 +1004,14 @@ const excluirEmpresa = useCallback(async (id) => {
           setState(lista);
         },
         (error) => {
-          console.error(`Erro ao ouvir ${colecao}:`, error);
+          registrarErroFirestore({
+            origem: "ERPContext",
+            colecao,
+            operacao: "list:onSnapshot",
+            error,
+            perfil: perfilAtual,
+            segmento: normalizarSegmentoEmpresa(empresaAtual?.segmento),
+          });
         }
       );
     };
@@ -969,7 +1040,14 @@ const excluirEmpresa = useCallback(async (id) => {
           setConfiguracoes(lista);
         },
         (error) => {
-          console.error("Erro ao ouvir configurações:", error);
+          registrarErroFirestore({
+            origem: "ERPContext",
+            colecao: "configuracoes",
+            operacao: "list:onSnapshot",
+            error,
+            perfil: perfilAtual,
+            segmento: normalizarSegmentoEmpresa(empresaAtual?.segmento),
+          });
         }
       ),
     ];
@@ -1006,7 +1084,12 @@ const excluirEmpresa = useCallback(async (id) => {
         setUsuariosEmpresaCarregando(false);
       },
       (error) => {
-        console.error("Erro ao ouvir usuÃ¡rios da empresa:", error);
+        registrarErroFirestore({
+          origem: "ERPContext",
+          colecao: "usuariosEmpresa",
+          operacao: "list:onSnapshot",
+          error,
+        });
         setUsuariosEmpresa([]);
         setUsuariosEmpresaCarregando(false);
       }
@@ -1122,7 +1205,14 @@ const excluirEmpresa = useCallback(async (id) => {
         );
       },
       (error) => {
-        console.error("Erro ao ouvir documento raiz da empresa convidada:", error);
+        registrarErroFirestore({
+          origem: "ERPContext",
+          colecao: "empresaRaizConvidada",
+          operacao: "get:onSnapshot",
+          error,
+          perfil: perfilEmpresaAtual,
+          segmento: normalizarSegmentoEmpresa(empresaSelecionada?.segmento),
+        });
         setEmpresas((empresasAtuais) =>
           removerPlanoEspelhoEmpresa(empresasAtuais, empresaId, empresaOwnerUid)
         );
@@ -1138,7 +1228,9 @@ const excluirEmpresa = useCallback(async (id) => {
   }, [
     empresaId,
     empresaOwnerUid,
+    empresaSelecionada,
     empresaSelecionadaExiste,
+    perfilEmpresaAtual,
     statusEmpresaSelecionada,
     usuarioEmpresaAtualAtivo,
     usuarioUid,
