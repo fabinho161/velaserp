@@ -1714,6 +1714,109 @@ body {
   font-weight: 700;
 }
 
+.agenda-services-field {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #dbe3ee;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.agenda-services-heading > div,
+.agenda-service-item > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.agenda-services-heading strong {
+  color: #334155;
+  font-size: 13px;
+}
+
+.agenda-services-heading small,
+.agenda-service-item small {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.agenda-services-list {
+  display: grid;
+  gap: 7px;
+}
+
+.agenda-service-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid #dbe3ee;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.agenda-service-item strong {
+  overflow-wrap: anywhere;
+}
+
+.agenda-service-remove {
+  display: inline-flex;
+  flex: 0 0 32px;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: #fff;
+  color: #b91c1c;
+  box-shadow: none;
+}
+
+.agenda-service-remove:hover {
+  border-color: #ef4444;
+  background: #fef2f2;
+  color: #991b1b;
+  transform: none;
+  box-shadow: none;
+}
+
+.agenda-service-remove:focus-visible {
+  outline: 3px solid rgba(239, 68, 68, 0.22);
+  outline-offset: 2px;
+}
+
+.agenda-service-picker {
+  display: grid;
+  gap: 6px;
+}
+
+.agenda-service-picker > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.agenda-services-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding-top: 2px;
+  color: #475569;
+  font-size: 13px;
+}
+
+.agenda-services-empty {
+  color: #64748b;
+  font-size: 13px;
+}
+
 .fornecedores-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1751,6 +1854,15 @@ body {
   .fornecedores-card-header,
   .fornecedores-title-block {
     align-items: flex-start;
+  }
+
+  .agenda-service-item {
+    align-items: flex-start;
+  }
+
+  .agenda-services-summary {
+    display: grid;
+    gap: 5px;
   }
 }
 

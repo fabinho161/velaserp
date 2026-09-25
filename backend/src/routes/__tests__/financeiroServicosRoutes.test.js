@@ -79,6 +79,103 @@ test("conclusao atomica cria conta pendente unica com valor historico", async ()
   assert.equal(docs.get("users/owner/empresas/empresa/agendamentos/a1").status, "concluido");
 });
 
+test("conclusao multisservico cria uma unica conta pela composicao historica", async () => {
+  const { db, docs } = criarBanco();
+  const agenda = docs.get("users/owner/empresas/empresa/agendamentos/a1");
+  agenda.servicosSnapshot = [
+    { servicoId: "s2", servicoNome: "Alinhamento", duracaoMinutos: 45, valorUnitario: 120 },
+    { servicoId: "s1", servicoNome: "Troca de oleo", duracaoMinutos: 60, valorUnitario: 150 },
+  ];
+  agenda.valorTotalServicos = 270;
+  agenda.valorServico = 999;
+  const handler = criarHandlerConcluir({ getDb: () => db, agora: () => "agora" });
+
+  const primeira = await chamar(handler, { agendamentoId: "a1" });
+  const segunda = await chamar(handler, { agendamentoId: "a1" });
+  const contas = [...docs.entries()].filter(([key]) => key.includes("/contasReceber/"));
+
+  assert.equal(primeira.criada, true);
+  assert.equal(segunda.criada, false);
+  assert.equal(contas.length, 1);
+  assert.equal(contas[0][0].endsWith("/contasReceber/atendimento_a1"), true);
+  assert.equal(contas[0][1].valor, 270);
+  assert.equal(contas[0][1].descricao, "Alinhamento + 1 serviço");
+  assert.deepEqual(contas[0][1].servicosSnapshot.map((item) => item.servicoId), ["s2", "s1"]);
+});
+
+test("inconsistencia multisservico impede conclusao atomica", async () => {
+  const { db, docs } = criarBanco();
+  const agenda = docs.get("users/owner/empresas/empresa/agendamentos/a1");
+  agenda.servicosSnapshot = [
+    { servicoId: "s1", servicoNome: "Servico", duracaoMinutos: 60, valorUnitario: 120 },
+  ];
+  agenda.valorTotalServicos = 121;
+  const resposta = await chamar(criarHandlerConcluir({ getDb: () => db }), { agendamentoId: "a1" });
+
+  assert.equal(resposta.status, 422);
+  assert.match(resposta.error, /diverge/);
+  assert.equal(agenda.status, "em_atendimento");
+  assert.equal([...docs.keys()].some((key) => key.includes("/contasReceber/")), false);
+});
+
+test("composicao gratuita e paga gera uma unica conta somente pelo total", async () => {
+  const { db, docs } = criarBanco();
+  const agenda = docs.get("users/owner/empresas/empresa/agendamentos/a1");
+  agenda.servicosSnapshot = [
+    { servicoId: "gratis", servicoNome: "Cortesia", duracaoMinutos: 15, valorUnitario: 0 },
+    { servicoId: "pago", servicoNome: "Servico pago", duracaoMinutos: 45, valorUnitario: 100 },
+  ];
+  agenda.valorTotalServicos = 100;
+
+  const resposta = await chamar(
+    criarHandlerConcluir({ getDb: () => db, agora: () => "agora" }),
+    { agendamentoId: "a1" }
+  );
+  const contas = [...docs.entries()].filter(([key]) => key.includes("/contasReceber/"));
+
+  assert.equal(resposta.ok, true);
+  assert.equal(resposta.status, "concluido");
+  assert.equal(resposta.criada, true);
+  assert.equal(contas.length, 1);
+  assert.equal(contas[0][1].valor, 100);
+  assert.equal(contas[0][1].servicosSnapshot.length, 2);
+});
+
+test("snapshots multisservico invalidos retornam 422 sem concluir nem cobrar", async () => {
+  const casos = [
+    { servicosSnapshot: [], valorTotalServicos: 0 },
+    {
+      servicosSnapshot: [
+        { servicoId: "s1", servicoNome: "A", duracaoMinutos: 30, valorUnitario: 50 },
+        { servicoId: "s1", servicoNome: "A duplicado", duracaoMinutos: 30, valorUnitario: 50 },
+      ],
+      valorTotalServicos: 100,
+    },
+    {
+      servicosSnapshot: [
+        { servicoId: "s1", servicoNome: "Negativo", duracaoMinutos: 30, valorUnitario: -1 },
+      ],
+      valorTotalServicos: -1,
+    },
+    {
+      servicosSnapshot: [
+        { servicoId: "s1", servicoNome: "Nao finito", duracaoMinutos: 30, valorUnitario: Infinity },
+      ],
+      valorTotalServicos: Infinity,
+    },
+  ];
+
+  for (const dados of casos) {
+    const { db, docs } = criarBanco();
+    const agenda = docs.get("users/owner/empresas/empresa/agendamentos/a1");
+    Object.assign(agenda, dados);
+    const resposta = await chamar(criarHandlerConcluir({ getDb: () => db }), { agendamentoId: "a1" });
+    assert.equal(resposta.status, 422);
+    assert.equal(agenda.status, "em_atendimento");
+    assert.equal([...docs.keys()].some((key) => key.includes("/contasReceber/")), false);
+  }
+});
+
 test("reconciliacao nao altera agenda nem duplica conta", async () => {
   const { db, docs } = criarBanco();
   const agenda = docs.get("users/owner/empresas/empresa/agendamentos/a1");
@@ -87,6 +184,34 @@ test("reconciliacao nao altera agenda nem duplica conta", async () => {
   assert.equal((await chamar(handler, {})).criadas, 1);
   assert.equal((await chamar(handler, {})).criadas, 0);
   assert.equal(Object.hasOwn(agenda, "concluidoEm"), false);
+});
+
+test("reconciliacao multisservico reconstrói a conta pelo snapshot sem sobrescrever conta existente", async () => {
+  const { db, docs } = criarBanco();
+  const agenda = docs.get("users/owner/empresas/empresa/agendamentos/a1");
+  agenda.status = "concluido";
+  agenda.servicosSnapshot = [
+    { servicoId: "s1", servicoNome: "Historico A", duracaoMinutos: 30, valorUnitario: 80 },
+    { servicoId: "s2", servicoNome: "Historico B", duracaoMinutos: 45, valorUnitario: 70 },
+  ];
+  agenda.valorTotalServicos = 150;
+  const handler = criarHandlerSincronizar({ getDb: () => db, agora: () => "agora" });
+
+  assert.equal((await chamar(handler, {})).criadas, 1);
+  const contaPath = "users/owner/empresas/empresa/contasReceber/atendimento_a1";
+  const conta = docs.get(contaPath);
+  assert.equal(conta.valor, 150);
+  assert.equal(conta.descricao, "Historico A + 1 serviço");
+  assert.deepEqual(conta.servicosSnapshot, agenda.servicosSnapshot);
+
+  conta.status = "recebido";
+  conta.pagamento = { formaPagamento: "pix", valorRecebido: 150 };
+  agenda.servicosSnapshot[0].valorUnitario = 999;
+  agenda.valorTotalServicos = 1069;
+  assert.equal((await chamar(handler, {})).criadas, 0);
+  assert.equal(docs.get(contaPath).status, "recebido");
+  assert.deepEqual(docs.get(contaPath).pagamento, { formaPagamento: "pix", valorRecebido: 150 });
+  assert.equal(docs.get(contaPath).valor, 150);
 });
 
 test("financeiro aceita empresa legada servicos como Gestao de Servicos", async () => {

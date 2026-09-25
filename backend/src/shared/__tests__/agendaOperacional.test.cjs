@@ -2,11 +2,66 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   agendamentosConflitam,
+  calcularDuracaoTotalServicos,
+  calcularValorTotalServicos,
   existeConflitoAgenda,
   montarSnapshotCliente,
   montarSnapshotServico,
+  normalizarServicosAgendamento,
+  possuiServicosDuplicados,
+  resumirServicosAgendamento,
   validarIntervaloAgenda,
 } = require("../agendaOperacional.cjs");
+
+const servicosSnapshot = [
+  { servicoId: "a", servicoNome: "Troca de óleo", duracaoMinutos: 60, valorUnitario: 150 },
+  { servicoId: "b", servicoNome: "Alinhamento", duracaoMinutos: 45, valorUnitario: 120.5 },
+  { servicoId: "c", servicoNome: "Balanceamento", duracaoMinutos: 0, valorUnitario: 0 },
+];
+
+test("normaliza modelo novo e adapta legado sem mutacao", () => {
+  assert.deepEqual(normalizarServicosAgendamento({ servicosSnapshot }), servicosSnapshot);
+  const legado = { servicoId: "l", servicoNome: "Legado", valorServico: 80, duracaoMinutos: 30 };
+  assert.deepEqual(normalizarServicosAgendamento(legado), [
+    { servicoId: "l", servicoNome: "Legado", valorUnitario: 80, duracaoMinutos: 30 },
+  ]);
+  assert.equal(Object.hasOwn(legado, "servicosSnapshot"), false);
+});
+
+test("modelo novo valido prevalece e invalido recorre ao legado", () => {
+  const legado = { servicoId: "l", servicoNome: "Legado", valorServico: 80, duracaoMinutos: 30 };
+  assert.deepEqual(normalizarServicosAgendamento({ ...legado, servicosSnapshot }), servicosSnapshot);
+  assert.deepEqual(normalizarServicosAgendamento({ ...legado, servicosSnapshot: [] }), [
+    { servicoId: "l", servicoNome: "Legado", valorUnitario: 80, duracaoMinutos: 30 },
+  ]);
+  assert.deepEqual(normalizarServicosAgendamento({
+    ...legado, servicosSnapshot: [{ servicoId: "x", servicoNome: "Inválido", duracaoMinutos: 1, valorUnitario: -1 }],
+  }), [{ servicoId: "l", servicoNome: "Legado", valorUnitario: 80, duracaoMinutos: 30 }]);
+  assert.deepEqual(normalizarServicosAgendamento({ servicosSnapshot: [] }), []);
+});
+
+test("duplicidade invalida o snapshot e nunca concatena com legado", () => {
+  const duplicados = [servicosSnapshot[0], { ...servicosSnapshot[1], servicoId: "a" }];
+  assert.equal(possuiServicosDuplicados(duplicados), true);
+  assert.equal(possuiServicosDuplicados(servicosSnapshot), false);
+  assert.deepEqual(normalizarServicosAgendamento({ servicosSnapshot: duplicados }), []);
+});
+
+test("agrega zero, decimais e duracao sugerida separadamente", () => {
+  assert.equal(calcularValorTotalServicos(servicosSnapshot), 270.5);
+  assert.equal(calcularDuracaoTotalServicos(servicosSnapshot), 105);
+  assert.equal(calcularValorTotalServicos([]), 0);
+  assert.equal(calcularDuracaoTotalServicos([]), 0);
+  assert.equal(calcularValorTotalServicos([{ ...servicosSnapshot[0], valorUnitario: Infinity }]), null);
+  assert.equal(calcularDuracaoTotalServicos([{ ...servicosSnapshot[0], duracaoMinutos: 1.5 }]), null);
+});
+
+test("resume listas sem alterar os snapshots", () => {
+  assert.equal(resumirServicosAgendamento([servicosSnapshot[0]]), "Troca de óleo");
+  assert.equal(resumirServicosAgendamento(servicosSnapshot.slice(0, 2)), "Troca de óleo + 1 serviço");
+  assert.equal(resumirServicosAgendamento(servicosSnapshot), "Troca de óleo + 2 serviços");
+  assert.equal(resumirServicosAgendamento([]), "");
+});
 
 const agenda = (horaInicio, horaFim, status = "agendado") => ({
   data: "2026-09-24", horaInicio, horaFim, status,

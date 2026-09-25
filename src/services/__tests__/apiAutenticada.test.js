@@ -157,3 +157,23 @@ test("Agenda troca visões limpando filtros estruturais e preservando a busca", 
   assert.match(agenda, /trocarVisaoAgenda\("hoje"\)/);
   assert.match(agenda, /trocarVisaoAgenda\("proximos"\)/);
 });
+
+test("Agenda multisservico envia somente IDs e mantem controles de composicao fora do modo leitura", () => {
+  const agenda = readFileSync(
+    fileURLToPath(new URL("../../pages/Agenda.jsx", import.meta.url)),
+    "utf8",
+  );
+  const chamadaCriacao = agenda.match(/await criarAgendamento\(\{[\s\S]*?\n {8}\}\);/)?.[0] || "";
+  const chamadaEdicao = agenda.match(/await editarAgendamento\([\s\S]*?\n {8}\}\);/)?.[0] || "";
+
+  assert.match(chamadaCriacao, /\.\.\.selecaoServicos/);
+  assert.match(chamadaEdicao, /\.\.\.selecaoServicos/);
+  assert.doesNotMatch(chamadaCriacao, /servicosSnapshot|valorTotalServicos|duracaoTotalServicos/);
+  assert.doesNotMatch(chamadaEdicao, /servicosSnapshot|valorTotalServicos|duracaoTotalServicos/);
+  assert.match(agenda, /!somenteLeitura && servicosDisponiveis\.length > 0/);
+  assert.match(agenda, /!somenteLeitura && \(/);
+  assert.match(agenda, /aria-label=\{`Remover serviço \$\{servico\.servicoNome\}`\}/);
+  assert.match(agenda, /form\.servicoIds\.length === 0/);
+  assert.match(agenda, /PERFIS_ESCRITA_AGENDA = new Set\(\["administrador_empresa", "comercial"\]\)/);
+  assert.match(agenda, /const somenteLeitura = !podeEscreverAgenda/);
+});

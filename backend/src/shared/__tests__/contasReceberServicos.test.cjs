@@ -40,3 +40,56 @@ test("valor zero e gratuito; valor invalido nao gera obrigacao", () => {
   }
   assert.throws(() => criar({ clienteId: "" }), /incompletos/);
 });
+
+const servicosSnapshot = [
+  { servicoId: "a", servicoNome: "Troca de oleo", duracaoMinutos: 60, valorUnitario: 150 },
+  { servicoId: "b", servicoNome: "Alinhamento", duracaoMinutos: 45, valorUnitario: 120 },
+  { servicoId: "c", servicoNome: "Balanceamento", duracaoMinutos: 45, valorUnitario: 100 },
+];
+
+test("multisservico cria uma conta com total, resumo e composicao historica ordenada", () => {
+  for (const quantidade of [1, 2, 3]) {
+    const itens = servicosSnapshot.slice(0, quantidade);
+    const valorTotalServicos = itens.reduce((total, item) => total + item.valorUnitario, 0);
+    const conta = criar({
+      servicosSnapshot: itens,
+      valorTotalServicos,
+      valorServico: 999,
+      servicoNome: "Compatibilidade que nao e fonte financeira",
+    });
+    assert.equal(conta.valor, valorTotalServicos);
+    assert.equal(conta.descricao, quantidade === 1
+      ? "Troca de oleo"
+      : `Troca de oleo + ${quantidade - 1} ${quantidade === 2 ? "serviço" : "serviços"}`);
+    assert.deepEqual(conta.servicosSnapshot, itens);
+  }
+});
+
+test("snapshot da conta nao mantem referencia mutavel ao agendamento", () => {
+  const itens = servicosSnapshot.slice(0, 2).map((item) => ({ ...item }));
+  const conta = criar({ servicosSnapshot: itens, valorTotalServicos: 270 });
+  itens[0].servicoNome = "Cadastro alterado depois";
+  assert.equal(conta.servicosSnapshot[0].servicoNome, "Troca de oleo");
+});
+
+test("multisservico de valor zero conclui sem criar conta", () => {
+  assert.equal(criar({
+    servicosSnapshot: [{
+      servicoId: "gratis", servicoNome: "Cortesia", duracaoMinutos: 30, valorUnitario: 0,
+    }],
+    valorTotalServicos: 0,
+  }), null);
+});
+
+test("divergencia, snapshot invalido ou duplicado impedem cobranca silenciosa", () => {
+  assert.throws(() => criar({ servicosSnapshot, valorTotalServicos: 999 }), /diverge/);
+  assert.throws(() => criar({
+    servicosSnapshot: [{ ...servicosSnapshot[0], valorUnitario: -1 }],
+    valorTotalServicos: 150,
+  }), /composicao historica/i);
+  assert.throws(() => criar({
+    servicosSnapshot: [servicosSnapshot[0], { ...servicosSnapshot[1], servicoId: "a" }],
+    valorTotalServicos: 270,
+  }), /composicao historica/i);
+  assert.throws(() => criar({ servicosSnapshot: [], valorTotalServicos: 0 }), /composicao historica/i);
+});

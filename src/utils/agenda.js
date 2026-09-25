@@ -10,6 +10,128 @@ export const FILTROS_RAPIDOS_AGENDA = ["todos", "hoje", "proximos", "em_atendime
 
 const STATUS_OPERACIONAIS_AGENDA = new Set(["agendado", "confirmado", "em_atendimento"]);
 
+const normalizarItemServicoAgendamento = (item = {}) => {
+  const servicoId = String(item.servicoId ?? "").trim();
+  const servicoNome = String(item.servicoNome ?? "").trim();
+  const duracaoMinutos = Number(item.duracaoMinutos);
+  const valorUnitario = Number(item.valorUnitario);
+
+  if (!servicoId || !servicoNome || !Number.isInteger(duracaoMinutos) || duracaoMinutos < 0 ||
+      typeof item.valorUnitario !== "number" || !Number.isFinite(valorUnitario) || valorUnitario < 0) {
+    return null;
+  }
+
+  return { servicoId, servicoNome, duracaoMinutos, valorUnitario };
+};
+
+export const possuiServicosDuplicados = (servicos = []) => {
+  if (!Array.isArray(servicos)) return false;
+  const ids = servicos.map((item) => String(item?.servicoId ?? "").trim()).filter(Boolean);
+  return new Set(ids).size !== ids.length;
+};
+
+export const normalizarServicosAgendamento = (agendamento = {}) => {
+  const snapshots = agendamento.servicosSnapshot;
+  if (Array.isArray(snapshots) && snapshots.length > 0 && !possuiServicosDuplicados(snapshots)) {
+    const normalizados = snapshots.map(normalizarItemServicoAgendamento);
+    if (normalizados.every(Boolean)) return normalizados;
+  }
+
+  const legado = normalizarItemServicoAgendamento({
+    servicoId: agendamento.servicoId,
+    servicoNome: agendamento.servicoNome,
+    duracaoMinutos: agendamento.duracaoMinutos,
+    valorUnitario: agendamento.valorServico,
+  });
+  return legado ? [legado] : [];
+};
+
+export const calcularValorTotalServicos = (servicos = []) => {
+  if (!Array.isArray(servicos)) return null;
+  let total = 0;
+  for (const item of servicos) {
+    if (typeof item?.valorUnitario !== "number" ||
+        !Number.isFinite(item.valorUnitario) || item.valorUnitario < 0) return null;
+    total += item.valorUnitario;
+  }
+  return total;
+};
+
+export const calcularDuracaoTotalServicos = (servicos = []) => {
+  if (!Array.isArray(servicos)) return null;
+  let total = 0;
+  for (const item of servicos) {
+    if (!Number.isInteger(item?.duracaoMinutos) || item.duracaoMinutos < 0) return null;
+    total += item.duracaoMinutos;
+  }
+  return total;
+};
+
+export const resumirServicosAgendamento = (servicos = []) => {
+  if (!Array.isArray(servicos) || servicos.length === 0) return "";
+  const primeiroNome = String(servicos[0]?.servicoNome ?? "").trim();
+  if (!primeiroNome) return "";
+  const adicionais = servicos.length - 1;
+  return adicionais === 0
+    ? primeiroNome
+    : `${primeiroNome} + ${adicionais} ${adicionais === 1 ? "serviço" : "serviços"}`;
+};
+
+export const adicionarServicoId = (servicoIds = [], servicoId = "") => {
+  const id = String(servicoId || "").trim();
+  if (!id || servicoIds.includes(id)) return [...servicoIds];
+  return [...servicoIds, id];
+};
+
+export const removerServicoId = (servicoIds = [], servicoId = "") =>
+  servicoIds.filter((id) => id !== servicoId);
+
+export const obterServicosFormulario = ({ servicoIds = [], servicos = [], agendamento = null } = {}) => {
+  const historicos = new Map(normalizarServicosAgendamento(agendamento || {})
+    .map((item) => [item.servicoId, item]));
+  const atuais = new Map(servicos.map((servico) => [servico.id, servico]));
+
+  return servicoIds.map((servicoId) => {
+    if (historicos.has(servicoId)) return historicos.get(servicoId);
+    const servico = atuais.get(servicoId);
+    if (!servico) return null;
+    const duracaoMinutos = Number(servico.tempoEstimadoMinutos);
+    const valorUnitario = Number(servico.valor);
+    if (!String(servico.nome || "").trim() || !Number.isInteger(duracaoMinutos) || duracaoMinutos < 0 ||
+        typeof servico.valor !== "number" || !Number.isFinite(valorUnitario) || valorUnitario < 0) return null;
+    return {
+      servicoId,
+      servicoNome: String(servico.nome).trim(),
+      duracaoMinutos,
+      valorUnitario,
+    };
+  }).filter(Boolean);
+};
+
+export const montarSelecaoServicosApi = ({ agendamento = null, servicoIds = [] } = {}) => {
+  const idsOriginais = normalizarServicosAgendamento(agendamento || {}).map((item) => item.servicoId);
+  const legadoInalterado = agendamento && !Array.isArray(agendamento.servicosSnapshot) &&
+    idsOriginais.length === 1 && servicoIds.length === 1 && idsOriginais[0] === servicoIds[0];
+  return legadoInalterado ? { servicoId: servicoIds[0] } : { servicoIds: [...servicoIds] };
+};
+
+export const obterValorTotalAgendamento = (agendamento = {}) => {
+  if (typeof agendamento.valorTotalServicos === "number" &&
+      Number.isFinite(agendamento.valorTotalServicos) && agendamento.valorTotalServicos >= 0) {
+    return agendamento.valorTotalServicos;
+  }
+  return typeof agendamento.valorServico === "number" &&
+    Number.isFinite(agendamento.valorServico) && agendamento.valorServico >= 0
+    ? agendamento.valorServico
+    : 0;
+};
+
+export const obterTextoBuscaServicos = (agendamento = {}) =>
+  normalizarServicosAgendamento(agendamento).map((item) => item.servicoNome).join(" ");
+
+export const obterHoraFimAutomaticaServicos = ({ horaInicio = "", horaFim = "" } = {}, duracao, automatico) =>
+  automatico ? sugerirHoraFim(horaInicio, duracao) : horaFim;
+
 const TRANSICOES_AGENDAMENTO = {
   agendado: ["confirmado", "em_atendimento", "concluido", "cancelado"],
   confirmado: ["em_atendimento", "concluido", "cancelado"],
@@ -169,11 +291,30 @@ export const obterSnapshotServicoAgendamento = (agendamento, servico) => {
   };
 };
 
-export const montarPayloadAgendamento = ({ form, agendamentoEditando = null, cliente = null, servico = null, atualizadoEm }) => {
+export const montarPayloadAgendamento = ({
+  form,
+  agendamentoEditando = null,
+  cliente = null,
+  servico = null,
+  servicosSelecionados = null,
+  atualizadoEm,
+}) => {
   const mesmoCliente = Boolean(agendamentoEditando?.clienteId && agendamentoEditando.clienteId === form?.clienteId);
-  const snapshotServico = obterSnapshotServicoAgendamento(agendamentoEditando, servico);
+  const usaComposicao = Array.isArray(servicosSelecionados);
+  const snapshotServico = usaComposicao
+    ? servicosSelecionados[0]
+    : obterSnapshotServicoAgendamento(agendamentoEditando, servico);
   const clienteId = mesmoCliente ? agendamentoEditando.clienteId : cliente?.id;
   if (!clienteId || !snapshotServico?.servicoId || !form?.data || !form.horaInicio || !form.horaFim) return null;
+
+  const dadosServico = usaComposicao ? {
+    servicosSnapshot: servicosSelecionados,
+    valorTotalServicos: calcularValorTotalServicos(servicosSelecionados),
+    duracaoTotalServicos: calcularDuracaoTotalServicos(servicosSelecionados),
+    servicoId: snapshotServico.servicoId,
+    servicoNome: resumirServicosAgendamento(servicosSelecionados),
+    valorServico: calcularValorTotalServicos(servicosSelecionados),
+  } : snapshotServico;
 
   const texto = (valor) => String(valor ?? "").trim();
   return {
@@ -182,7 +323,7 @@ export const montarPayloadAgendamento = ({ form, agendamentoEditando = null, cli
       (cliente.nome || cliente.clienteNome || "Cliente"),
     clienteTelefone: mesmoCliente ? texto(agendamentoEditando.clienteTelefone) : texto(cliente.telefone),
     clienteEmail: mesmoCliente ? texto(agendamentoEditando.clienteEmail) : texto(cliente.email),
-    ...snapshotServico,
+    ...dadosServico,
     duracaoMinutos: calcularDuracaoAgendamento(form.horaInicio, form.horaFim),
     data: form.data,
     horaInicio: form.horaInicio,

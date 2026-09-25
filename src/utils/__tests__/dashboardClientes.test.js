@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
+  agruparServicosRealizados,
   calcularDashboardClientes,
   obterAcoesRapidasDashboardClientes,
   obterAgendaHoje,
@@ -18,11 +19,11 @@ const firestoreRules = readFileSync(
 
 const hoje = "2026-09-24";
 const agenda = [
-  { id: "1", data: hoje, horaInicio: "10:00", status: "confirmado", clienteId: "c1", servicoId: "s1", servicoNome: "Corte" },
-  { id: "2", data: hoje, horaInicio: "09:00", status: "concluido", clienteId: "c1", servicoId: "s1", servicoNome: "Corte" },
-  { id: "3", data: hoje, horaInicio: "11:00", status: "cancelado", clienteId: "c2", servicoId: "s2", servicoNome: "Consulta" },
-  { id: "4", data: hoje, horaInicio: "14:00", status: "agendado", clienteId: "c3", servicoId: "s2", servicoNome: "Consulta" },
-  { id: "5", data: "2026-09-23", horaInicio: "15:00", status: "concluido", clienteId: "c3", servicoNome: "Legado" },
+  { id: "1", data: hoje, horaInicio: "10:00", status: "confirmado", clienteId: "c1", servicoId: "s1", servicoNome: "Corte", duracaoMinutos: 30, valorServico: 50 },
+  { id: "2", data: hoje, horaInicio: "09:00", status: "concluido", clienteId: "c1", servicoId: "s1", servicoNome: "Corte", duracaoMinutos: 30, valorServico: 50 },
+  { id: "3", data: hoje, horaInicio: "11:00", status: "cancelado", clienteId: "c2", servicoId: "s2", servicoNome: "Consulta", duracaoMinutos: 60, valorServico: 100 },
+  { id: "4", data: hoje, horaInicio: "14:00", status: "agendado", clienteId: "c3", servicoId: "s2", servicoNome: "Consulta", duracaoMinutos: 60, valorServico: 100 },
+  { id: "5", data: "2026-09-23", horaInicio: "15:00", status: "concluido", clienteId: "c3", servicoId: "legado", servicoNome: "Legado", duracaoMinutos: 45, valorServico: 80 },
 ];
 
 test("agenda de hoje exclui cancelados e ordena por hora", () => {
@@ -71,10 +72,103 @@ test("calcula indicadores mensais, clientes unicos, evolucao e ranking por servi
   assert.equal(resultado.clientesAtendidosMes, 2);
   assert.deepEqual(resultado.evolucao, [{ dia: "23", quantidade: 1 }, { dia: "24", quantidade: 1 }]);
   assert.deepEqual(resultado.servicosMaisRealizados, [
-    { servicoId: "s1", nome: "Corte", quantidade: 1 },
-    { servicoId: null, nome: "Legado", quantidade: 1 },
+    { servicoId: "s1", nome: "Corte", quantidade: 1, valor: 50 },
+    { servicoId: "legado", nome: "Legado", quantidade: 1, valor: 80 },
   ]);
   assert.equal(resultado.estadosMes.cancelado, 1);
+});
+
+const item = (servicoId, servicoNome, valorUnitario) => ({
+  servicoId, servicoNome, duracaoMinutos: 30, valorUnitario,
+});
+
+test("ranking expande servicos sem multiplicar atendimentos nem receita", () => {
+  const concluidos = [
+    {
+      id: "multi-1", data: hoje, status: "concluido", clienteId: "c1",
+      servicosSnapshot: [item("a", "Troca de oleo", 150), item("b", "Alinhamento", 120)],
+      valorTotalServicos: 270,
+    },
+    {
+      id: "multi-2", data: hoje, status: "concluido", clienteId: "c2",
+      servicosSnapshot: [item("a", "Troca de oleo", 150), item("c", "Balanceamento", 100)],
+      valorTotalServicos: 250,
+    },
+    {
+      id: "multi-3", data: hoje, status: "concluido", clienteId: "c3",
+      servicosSnapshot: [item("b", "Alinhamento", 120)],
+      valorTotalServicos: 120,
+    },
+  ];
+  const resultado = calcularDashboardClientes({
+    agendamentos: concluidos,
+    contasReceber: [{
+      origem: { tipo: "atendimento" },
+      status: "recebido",
+      valor: 640,
+      pagamento: { dataRecebimento: hoje },
+    }],
+    hoje,
+    agoraMinutos: 0,
+  });
+
+  assert.equal(resultado.concluidosMes, 3);
+  assert.deepEqual(resultado.servicosMaisRealizados, [
+    { servicoId: "b", nome: "Alinhamento", quantidade: 2, valor: 240 },
+    { servicoId: "a", nome: "Troca de oleo", quantidade: 2, valor: 300 },
+    { servicoId: "c", nome: "Balanceamento", quantidade: 1, valor: 100 },
+  ]);
+  assert.equal(resultado.servicosMaisRealizados.reduce((total, servico) => total + servico.valor, 0), 640);
+  assert.equal(concluidos.reduce((total, agendamento) => total + agendamento.valorTotalServicos, 0), 640);
+  assert.equal(resultado.financeiro.recebidoMes, 640);
+  assert.equal(resultado.financeiro.recebimentosMes, 1);
+});
+
+test("ranking suporta novo formato com um, dois e tres itens e legado singular", () => {
+  const ranking = agruparServicosRealizados([
+    { servicosSnapshot: [item("a", "A", 10)] },
+    { servicosSnapshot: [item("a", "A", 10), item("b", "B", 20)] },
+    { servicosSnapshot: [item("a", "A", 10), item("b", "B", 20), item("c", "C", 30)] },
+    { servicoId: "legado", servicoNome: "Legado", duracaoMinutos: 45, valorServico: 40 },
+  ]);
+
+  assert.deepEqual(ranking, [
+    { servicoId: "a", nome: "A", quantidade: 3, valor: 30 },
+    { servicoId: "b", nome: "B", quantidade: 2, valor: 40 },
+    { servicoId: "c", nome: "C", quantidade: 1, valor: 30 },
+    { servicoId: "legado", nome: "Legado", quantidade: 1, valor: 40 },
+  ]);
+});
+
+test("ranking segue fallback canonico quando snapshot novo e invalido", () => {
+  const ranking = agruparServicosRealizados([{
+    servicosSnapshot: [{ ...item("novo", "Invalido", 10), valorUnitario: -1 }],
+    servicoId: "legado",
+    servicoNome: "Fallback legado",
+    duracaoMinutos: 60,
+    valorServico: 75,
+  }]);
+
+  assert.deepEqual(ranking, [{
+    servicoId: "legado", nome: "Fallback legado", quantidade: 1, valor: 75,
+  }]);
+});
+
+test("ranking preserva filtro mensal e considera somente atendimentos concluidos", () => {
+  const resultado = calcularDashboardClientes({
+    agendamentos: [
+      { id: "fora", data: "2026-08-31", status: "concluido", servicosSnapshot: [item("a", "A", 10)] },
+      { id: "aberto", data: hoje, status: "confirmado", servicosSnapshot: [item("b", "B", 20)] },
+      { id: "valido", data: hoje, status: "concluido", servicosSnapshot: [item("c", "C", 30)] },
+    ],
+    hoje,
+    agoraMinutos: 0,
+  });
+
+  assert.equal(resultado.concluidosMes, 1);
+  assert.deepEqual(resultado.servicosMaisRealizados, [
+    { servicoId: "c", nome: "C", quantidade: 1, valor: 30 },
+  ]);
 });
 
 test("estados vazios e valores ausentes permanecem seguros", () => {

@@ -3,7 +3,7 @@ import {
   collection,
   onSnapshot,
 } from "firebase/firestore";
-import { CalendarDays, CheckCircle2, Filter, Plus, Search } from "lucide-react";
+import { CalendarDays, CheckCircle2, Filter, Plus, Search, X } from "lucide-react";
 import ActionMenu from "../components/ActionMenu";
 import { useConfirmacao } from "../context/useConfirmacao";
 import { useERP } from "../context/useERP";
@@ -18,18 +18,29 @@ import {
 import { concluirAtendimento } from "../services/financeiroServicosApi";
 import {
   calcularDuracaoAgendamento,
+  calcularDuracaoTotalServicos,
   calcularResumoAgenda,
+  calcularValorTotalServicos,
+  adicionarServicoId,
   compararAgendamentosPorHorario,
   existeConflitoAgendamento,
   filtrarAgendamentoPorVisao,
   isAtendimentoAntigoEmAberto,
   normalizarStatusAgendamento,
+  normalizarServicosAgendamento,
   obterAcaoPrincipalAgenda,
   obterDataLocalISO,
   obterHoraFimAgendamento,
+  obterHoraFimAutomaticaServicos,
+  obterServicosFormulario,
+  obterTextoBuscaServicos,
+  obterValorTotalAgendamento,
   montarPayloadAgendamento,
+  montarSelecaoServicosApi,
   podeEditarDadosAgendamento,
   podeTransicionarStatusAgendamento,
+  removerServicoId,
+  resumirServicosAgendamento,
   sugerirHoraFim,
   transicoesPermitidasAgendamento,
 } from "../utils/agenda";
@@ -37,7 +48,7 @@ import { moedaBR } from "../utils/formatters";
 
 const agendamentoInicial = {
   clienteId: "",
-  servicoId: "",
+  servicoIds: [],
   data: "",
   horaInicio: "",
   horaFim: "",
@@ -271,7 +282,7 @@ export default function Agenda() {
       const textoBusca = [
         agendamento.clienteNome,
         agendamento.clienteTelefone,
-        agendamento.servicoNome,
+        obterTextoBuscaServicos(agendamento),
         agendamento.observacoes,
       ]
         .map(normalizarBusca)
@@ -292,27 +303,43 @@ export default function Agenda() {
       setForm((atual) => ({ ...atual, horaFim: valor }));
       return;
     }
-    if (campo === "servicoId") {
-      if (valor === form.servicoId) return;
-      const servico = servicos.find((item) => item.id === valor);
-      setFimAutomatico(true);
-      setForm((atual) => ({
-        ...atual,
-        servicoId: valor,
-        horaFim: sugerirHoraFim(atual.horaInicio, servico?.tempoEstimadoMinutos),
-      }));
-      return;
-    }
     if (campo === "horaInicio" && fimAutomatico) {
-      const servico = servicos.find((item) => item.id === form.servicoId);
+      const servicosSelecionados = obterServicosFormulario({
+        servicoIds: form.servicoIds,
+        servicos,
+        agendamento: agendamentoEditando,
+      });
       setForm((atual) => ({
         ...atual,
         horaInicio: valor,
-        horaFim: sugerirHoraFim(valor, servico?.tempoEstimadoMinutos),
+        horaFim: sugerirHoraFim(valor, calcularDuracaoTotalServicos(servicosSelecionados)),
       }));
       return;
     }
     setForm((atual) => ({ ...atual, [campo]: valor }));
+  };
+
+  const alterarComposicaoServicos = (servicoIds) => {
+    const servicosSelecionados = obterServicosFormulario({
+      servicoIds,
+      servicos,
+      agendamento: agendamentoEditando,
+    });
+    const duracaoSugerida = calcularDuracaoTotalServicos(servicosSelecionados);
+    setForm((atual) => ({
+      ...atual,
+      servicoIds,
+      horaFim: obterHoraFimAutomaticaServicos(atual, duracaoSugerida, fimAutomatico),
+    }));
+  };
+
+  const adicionarServico = (servicoId) => {
+    if (!servicoId) return;
+    alterarComposicaoServicos(adicionarServicoId(form.servicoIds, servicoId));
+  };
+
+  const removerServico = (servicoId) => {
+    alterarComposicaoServicos(removerServicoId(form.servicoIds, servicoId));
   };
 
   const trocarVisaoAgenda = (visao, status = "todos") => {
@@ -334,10 +361,11 @@ export default function Agenda() {
   };
 
   const abrirEdicaoAgendamento = (agendamento) => {
+    const servicoIds = normalizarServicosAgendamento(agendamento).map((item) => item.servicoId);
     setAgendamentoEditando(agendamento);
     setForm({
       clienteId: agendamento.clienteId || "",
-      servicoId: agendamento.servicoId || "",
+      servicoIds,
       data: agendamento.data || "",
       horaInicio: agendamento.horaInicio || "",
       horaFim: obterHoraFimAgendamento(agendamento),
@@ -362,11 +390,15 @@ export default function Agenda() {
 
   const montarPayloadAtual = () => {
     const cliente = clientes.find((item) => item.id === form.clienteId);
-    const servico = servicos.find((item) => item.id === form.servicoId);
+    const servicosSelecionados = obterServicosFormulario({
+      servicoIds: form.servicoIds,
+      servicos,
+      agendamento: agendamentoEditando,
+    });
     return montarPayloadAgendamento({
       form, agendamentoEditando,
       cliente,
-      servico: servico || (agendamentoEditando?.servicoId === form.servicoId ? { id: form.servicoId } : null),
+      servicosSelecionados,
     });
   };
 
@@ -385,7 +417,7 @@ export default function Agenda() {
       return;
     }
 
-    if (!form.clienteId || !form.servicoId || !form.data || !form.horaInicio) {
+    if (!form.clienteId || form.servicoIds.length === 0 || !form.data || !form.horaInicio) {
       showToast("Preencha os campos obrigatórios.", "warning");
       return;
     }
@@ -399,9 +431,14 @@ export default function Agenda() {
     }
 
     const payload = montarPayloadAtual();
+    const selecaoServicos = montarSelecaoServicosApi({
+      agendamento: agendamentoEditando,
+      servicoIds: form.servicoIds,
+    });
 
     if (
       !payload ||
+      payload.servicosSnapshot?.length !== form.servicoIds.length ||
       !Number.isInteger(payload.duracaoMinutos) ||
       payload.duracaoMinutos <= 0 ||
       !Number.isFinite(payload.valorServico) ||
@@ -428,7 +465,7 @@ export default function Agenda() {
           ownerUid,
           empresaId,
           clienteId: form.clienteId,
-          servicoId: form.servicoId,
+          ...selecaoServicos,
           data: payload.data,
           horaInicio: payload.horaInicio,
           horaFim: payload.horaFim,
@@ -441,7 +478,7 @@ export default function Agenda() {
           ownerUid,
           empresaId,
           clienteId: form.clienteId,
-          servicoId: form.servicoId,
+          ...selecaoServicos,
           data: payload.data,
           horaInicio: payload.horaInicio,
           horaFim: payload.horaFim,
@@ -536,6 +573,14 @@ export default function Agenda() {
 
   const somenteLeitura = !podeEscreverAgenda ||
     Boolean(agendamentoEditando && !podeEditarDadosAgendamento(agendamentoEditando.status));
+  const servicosSelecionadosFormulario = obterServicosFormulario({
+    servicoIds: form.servicoIds,
+    servicos,
+    agendamento: agendamentoEditando,
+  });
+  const duracaoSugerida = calcularDuracaoTotalServicos(servicosSelecionadosFormulario);
+  const valorPrevisto = calcularValorTotalServicos(servicosSelecionadosFormulario);
+  const servicosDisponiveis = servicos.filter((servico) => !form.servicoIds.includes(servico.id));
 
   return (
     <div className="page fornecedores-page agenda-page">
@@ -692,6 +737,9 @@ export default function Agenda() {
               <tbody>
                 {agendamentosFiltrados.map((agendamento) => {
                   const status = normalizarStatusAgendamento(agendamento.status);
+                  const servicosAgendamento = normalizarServicosAgendamento(agendamento);
+                  const resumoServicos = resumirServicosAgendamento(servicosAgendamento) || agendamento.servicoNome || "-";
+                  const nomesServicos = servicosAgendamento.map((item) => item.servicoNome).join("\n");
                   const podeEditar = podeEscreverAgenda && podeEditarDadosAgendamento(agendamento.status);
                   const acaoPrincipal = obterAcaoPrincipalAgenda(status, podeEscreverAgenda);
                   const processandoAcao = acaoEmAndamento.id === agendamento.id;
@@ -733,9 +781,9 @@ export default function Agenda() {
                           <small>{agendamento.clienteTelefone || "Telefone não informado"}</small>
                         </div>
                       </td>
-                      <td>{agendamento.servicoNome || "-"}</td>
+                      <td title={nomesServicos || undefined}>{resumoServicos}</td>
                       <td>{formatarDuracao(agendamento.duracaoMinutos)}</td>
-                      <td>{moedaBR(agendamento.valorServico || 0)}</td>
+                      <td>{moedaBR(obterValorTotalAgendamento(agendamento))}</td>
                       <td>
                         <span className={`badge ${getStatusBadgeClass(status)}`}>
                           {getStatusLabel(status)}
@@ -821,24 +869,70 @@ export default function Agenda() {
                 </select>
               </label>
 
-              <label>
-                Serviço *
-                <select
-                  value={form.servicoId}
-                  onChange={(event) => atualizarCampo("servicoId", event.target.value)}
-                  disabled={somenteLeitura}
-                >
-                  <option value="">Selecione</option>
-                  {servicos.map((servico) => (
-                    <option key={servico.id} value={servico.id}>
-                      {servico.nome || "Serviço"}
-                    </option>
-                  ))}
-                  {agendamentoEditando?.servicoId && !servicos.some((servico) => servico.id === agendamentoEditando.servicoId) && (
-                    <option value={agendamentoEditando.servicoId}>{agendamentoEditando.servicoNome || "Serviço anterior"}</option>
-                  )}
-                </select>
-              </label>
+              <section className="agenda-services-field fornecedores-form-wide" aria-labelledby="agenda-services-title">
+                <div className="agenda-services-heading">
+                  <div>
+                    <strong id="agenda-services-title">Serviços do atendimento *</strong>
+                    <small>Selecione um ou mais serviços distintos.</small>
+                  </div>
+                </div>
+
+                {servicosSelecionadosFormulario.length > 0 && (
+                  <div className="agenda-services-list">
+                    {servicosSelecionadosFormulario.map((servico) => (
+                      <div className="agenda-service-item" key={servico.servicoId}>
+                        <div>
+                          <strong>{servico.servicoNome}</strong>
+                          <small>
+                            {formatarDuracao(servico.duracaoMinutos)} · {moedaBR(servico.valorUnitario)}
+                          </small>
+                        </div>
+                        {!somenteLeitura && (
+                          <button
+                            type="button"
+                            className="agenda-service-remove"
+                            onClick={() => removerServico(servico.servicoId)}
+                            aria-label={`Remover serviço ${servico.servicoNome}`}
+                            title={`Remover serviço ${servico.servicoNome}`}
+                          >
+                            <X size={17} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!somenteLeitura && servicosDisponiveis.length > 0 && (
+                  <label className="agenda-service-picker">
+                    <span>
+                      <Plus size={15} />
+                      {form.servicoIds.length ? "Adicionar outro serviço" : "Selecionar serviço"}
+                    </span>
+                    <select
+                      value=""
+                      onChange={(event) => adicionarServico(event.target.value)}
+                      disabled={carregandoDependencias}
+                    >
+                      <option value="">Selecione</option>
+                      {servicosDisponiveis.map((servico) => (
+                        <option key={servico.id} value={servico.id}>
+                          {servico.nome || "Serviço"}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                {servicosSelecionadosFormulario.length === 0 && somenteLeitura && (
+                  <div className="agenda-services-empty">Serviço não informado.</div>
+                )}
+
+                <div className="agenda-services-summary">
+                  <span>Duração sugerida: <strong>{formatarDuracao(duracaoSugerida)}</strong></span>
+                  <span>Valor previsto: <strong>{moedaBR(valorPrevisto || 0)}</strong></span>
+                </div>
+              </section>
 
               <label>
                 Data *
@@ -871,7 +965,7 @@ export default function Agenda() {
               </label>
 
               <div className="fornecedores-form-wide">
-                Duração: {formatarDuracao(calcularDuracaoAgendamento(form.horaInicio, form.horaFim))}
+                Duração reservada: {formatarDuracao(calcularDuracaoAgendamento(form.horaInicio, form.horaFim))}
               </div>
 
               <div>Status: {getStatusLabel(form.status)}</div>

@@ -1,3 +1,5 @@
+import { normalizarServicosAgendamento } from "./agenda.js";
+
 const STATUS_ATIVOS = new Set(["agendado", "confirmado", "em_atendimento"]);
 const STATUS_CONHECIDOS = ["agendado", "confirmado", "em_atendimento", "concluido", "cancelado"];
 
@@ -51,6 +53,25 @@ export const resumirFinanceiroDashboard = (contas = [], prefixoMes = "") => {
   };
 };
 
+export const agruparServicosRealizados = (agendamentos = []) => {
+  const ranking = new Map();
+  for (const agendamento of agendamentos) {
+    for (const servico of normalizarServicosAgendamento(agendamento)) {
+      const chave = `id:${servico.servicoId}`;
+      const atual = ranking.get(chave) || {
+        servicoId: servico.servicoId,
+        nome: servico.servicoNome,
+        quantidade: 0,
+        valor: 0,
+      };
+      atual.quantidade += 1;
+      atual.valor += servico.valorUnitario;
+      ranking.set(chave, atual);
+    }
+  }
+  return [...ranking.values()];
+};
+
 export const calcularDashboardClientes = ({
   agendamentos = [],
   contasReceber = [],
@@ -68,18 +89,14 @@ export const calcularDashboardClientes = ({
   }
 
   const evolucaoPorDia = new Map();
-  const ranking = new Map();
   const clientes = new Set();
   for (const item of concluidos) {
     if (item.clienteId) clientes.add(item.clienteId);
     const dia = String(item.data || "").slice(8, 10);
     if (dia) evolucaoPorDia.set(dia, (evolucaoPorDia.get(dia) || 0) + 1);
-    const nome = String(item.servicoNome || "Serviço não identificado").trim();
-    const chave = item.servicoId ? `id:${item.servicoId}` : `legado:${nome}`;
-    const atual = ranking.get(chave) || { servicoId: item.servicoId || null, nome, quantidade: 0 };
-    atual.quantidade += 1;
-    ranking.set(chave, atual);
   }
+
+  const ranking = agruparServicosRealizados(concluidos);
 
   return {
     hoje,
@@ -94,7 +111,7 @@ export const calcularDashboardClientes = ({
     evolucao: [...evolucaoPorDia.entries()]
       .sort(([diaA], [diaB]) => diaA.localeCompare(diaB))
       .map(([dia, quantidade]) => ({ dia, quantidade })),
-    servicosMaisRealizados: [...ranking.values()]
+    servicosMaisRealizados: ranking
       .sort((a, b) => b.quantidade - a.quantidade || a.nome.localeCompare(b.nome, "pt-BR"))
       .slice(0, 5),
     financeiro: resumirFinanceiroDashboard(contasReceber, prefixoMes),

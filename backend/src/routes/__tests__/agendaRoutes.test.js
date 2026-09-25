@@ -79,6 +79,11 @@ const bodyValido = {
   observacoes: "Observacao",
 };
 
+const bodyMultisservico = (servicoIds = ["s1"]) => {
+  const { servicoId: _servicoId, ...body } = bodyValido;
+  return { ...body, servicoIds };
+};
+
 const chamar = async (handler, { body = bodyValido, uid = "owner", id = "a1" } = {}) => {
   const res = { status(codigo) { this.codigo = codigo; return this; }, json(payload) { this.payload = payload; return this; } };
   await handler({ body, user: uid ? { uid } : null, params: { id } }, res);
@@ -122,6 +127,124 @@ test("criacao autorizada congela fontes canonicas sem produzir campos fiscais", 
   assert.equal(Object.hasOwn(salvo, "servicoFiscalSnapshot"), false);
   assert.equal(Object.hasOwn(salvo, "localPrestacao"), false);
   assert.equal(docs.get(`${caminhoEmpresa}/agendaControles/2026-09-24`).versao, 1);
+});
+
+test("contrato multisservico aceita um item e mantem agregados de compatibilidade", async () => {
+  const { db, docs } = criarBanco();
+  const resposta = await chamar(criarHandlerCriar({ getDb: () => db, agora: () => "agora" }), {
+    body: bodyMultisservico(),
+  });
+  assert.equal(resposta.statusHttp, 201);
+  const salvo = docs.get(`${caminhoEmpresa}/agendamentos/novo1`);
+  assert.deepEqual(salvo.servicosSnapshot, [
+    { servicoId: "s1", servicoNome: "Servico Canonico", duracaoMinutos: 60, valorUnitario: 125 },
+  ]);
+  assert.equal(salvo.valorTotalServicos, 125);
+  assert.equal(salvo.duracaoTotalServicos, 60);
+  assert.equal(salvo.servicoId, "s1");
+  assert.equal(salvo.servicoNome, "Servico Canonico");
+  assert.equal(salvo.valorServico, 125);
+});
+
+test("contrato multisservico aceita exatamente dois servicos distintos", async () => {
+  const { db, docs } = criarBanco();
+  docs.set(`${caminhoEmpresa}/servicos/s2`, {
+    nome: "Segundo", valor: 75, tempoEstimadoMinutos: 30, status: "ativo",
+  });
+  const resposta = await chamar(criarHandlerCriar({ getDb: () => db }), {
+    body: bodyMultisservico(["s1", "s2"]),
+  });
+  assert.equal(resposta.statusHttp, 201);
+  const salvo = docs.get(`${caminhoEmpresa}/agendamentos/novo1`);
+  assert.equal(salvo.servicosSnapshot.length, 2);
+  assert.equal(salvo.valorTotalServicos, 200);
+  assert.equal(salvo.duracaoTotalServicos, 90);
+});
+
+test("contrato multisservico preserva ordem, totaliza snapshots canonicos e separa duracao operacional", async () => {
+  const { db, docs } = criarBanco();
+  docs.set(`${caminhoEmpresa}/servicos/s2`, {
+    nome: "Alinhamento", valor: 120, tempoEstimadoMinutos: 45, status: "ativo",
+  });
+  docs.set(`${caminhoEmpresa}/servicos/s3`, {
+    nome: "Cortesia", valor: 0, tempoEstimadoMinutos: 0, status: "ativo",
+  });
+  const resposta = await chamar(criarHandlerCriar({ getDb: () => db, agora: () => "agora" }), {
+    body: { ...bodyMultisservico(["s2", "s1", "s3"]), horaFim: "12:00", duracaoMinutos: 180 },
+  });
+  assert.equal(resposta.statusHttp, 201);
+  const salvo = docs.get(`${caminhoEmpresa}/agendamentos/novo1`);
+  assert.deepEqual(salvo.servicosSnapshot.map((item) => item.servicoId), ["s2", "s1", "s3"]);
+  assert.deepEqual(salvo.servicosSnapshot.map((item) => item.servicoNome), [
+    "Alinhamento", "Servico Canonico", "Cortesia",
+  ]);
+  assert.equal(salvo.valorTotalServicos, 245);
+  assert.equal(salvo.valorServico, 245);
+  assert.equal(salvo.duracaoTotalServicos, 105);
+  assert.equal(salvo.duracaoMinutos, 180);
+  assert.equal(salvo.servicoNome, "Alinhamento + 2 serviços");
+});
+
+test("servicoIds presente tem precedencia e payload novo invalido nunca recorre ao legado", async () => {
+  for (const servicoIds of [[], [""], ["s1", "s1"], "s1"]) {
+    const { db, docs } = criarBanco();
+    const resposta = await chamar(criarHandlerCriar({ getDb: () => db }), {
+      body: { ...bodyValido, servicoIds },
+    });
+    assert.equal(resposta.statusHttp, 422);
+    assert.equal([...docs.keys()].some((chave) => chave.includes("/agendamentos/")), false);
+    assert.equal([...docs.keys()].some((chave) => chave.includes("/agendaControles/")), false);
+  }
+
+  const { db, docs } = criarBanco();
+  docs.set(`${caminhoEmpresa}/servicos/s2`, {
+    nome: "Segundo", valor: 50, tempoEstimadoMinutos: 30, status: "ativo",
+  });
+  const resposta = await chamar(criarHandlerCriar({ getDb: () => db }), {
+    body: { ...bodyValido, servicoIds: ["s2"] },
+  });
+  assert.equal(resposta.statusHttp, 201);
+  assert.equal(docs.get(`${caminhoEmpresa}/agendamentos/novo1`).servicoId, "s2");
+});
+
+test("falha de qualquer servico impede integralmente a criacao multisservico", async () => {
+  for (const segundo of [null, { nome: "Inativo", valor: 20, tempoEstimadoMinutos: 30, status: "inativo" }]) {
+    const { db, docs } = criarBanco();
+    if (segundo) docs.set(`${caminhoEmpresa}/servicos/s2`, segundo);
+    const resposta = await chamar(criarHandlerCriar({ getDb: () => db }), {
+      body: bodyMultisservico(["s1", "s2"]),
+    });
+    assert.equal(resposta.statusHttp, 422);
+    assert.equal([...docs.keys()].some((chave) => chave.includes("/agendamentos/")), false);
+    assert.equal([...docs.keys()].some((chave) => chave.includes("/agendaControles/")), false);
+  }
+});
+
+test("servico existente somente em outro tenant nao e aceito", async () => {
+  const { db, docs } = criarBanco();
+  docs.set("users/owner/empresas/outra/servicos/s2", {
+    nome: "Outro tenant", valor: 20, tempoEstimadoMinutos: 30, status: "ativo",
+  });
+  const resposta = await chamar(criarHandlerCriar({ getDb: () => db }), {
+    body: bodyMultisservico(["s1", "s2"]),
+  });
+  assert.equal(resposta.statusHttp, 422);
+  assert.equal([...docs.keys()].some((chave) => chave.includes("/agendamentos/")), false);
+});
+
+test("multisservico valida nome valor e duracao exclusivamente nos documentos do tenant", async () => {
+  for (const servico of [
+    { nome: "", valor: 20, tempoEstimadoMinutos: 30, status: "ativo" },
+    { nome: "Servico", valor: -1, tempoEstimadoMinutos: 30, status: "ativo" },
+    { nome: "Servico", valor: 20, tempoEstimadoMinutos: "", status: "ativo" },
+  ]) {
+    const { db, docs } = criarBanco();
+    docs.set(`${caminhoEmpresa}/servicos/s2`, servico);
+    const resposta = await chamar(criarHandlerCriar({ getDb: () => db }), {
+      body: bodyMultisservico(["s1", "s2"]),
+    });
+    assert.equal(resposta.statusHttp, 422);
+  }
 });
 
 test("agenda aceita empresa legada servicos para owner e administrador_empresa", async () => {
@@ -229,6 +352,140 @@ test("edicao recota snapshots somente quando cliente e servico mudam explicitame
   assert.equal(salvo.clienteEmail, "novo@exemplo.com");
   assert.equal(salvo.servicoNome, "Servico Novo");
   assert.equal(salvo.valorServico, 240);
+});
+
+test("edicao de horario ou observacao preserva integralmente snapshots multisservico", async () => {
+  const { db, docs } = criarBanco();
+  docs.set(`${caminhoEmpresa}/servicos/s2`, {
+    nome: "Cadastro Atual", valor: 999, tempoEstimadoMinutos: 10, status: "ativo",
+  });
+  const snapshots = [
+    { servicoId: "s1", servicoNome: "Historico A", duracaoMinutos: 60, valorUnitario: 80 },
+    { servicoId: "s2", servicoNome: "Historico B", duracaoMinutos: 45, valorUnitario: 70 },
+  ];
+  docs.set(`${caminhoEmpresa}/agendamentos/a1`, {
+    clienteId: "c1", clienteNome: "Cliente", clienteTelefone: "", clienteEmail: "",
+    servicosSnapshot: snapshots, valorTotalServicos: 150, duracaoTotalServicos: 105,
+    servicoId: "s1", servicoNome: "Historico A + 1 serviço", valorServico: 150,
+    data: "2026-09-24", horaInicio: "08:00", horaFim: "09:45", duracaoMinutos: 105,
+    status: "agendado", observacoes: "antes", criadoPor: "owner", criadoEm: "antes",
+  });
+  const resposta = await chamar(criarHandlerEditar({ getDb: () => db, agora: () => "agora" }), {
+    id: "a1",
+    body: { ...bodyMultisservico(["s1", "s2"]), horaInicio: "10:00", horaFim: "12:00", duracaoMinutos: 120, observacoes: "depois" },
+  });
+  assert.equal(resposta.statusHttp, 200);
+  const salvo = docs.get(`${caminhoEmpresa}/agendamentos/a1`);
+  assert.deepEqual(salvo.servicosSnapshot, snapshots);
+  assert.equal(salvo.valorTotalServicos, 150);
+  assert.equal(salvo.duracaoTotalServicos, 105);
+  assert.equal(salvo.duracaoMinutos, 120);
+  assert.equal(salvo.observacoes, "depois");
+});
+
+test("edicao somente de observacao preserva snapshots e agregados multisservico", async () => {
+  const { db, docs } = criarBanco();
+  const snapshots = [
+    { servicoId: "s1", servicoNome: "Historico", duracaoMinutos: 60, valorUnitario: 80 },
+  ];
+  docs.set(`${caminhoEmpresa}/agendamentos/a1`, {
+    clienteId: "c1", clienteNome: "Cliente", servicosSnapshot: snapshots,
+    valorTotalServicos: 80, duracaoTotalServicos: 60,
+    servicoId: "s1", servicoNome: "Historico", valorServico: 80,
+    data: bodyValido.data, horaInicio: bodyValido.horaInicio, horaFim: bodyValido.horaFim,
+    duracaoMinutos: bodyValido.duracaoMinutos, status: "agendado", observacoes: "antes",
+  });
+  docs.get(`${caminhoEmpresa}/servicos/s1`).valor = 999;
+  const resposta = await chamar(criarHandlerEditar({ getDb: () => db }), {
+    id: "a1", body: { ...bodyMultisservico(["s1"]), observacoes: "depois" },
+  });
+  assert.equal(resposta.statusHttp, 200);
+  const salvo = docs.get(`${caminhoEmpresa}/agendamentos/a1`);
+  assert.deepEqual(salvo.servicosSnapshot, snapshots);
+  assert.equal(salvo.valorTotalServicos, 80);
+  assert.equal(salvo.observacoes, "depois");
+});
+
+test("frontend legado nao reduz silenciosamente documento multisservico ao editar horario", async () => {
+  const { db, docs } = criarBanco();
+  const snapshots = [
+    { servicoId: "s1", servicoNome: "A", duracaoMinutos: 60, valorUnitario: 100 },
+    { servicoId: "s2", servicoNome: "B", duracaoMinutos: 30, valorUnitario: 50 },
+  ];
+  docs.set(`${caminhoEmpresa}/agendamentos/a1`, {
+    clienteId: "c1", clienteNome: "Cliente", servicosSnapshot: snapshots,
+    valorTotalServicos: 150, duracaoTotalServicos: 90,
+    servicoId: "s1", servicoNome: "A + 1 serviço", valorServico: 150,
+    data: "2026-09-24", horaInicio: "08:00", horaFim: "09:30", duracaoMinutos: 90,
+    status: "agendado", observacoes: "",
+  });
+  const resposta = await chamar(criarHandlerEditar({ getDb: () => db }), {
+    id: "a1", body: { ...bodyValido, horaInicio: "10:00", horaFim: "11:30", duracaoMinutos: 90 },
+  });
+  assert.equal(resposta.statusHttp, 200);
+  assert.deepEqual(docs.get(`${caminhoEmpresa}/agendamentos/a1`).servicosSnapshot, snapshots);
+});
+
+test("alteracao da composicao preserva mantidos, congela adicionados e respeita ordem", async () => {
+  const { db, docs } = criarBanco();
+  docs.set(`${caminhoEmpresa}/servicos/s2`, {
+    nome: "Novo B", valor: 200, tempoEstimadoMinutos: 45, status: "ativo",
+  });
+  docs.set(`${caminhoEmpresa}/servicos/s3`, {
+    nome: "Novo C", valor: 30, tempoEstimadoMinutos: 15, status: "ativo",
+  });
+  const historicoA = { servicoId: "s1", servicoNome: "Historico A", duracaoMinutos: 60, valorUnitario: 80 };
+  docs.set(`${caminhoEmpresa}/agendamentos/a1`, {
+    clienteId: "c1", clienteNome: "Cliente", servicosSnapshot: [historicoA],
+    valorTotalServicos: 80, duracaoTotalServicos: 60,
+    servicoId: "s1", servicoNome: "Historico A", valorServico: 80,
+    data: "2026-09-24", horaInicio: "08:00", horaFim: "09:00", duracaoMinutos: 60,
+    status: "confirmado", observacoes: "",
+  });
+  const resposta = await chamar(criarHandlerEditar({ getDb: () => db }), {
+    id: "a1", body: bodyMultisservico(["s3", "s1", "s2"]),
+  });
+  assert.equal(resposta.statusHttp, 200);
+  const salvo = docs.get(`${caminhoEmpresa}/agendamentos/a1`);
+  assert.deepEqual(salvo.servicosSnapshot, [
+    { servicoId: "s3", servicoNome: "Novo C", duracaoMinutos: 15, valorUnitario: 30 },
+    historicoA,
+    { servicoId: "s2", servicoNome: "Novo B", duracaoMinutos: 45, valorUnitario: 200 },
+  ]);
+  assert.equal(salvo.valorTotalServicos, 310);
+  assert.equal(salvo.duracaoTotalServicos, 120);
+  assert.equal(salvo.servicoId, "s3");
+  assert.equal(salvo.servicoNome, "Novo C + 2 serviços");
+});
+
+test("alteracao da composicao nao relê servico historico mantido", async () => {
+  const { db, docs } = criarBanco();
+  const historicoA = {
+    servicoId: "s1", servicoNome: "Historico A", duracaoMinutos: 60, valorUnitario: 80,
+  };
+  docs.set(`${caminhoEmpresa}/agendamentos/a1`, {
+    clienteId: "c1", clienteNome: "Cliente", servicosSnapshot: [historicoA],
+    valorTotalServicos: 80, duracaoTotalServicos: 60,
+    servicoId: "s1", servicoNome: "Historico A", valorServico: 80,
+    data: "2026-09-24", horaInicio: "08:00", horaFim: "09:00", duracaoMinutos: 60,
+    status: "confirmado", observacoes: "",
+  });
+  docs.delete(`${caminhoEmpresa}/servicos/s1`);
+  docs.set(`${caminhoEmpresa}/servicos/s2`, {
+    nome: "Novo B", valor: 120, tempoEstimadoMinutos: 45, status: "ativo",
+  });
+
+  const resposta = await chamar(criarHandlerEditar({ getDb: () => db }), {
+    id: "a1", body: bodyMultisservico(["s1", "s2"]),
+  });
+
+  assert.equal(resposta.statusHttp, 200);
+  const salvo = docs.get(`${caminhoEmpresa}/agendamentos/a1`);
+  assert.deepEqual(salvo.servicosSnapshot, [
+    historicoA,
+    { servicoId: "s2", servicoNome: "Novo B", duracaoMinutos: 45, valorUnitario: 120 },
+  ]);
+  assert.equal(salvo.valorTotalServicos, 200);
 });
 
 test("edicao inexistente e estado terminal sao rejeitados", async () => {

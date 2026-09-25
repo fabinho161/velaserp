@@ -5,8 +5,11 @@ const { normalizarRoleEmpresa } = require("../utils/perfisEmpresa");
 const { empresaPertenceAoSegmento } = require("../utils/segmentosEmpresa");
 const {
   existeConflitoAgenda,
+  montarCamposCompatibilidadeMultisservico,
   montarSnapshotCliente,
   montarSnapshotServico,
+  montarSnapshotServicoMultisservico,
+  normalizarServicosAgendamento,
   validarIntervaloAgenda,
 } = require("../shared/agendaOperacional.cjs");
 
@@ -18,7 +21,7 @@ const TRANSICOES = {
   cancelar: { de: ["agendado", "confirmado", "em_atendimento"], para: "cancelado", marco: "canceladoEm" },
 };
 const CAMPOS_INTENCAO = new Set([
-  "ownerUid", "empresaId", "clienteId", "servicoId", "data",
+  "ownerUid", "empresaId", "clienteId", "servicoId", "servicoIds", "data",
   "horaInicio", "horaFim", "duracaoMinutos", "observacoes",
 ]);
 
@@ -86,6 +89,44 @@ const obterEntidade = async (tx, ref, codigo, mensagem) => {
   return snap.data();
 };
 
+const normalizarSelecaoServicos = (body = {}) => {
+  if (Object.hasOwn(body, "servicoIds")) {
+    if (!Array.isArray(body.servicoIds) || body.servicoIds.length === 0 ||
+        body.servicoIds.some((id) => !idValido(id))) {
+      throw erro(422, "Servicos invalidos.", "agenda_servico_invalido");
+    }
+    const servicoIds = body.servicoIds.map((id) => id.trim());
+    if (new Set(servicoIds).size !== servicoIds.length) {
+      throw erro(422, "Servicos duplicados nao sao permitidos.", "agenda_servico_duplicado");
+    }
+    return { servicoIds, contratoMultisservico: true };
+  }
+  if (!idValido(body.servicoId)) throw erro(422, "Servico invalido.", "agenda_servico_invalido");
+  return { servicoIds: [body.servicoId.trim()], contratoMultisservico: false };
+};
+
+const obterServicos = async (
+  tx,
+  empresaRef,
+  servicoIds,
+  { validarCamposMultisservico = false } = {}
+) => Promise.all(servicoIds.map(async (servicoId) => {
+  const servico = await obterEntidade(
+    tx,
+    empresaRef.collection("servicos").doc(servicoId),
+    "agenda_servico_invalido",
+    "Servico invalido."
+  );
+  if (String(servico.status || "ativo").toLowerCase() === "inativo") {
+    throw erro(422, "Servico invalido.", "agenda_servico_invalido");
+  }
+  if (validarCamposMultisservico) montarSnapshotServicoMultisservico(servicoId, servico);
+  return { servicoId, servico };
+}));
+
+const listasIguais = (a = [], b = []) =>
+  a.length === b.length && a.every((valor, indice) => valor === b[indice]);
+
 const obterConflitos = async (tx, agendaRef, data) => {
   const snapshot = await tx.get(agendaRef.where("data", "==", data));
   return snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
@@ -117,11 +158,11 @@ const montarDadosIntencao = (body) => {
     throw erro(422, "Payload de agendamento invalido.", "agenda_payload_invalido");
   }
   if (!idValido(body.clienteId)) throw erro(422, "Cliente invalido.", "agenda_cliente_invalido");
-  if (!idValido(body.servicoId)) throw erro(422, "Servico invalido.", "agenda_servico_invalido");
+  const selecaoServicos = normalizarSelecaoServicos(body);
   const intervalo = validarIntervaloAgenda(body);
   return {
     clienteId: body.clienteId.trim(),
-    servicoId: body.servicoId.trim(),
+    ...selecaoServicos,
     ...intervalo,
     observacoes: String(body.observacoes ?? "").trim(),
   };
@@ -138,20 +179,23 @@ const criarHandlerCriar = ({ getDb: obterDb = getDb, agora = () => FieldValue.se
       const empresaRef = await verificarAcessoAgenda(db, tx, { uid: req.user.uid, ...escopo });
       const agendaRef = empresaRef.collection("agendamentos");
       const controles = await lerControlesAgenda(tx, empresaRef, [intencao.data]);
-      const [cliente, servico, existentes] = await Promise.all([
+      const [cliente, servicos, existentes] = await Promise.all([
         obterEntidade(tx, empresaRef.collection("clientesComerciais").doc(intencao.clienteId),
           "agenda_cliente_invalido", "Cliente invalido."),
-        obterEntidade(tx, empresaRef.collection("servicos").doc(intencao.servicoId),
-          "agenda_servico_invalido", "Servico invalido."),
+        obterServicos(tx, empresaRef, intencao.servicoIds, {
+          validarCamposMultisservico: intencao.contratoMultisservico,
+        }),
         obterConflitos(tx, agendaRef, intencao.data),
       ]);
       if (cliente.ativo === false) throw erro(422, "Cliente invalido.", "agenda_cliente_invalido");
-      if (String(servico.status || "ativo").toLowerCase() === "inativo") {
-        throw erro(422, "Servico invalido.", "agenda_servico_invalido");
-      }
+      const dadosServico = intencao.contratoMultisservico
+        ? montarCamposCompatibilidadeMultisservico(servicos.map(({ servicoId, servico }) =>
+          montarSnapshotServicoMultisservico(servicoId, servico)))
+        : montarSnapshotServico(servicos[0].servicoId, servicos[0].servico, intencao.duracaoMinutos);
       const documento = {
         ...montarSnapshotCliente(intencao.clienteId, cliente),
-        ...montarSnapshotServico(intencao.servicoId, servico, intencao.duracaoMinutos),
+        ...dadosServico,
+        duracaoMinutos: intencao.duracaoMinutos,
         data: intencao.data,
         horaInicio: intencao.horaInicio,
         horaFim: intencao.horaFim,
@@ -187,22 +231,42 @@ const criarHandlerEditar = ({ getDb: obterDb = getDb, agora = () => FieldValue.s
         throw erro(409, "Este atendimento nao permite edicao.", "agenda_transicao_invalida");
       }
       const clienteAlterado = atual.clienteId !== intencao.clienteId;
-      const servicoAlterado = atual.servicoId !== intencao.servicoId;
+      const snapshotsAtuais = normalizarServicosAgendamento(atual);
+      const idsAtuais = snapshotsAtuais.map((item) => item.servicoId);
+      const servicoIdsDesejados = !intencao.contratoMultisservico &&
+        Array.isArray(atual.servicosSnapshot) && atual.servicoId === intencao.servicoIds[0]
+        ? idsAtuais
+        : intencao.servicoIds;
+      const composicaoAlterada = !listasIguais(idsAtuais, servicoIdsDesejados);
+      const servicoIdsAdicionados = servicoIdsDesejados.filter((id) => !idsAtuais.includes(id));
       const controles = await lerControlesAgenda(tx, empresaRef, [atual.data, intencao.data]);
-      const [cliente, servico, existentes] = await Promise.all([
+      const [cliente, servicos, existentes] = await Promise.all([
         clienteAlterado ? obterEntidade(tx, empresaRef.collection("clientesComerciais").doc(intencao.clienteId),
           "agenda_cliente_invalido", "Cliente invalido.") : Promise.resolve(null),
-        servicoAlterado ? obterEntidade(tx, empresaRef.collection("servicos").doc(intencao.servicoId),
-          "agenda_servico_invalido", "Servico invalido.") : Promise.resolve(null),
+        composicaoAlterada ? obterServicos(tx, empresaRef, servicoIdsAdicionados, {
+          validarCamposMultisservico: intencao.contratoMultisservico,
+        }) : Promise.resolve([]),
         obterConflitos(tx, agendaRef, intencao.data),
       ]);
       if (clienteAlterado && cliente.ativo === false) throw erro(422, "Cliente invalido.", "agenda_cliente_invalido");
-      if (servicoAlterado && String(servico.status || "ativo").toLowerCase() === "inativo") {
-        throw erro(422, "Servico invalido.", "agenda_servico_invalido");
+      let dadosServico = {};
+      if (composicaoAlterada && intencao.contratoMultisservico) {
+        const snapshotsPorId = new Map(snapshotsAtuais.map((item) => [item.servicoId, item]));
+        const servicosAdicionados = new Map(servicos.map((item) => [item.servicoId, item.servico]));
+        const novosSnapshots = servicoIdsDesejados.map((servicoId) =>
+          snapshotsPorId.get(servicoId) ||
+          montarSnapshotServicoMultisservico(servicoId, servicosAdicionados.get(servicoId)));
+        dadosServico = montarCamposCompatibilidadeMultisservico(novosSnapshots);
+      } else if (composicaoAlterada) {
+        dadosServico = montarSnapshotServico(
+          servicos[0].servicoId,
+          servicos[0].servico,
+          intencao.duracaoMinutos
+        );
       }
       const patch = {
         ...(clienteAlterado ? montarSnapshotCliente(intencao.clienteId, cliente) : {}),
-        ...(servicoAlterado ? montarSnapshotServico(intencao.servicoId, servico, intencao.duracaoMinutos) : {}),
+        ...dadosServico,
         data: intencao.data,
         horaInicio: intencao.horaInicio,
         horaFim: intencao.horaFim,
