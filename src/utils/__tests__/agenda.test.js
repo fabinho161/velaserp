@@ -4,10 +4,15 @@ import test from "node:test";
 import {
   agendamentosSobrepostos,
   calcularDuracaoAgendamento,
+  calcularResumoAgenda,
   compararAgendamentosPorHorario,
   existeConflitoAgendamento,
+  filtrarAgendamentoPorVisao,
   horarioParaMinutos,
+  isAtendimentoAntigoEmAberto,
   normalizarStatusAgendamento,
+  obterAcaoPrincipalAgenda,
+  obterDataLocalISO,
   obterHoraFimAgendamento,
   obterIntervaloAgendamento,
   obterSnapshotServicoAgendamento,
@@ -27,6 +32,57 @@ const existente = {
   duracaoMinutos: 60,
   status: "agendado",
 };
+
+test("formata hoje pela data civil local sem depender de UTC", () => {
+  assert.equal(obterDataLocalISO(new Date(2026, 8, 25, 23, 30)), "2026-09-25");
+});
+
+test("filtros rapidos cobrem Todos, Hoje, Proximos e Em atendimento", () => {
+  const hoje = "2026-09-25";
+  const hojeAgendado = { data: hoje, status: "agendado" };
+  const futuroConfirmado = { data: "2026-09-26", status: "confirmado" };
+  const futuroConcluido = { data: "2026-09-26", status: "concluido" };
+  const antigoEmAtendimento = { data: "2026-09-24", status: "em_atendimento" };
+
+  assert.equal(filtrarAgendamentoPorVisao(futuroConcluido, "todos", hoje), true);
+  assert.equal(filtrarAgendamentoPorVisao(hojeAgendado, "hoje", hoje), true);
+  assert.equal(filtrarAgendamentoPorVisao(futuroConfirmado, "proximos", hoje), true);
+  assert.equal(filtrarAgendamentoPorVisao(futuroConcluido, "proximos", hoje), false);
+  assert.equal(filtrarAgendamentoPorVisao(antigoEmAtendimento, "em_atendimento", hoje), true);
+});
+
+test("resumo calcula cards Confirmados e Cancelados e proximos somente operacionais", () => {
+  const resumo = calcularResumoAgenda([
+    { data: "2026-09-25", status: "agendado" },
+    { data: "2026-09-26", status: "confirmado" },
+    { data: "2026-09-26", status: "concluido" },
+    { data: "2026-09-24", status: "cancelado" },
+  ], "2026-09-25");
+
+  assert.deepEqual(resumo, { hoje: 1, confirmados: 1, proximos: 2, cancelados: 1 });
+});
+
+test("identifica atendimento antigo ainda em aberto", () => {
+  assert.equal(isAtendimentoAntigoEmAberto(
+    { data: "2026-09-24", status: "em_atendimento" },
+    "2026-09-25",
+  ), true);
+  assert.equal(isAtendimentoAntigoEmAberto(
+    { data: "2026-09-24", status: "concluido" },
+    "2026-09-25",
+  ), false);
+});
+
+test("acao principal segue fluxo operacional e respeita somente leitura", () => {
+  assert.deepEqual(obterAcaoPrincipalAgenda("agendado", true), {
+    tipo: "transicao", proximoStatus: "confirmado", label: "Confirmar", processando: "Confirmando...",
+  });
+  assert.equal(obterAcaoPrincipalAgenda("confirmado", true).proximoStatus, "em_atendimento");
+  assert.equal(obterAcaoPrincipalAgenda("em_atendimento", true).proximoStatus, "concluido");
+  assert.equal(obterAcaoPrincipalAgenda("concluido", true).tipo, "visualizar");
+  assert.equal(obterAcaoPrincipalAgenda("cancelado", true).tipo, "visualizar");
+  assert.equal(obterAcaoPrincipalAgenda("agendado", false).tipo, "visualizar");
+});
 
 test("nao identifica conflito quando horarios nao se sobrepoem", () => {
   assert.equal(

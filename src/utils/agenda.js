@@ -6,6 +6,10 @@ export const STATUS_AGENDAMENTO = [
   "cancelado",
 ];
 
+export const FILTROS_RAPIDOS_AGENDA = ["todos", "hoje", "proximos", "em_atendimento"];
+
+const STATUS_OPERACIONAIS_AGENDA = new Set(["agendado", "confirmado", "em_atendimento"]);
+
 const TRANSICOES_AGENDAMENTO = {
   agendado: ["confirmado", "em_atendimento", "concluido", "cancelado"],
   confirmado: ["em_atendimento", "concluido", "cancelado"],
@@ -45,6 +49,66 @@ export const normalizarStatusAgendamento = (status = "agendado") => {
   const statusTratado = String(status || "agendado").trim().toLowerCase();
 
   return STATUS_AGENDAMENTO.includes(statusTratado) ? statusTratado : "agendado";
+};
+
+export const obterDataLocalISO = (data = new Date()) => {
+  const dataValida = data instanceof Date ? data : new Date(data);
+  if (Number.isNaN(dataValida.getTime())) return "";
+
+  const ano = dataValida.getFullYear();
+  const mes = String(dataValida.getMonth() + 1).padStart(2, "0");
+  const dia = String(dataValida.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
+};
+
+export const isProximoAgendamento = (agendamento = {}, hoje = obterDataLocalISO()) =>
+  String(agendamento.data || "") >= hoje &&
+  STATUS_OPERACIONAIS_AGENDA.has(normalizarStatusAgendamento(agendamento.status));
+
+export const isAtendimentoAntigoEmAberto = (agendamento = {}, hoje = obterDataLocalISO()) =>
+  /^\d{4}-\d{2}-\d{2}$/.test(String(agendamento.data || "")) &&
+  String(agendamento.data) < hoje &&
+  normalizarStatusAgendamento(agendamento.status) === "em_atendimento";
+
+export const filtrarAgendamentoPorVisao = (
+  agendamento = {},
+  filtro = "todos",
+  hoje = obterDataLocalISO()
+) => {
+  if (filtro === "hoje") return agendamento.data === hoje;
+  if (filtro === "proximos") return isProximoAgendamento(agendamento, hoje);
+  if (filtro === "em_atendimento") {
+    return normalizarStatusAgendamento(agendamento.status) === "em_atendimento";
+  }
+  return true;
+};
+
+export const calcularResumoAgenda = (agendamentos = [], hoje = obterDataLocalISO()) => ({
+  hoje: agendamentos.filter((agendamento) =>
+    agendamento.data === hoje && normalizarStatusAgendamento(agendamento.status) !== "cancelado"
+  ).length,
+  confirmados: agendamentos.filter((agendamento) =>
+    normalizarStatusAgendamento(agendamento.status) === "confirmado"
+  ).length,
+  proximos: agendamentos.filter((agendamento) => isProximoAgendamento(agendamento, hoje)).length,
+  cancelados: agendamentos.filter((agendamento) =>
+    normalizarStatusAgendamento(agendamento.status) === "cancelado"
+  ).length,
+});
+
+export const obterAcaoPrincipalAgenda = (status, podeEscrever = false) => {
+  const statusNormalizado = normalizarStatusAgendamento(status);
+  if (!podeEscrever || statusNormalizado === "concluido" || statusNormalizado === "cancelado") {
+    return { tipo: "visualizar", label: "Visualizar", processando: "" };
+  }
+
+  const acoes = {
+    agendado: { tipo: "transicao", proximoStatus: "confirmado", label: "Confirmar", processando: "Confirmando..." },
+    confirmado: { tipo: "transicao", proximoStatus: "em_atendimento", label: "Iniciar atendimento", processando: "Iniciando..." },
+    em_atendimento: { tipo: "transicao", proximoStatus: "concluido", label: "Concluir atendimento", processando: "Concluindo..." },
+  };
+
+  return acoes[statusNormalizado] || { tipo: "visualizar", label: "Visualizar", processando: "" };
 };
 
 export const horarioParaMinutos = (hora = "") => {

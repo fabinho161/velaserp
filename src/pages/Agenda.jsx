@@ -18,9 +18,14 @@ import {
 import { concluirAtendimento } from "../services/financeiroServicosApi";
 import {
   calcularDuracaoAgendamento,
+  calcularResumoAgenda,
   compararAgendamentosPorHorario,
   existeConflitoAgendamento,
+  filtrarAgendamentoPorVisao,
+  isAtendimentoAntigoEmAberto,
   normalizarStatusAgendamento,
+  obterAcaoPrincipalAgenda,
+  obterDataLocalISO,
   obterHoraFimAgendamento,
   montarPayloadAgendamento,
   podeEditarDadosAgendamento,
@@ -124,6 +129,8 @@ export default function Agenda() {
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("todos");
   const [filtroData, setFiltroData] = useState("");
+  const [filtroRapido, setFiltroRapido] = useState("todos");
+  const [acaoEmAndamento, setAcaoEmAndamento] = useState({ id: "", status: "" });
 
   const ownerUid = empresaOwnerUid || user?.uid || null;
   const podeEscreverAgenda =
@@ -250,30 +257,11 @@ export default function Agenda() {
     [agendamentos]
   );
 
-  const hojeISO = new Date().toISOString().split("T")[0];
-
-  const resumo = useMemo(() => {
-    const proximos = agendamentos.filter(
-      (agendamento) =>
-        normalizarStatusAgendamento(agendamento.status) !== "cancelado" &&
-        String(agendamento.data || "") >= hojeISO
-    ).length;
-
-    return {
-      hoje: agendamentos.filter(
-        (agendamento) =>
-          agendamento.data === hojeISO &&
-          normalizarStatusAgendamento(agendamento.status) !== "cancelado"
-      ).length,
-      confirmados: agendamentos.filter(
-        (agendamento) => normalizarStatusAgendamento(agendamento.status) === "confirmado"
-      ).length,
-      proximos,
-      cancelados: agendamentos.filter(
-        (agendamento) => normalizarStatusAgendamento(agendamento.status) === "cancelado"
-      ).length,
-    };
-  }, [agendamentos, hojeISO]);
+  const hojeISO = obterDataLocalISO();
+  const resumo = useMemo(
+    () => calcularResumoAgenda(agendamentos, hojeISO),
+    [agendamentos, hojeISO]
+  );
 
   const agendamentosFiltrados = useMemo(() => {
     const termo = normalizarBusca(busca);
@@ -290,12 +278,13 @@ export default function Agenda() {
         .join(" ");
 
       if (termo && !textoBusca.includes(termo)) return false;
+      if (!filtrarAgendamentoPorVisao(agendamento, filtroRapido, hojeISO)) return false;
       if (filtroStatus !== "todos" && status !== filtroStatus) return false;
       if (filtroData && agendamento.data !== filtroData) return false;
 
       return true;
     });
-  }, [agendamentosOrdenados, busca, filtroData, filtroStatus]);
+  }, [agendamentosOrdenados, busca, filtroData, filtroRapido, filtroStatus, hojeISO]);
 
   const atualizarCampo = (campo, valor) => {
     if (campo === "horaFim") {
@@ -324,6 +313,12 @@ export default function Agenda() {
       return;
     }
     setForm((atual) => ({ ...atual, [campo]: valor }));
+  };
+
+  const trocarVisaoAgenda = (visao, status = "todos") => {
+    setFiltroRapido(visao);
+    setFiltroStatus(status);
+    setFiltroData("");
   };
 
   const abrirNovoAgendamento = () => {
@@ -467,9 +462,11 @@ export default function Agenda() {
 
   const atualizarStatusAgendamento = async (agendamento, status) => {
     if (!podeEscreverAgenda || !agendamentosRef || !agendamento?.id) return;
+    if (acaoEmAndamento.id) return;
     if (!podeTransicionarStatusAgendamento(agendamento.status, status)) return;
 
     if (status === "concluido") {
+      setAcaoEmAndamento({ id: agendamento.id, status });
       try {
         const resultado = await concluirAtendimento({
           ownerUid, empresaId, agendamentoId: agendamento.id,
@@ -477,6 +474,8 @@ export default function Agenda() {
         showToast(resultado.pendencia || "Atendimento concluído. Conta a receber registrada.", "success");
       } catch (error) {
         showToast(error.message || "Não foi possível concluir o atendimento.", "error");
+      } finally {
+        setAcaoEmAndamento({ id: "", status: "" });
       }
       return;
     }
@@ -489,6 +488,7 @@ export default function Agenda() {
       if (!confirmado) return;
     }
 
+    setAcaoEmAndamento({ id: agendamento.id, status });
     try {
       const acao = status === "confirmado" ? "confirmar" :
         status === "em_atendimento" ? "iniciar" : "cancelar";
@@ -503,6 +503,8 @@ export default function Agenda() {
     } catch (error) {
       console.error("Erro ao atualizar status do agendamento:", error);
       showToast(error.message || "Não foi possível concluir a operação.", "error");
+    } finally {
+      setAcaoEmAndamento({ id: "", status: "" });
     }
   };
 
@@ -558,29 +560,45 @@ export default function Agenda() {
       </div>
 
       <div className="summary-grid fornecedores-summary">
-        <div className="card metric-card metric-blue">
+        <button
+          type="button"
+          className={`card metric-card metric-blue agenda-summary-control ${filtroRapido === "hoje" ? "is-active" : ""}`}
+          onClick={() => trocarVisaoAgenda("hoje")}
+        >
           <p>Agendamentos de hoje</p>
           <h2>{resumo.hoje}</h2>
           <small>Agenda do dia</small>
-        </div>
+        </button>
 
-        <div className="card metric-card metric-purple">
+        <button
+          type="button"
+          className={`card metric-card metric-purple agenda-summary-control ${filtroRapido === "todos" && filtroStatus === "confirmado" ? "is-active" : ""}`}
+          onClick={() => trocarVisaoAgenda("todos", "confirmado")}
+        >
           <p>Confirmados</p>
           <h2>{resumo.confirmados}</h2>
           <small>Clientes confirmados</small>
-        </div>
+        </button>
 
-        <div className="card metric-card metric-green">
+        <button
+          type="button"
+          className={`card metric-card metric-green agenda-summary-control ${filtroRapido === "proximos" ? "is-active" : ""}`}
+          onClick={() => trocarVisaoAgenda("proximos")}
+        >
           <p>Próximos agendamentos</p>
           <h2>{resumo.proximos}</h2>
           <small>Hoje ou datas futuras</small>
-        </div>
+        </button>
 
-        <div className="card metric-card metric-red">
+        <button
+          type="button"
+          className={`card metric-card metric-red agenda-summary-control ${filtroRapido === "todos" && filtroStatus === "cancelado" ? "is-active" : ""}`}
+          onClick={() => trocarVisaoAgenda("todos", "cancelado")}
+        >
           <p>Cancelados</p>
           <h2>{resumo.cancelados}</h2>
           <small>Histórico preservado</small>
-        </div>
+        </button>
       </div>
 
       <section className="card fornecedores-card">
@@ -596,6 +614,25 @@ export default function Agenda() {
               <p>Lista operacional de serviços agendados por data e horário.</p>
             </div>
           </div>
+        </div>
+
+        <div className="agenda-quick-filters" aria-label="Visualizações rápidas da agenda">
+          {[
+            ["todos", "Todos"],
+            ["hoje", "Hoje"],
+            ["proximos", "Próximos"],
+            ["em_atendimento", "Em atendimento"],
+          ].map(([valor, label]) => (
+            <button
+              key={valor}
+              type="button"
+              className={filtroRapido === valor ? "is-active" : ""}
+              aria-pressed={filtroRapido === valor}
+              onClick={() => trocarVisaoAgenda(valor)}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         <div className="fornecedores-toolbar">
@@ -656,11 +693,36 @@ export default function Agenda() {
                 {agendamentosFiltrados.map((agendamento) => {
                   const status = normalizarStatusAgendamento(agendamento.status);
                   const podeEditar = podeEscreverAgenda && podeEditarDadosAgendamento(agendamento.status);
+                  const acaoPrincipal = obterAcaoPrincipalAgenda(status, podeEscreverAgenda);
+                  const processandoAcao = acaoEmAndamento.id === agendamento.id;
+                  const processandoAcaoPrincipal = processandoAcao &&
+                    acaoEmAndamento.status === acaoPrincipal.proximoStatus;
+                  const atendimentoPendente = isAtendimentoAntigoEmAberto(agendamento, hojeISO);
+                  const itensMenu = [
+                    ...(acaoPrincipal.tipo === "visualizar" ? [] : [{
+                      label: podeEditar ? "Editar agendamento" : "Visualizar atendimento",
+                      onClick: () => abrirEdicaoAgendamento(agendamento),
+                    }]),
+                    ...(podeEscreverAgenda ? transicoesPermitidasAgendamento(agendamento.status)
+                      .filter((proximo) => proximo !== acaoPrincipal.proximoStatus)
+                      .map((proximo) => ({
+                        label: ACOES_STATUS[proximo],
+                        danger: proximo === "cancelado",
+                        disabled: Boolean(acaoEmAndamento.id),
+                        onClick: () => atualizarStatusAgendamento(agendamento, proximo),
+                      })) : []),
+                    ...(podeEscreverAgenda ? [{
+                      label: excluindoId === agendamento.id ? "Excluindo..." : "Excluir agendamento",
+                      danger: true,
+                      disabled: Boolean(excluindoId || acaoEmAndamento.id),
+                      onClick: () => solicitarExclusaoAgendamento(agendamento),
+                    }] : []),
+                  ];
 
                   return (
                     <tr
                       key={agendamento.id}
-                      className="agenda-table-row"
+                      className={`agenda-table-row ${atendimentoPendente ? "is-pending" : ""}`}
                       onDoubleClick={() => abrirEdicaoAgendamento(agendamento)}
                     >
                       <td>{formatarData(agendamento.data)}</td>
@@ -678,28 +740,29 @@ export default function Agenda() {
                         <span className={`badge ${getStatusBadgeClass(status)}`}>
                           {getStatusLabel(status)}
                         </span>
+                        {atendimentoPendente && (
+                          <small className="agenda-pending-label">Atendimento pendente</small>
+                        )}
                       </td>
                       <td onDoubleClick={(event) => event.stopPropagation()}>
-                        <ActionMenu
+                        <div className="agenda-row-actions">
+                          <button
+                            type="button"
+                            className="agenda-primary-action"
+                            disabled={Boolean(acaoEmAndamento.id || excluindoId)}
+                            onClick={() => acaoPrincipal.tipo === "visualizar"
+                              ? abrirEdicaoAgendamento(agendamento)
+                              : atualizarStatusAgendamento(agendamento, acaoPrincipal.proximoStatus)}
+                          >
+                            {processandoAcaoPrincipal ? acaoPrincipal.processando : acaoPrincipal.label}
+                          </button>
+                          {itensMenu.length > 0 && (
+                            <ActionMenu
                             label="Abrir ações do agendamento"
-                            items={[
-                              {
-                                label: podeEditar ? "Editar agendamento" : "Visualizar atendimento",
-                                onClick: () => abrirEdicaoAgendamento(agendamento),
-                              },
-                              ...(podeEscreverAgenda ? transicoesPermitidasAgendamento(agendamento.status).map((proximo) => ({
-                                label: ACOES_STATUS[proximo],
-                                danger: proximo === "cancelado",
-                                onClick: () => atualizarStatusAgendamento(agendamento, proximo),
-                              })) : []),
-                              ...(podeEscreverAgenda ? [{
-                                label: excluindoId === agendamento.id ? "Excluindo..." : "Excluir agendamento",
-                                danger: true,
-                                disabled: Boolean(excluindoId),
-                                onClick: () => solicitarExclusaoAgendamento(agendamento),
-                              }] : []),
-                            ]}
-                          />
+                              items={itensMenu}
+                            />
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

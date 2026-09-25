@@ -123,3 +123,37 @@ test("Agenda expõe exclusão autenticada pelo endpoint DELETE", () => {
   assert.match(agendaApi, /method: "DELETE"/);
   assert.match(agendaApi, /requisitar\(`\/\$\{encodeURIComponent\(id\)\}`/);
 });
+
+test("Agenda operacional preserva conclusão financeira e bloqueia transição duplicada", () => {
+  const agenda = readFileSync(
+    fileURLToPath(new URL("../../pages/Agenda.jsx", import.meta.url)),
+    "utf8",
+  );
+
+  assert.match(agenda, /await concluirAtendimento\(/);
+  assert.match(agenda, /if \(acaoEmAndamento\.id\) return;/);
+  assert.match(agenda, /disabled=\{Boolean\(acaoEmAndamento\.id \|\| excluindoId\)\}/);
+  assert.match(agenda, /finally \{\s*setAcaoEmAndamento\(\{ id: "", status: "" \}\);/);
+  assert.doesNotMatch(agenda, /transicionarAgendamento\([^\n]+"concluido"/);
+});
+
+test("Agenda troca visões limpando filtros estruturais e preservando a busca", () => {
+  const agenda = readFileSync(
+    fileURLToPath(new URL("../../pages/Agenda.jsx", import.meta.url)),
+    "utf8",
+  );
+
+  const handlerVisao = agenda.match(
+    /const trocarVisaoAgenda = \(visao, status = "todos"\) => \{[\s\S]*?\n {2}\};/,
+  )?.[0] || "";
+
+  assert.match(handlerVisao, /setFiltroRapido\(visao\);/);
+  assert.match(handlerVisao, /setFiltroStatus\(status\);/);
+  assert.match(handlerVisao, /setFiltroData\(""\);/);
+  assert.doesNotMatch(handlerVisao, /setBusca\(/);
+  assert.match(agenda, /onClick=\{\(\) => trocarVisaoAgenda\(valor\)\}/);
+  assert.match(agenda, /trocarVisaoAgenda\("todos", "confirmado"\)/);
+  assert.match(agenda, /trocarVisaoAgenda\("todos", "cancelado"\)/);
+  assert.match(agenda, /trocarVisaoAgenda\("hoje"\)/);
+  assert.match(agenda, /trocarVisaoAgenda\("proximos"\)/);
+});
