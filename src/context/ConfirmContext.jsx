@@ -7,10 +7,11 @@ export function ConfirmProvider({ children }) {
   // ================================
   // 🔹 CONFIRMAÇÃO GLOBAL
   // ================================
-  const confirmar = useCallback((message) => {
+  const confirmar = useCallback((opcoes) => {
+    const configuracao = typeof opcoes === "string" ? { message: opcoes } : opcoes;
     return new Promise((resolve) => {
       setConfirmacao({
-        message,
+        ...configuracao,
         resolve,
       });
     });
@@ -33,7 +34,7 @@ export function ConfirmProvider({ children }) {
       {confirmacao && (
         <div className="confirm-overlay" role="dialog" aria-modal="true">
           <div className="confirm-card">
-            <h3>Confirmar ação</h3>
+            <h3>{confirmacao.titulo || "Confirmar ação"}</h3>
             <p>{confirmacao.message}</p>
 
             <div className="confirm-actions">
@@ -45,8 +46,11 @@ export function ConfirmProvider({ children }) {
                 Cancelar
               </button>
 
-              <button type="button" onClick={() => responder(true)}>
-                Confirmar
+              <button
+                type="button"
+                onClick={() => responder(true)}
+              >
+                {confirmacao.textoConfirmar || "Confirmar"}
               </button>
             </div>
           </div>

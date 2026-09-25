@@ -246,8 +246,49 @@ const criarHandlerTransicao = (acao, { getDb: obterDb = getDb, agora = () => Fie
     });
   });
 
+const possuiVinculoAtendimento = (snapshot, agendamentoId) =>
+  snapshot.docs.some((docSnap) => {
+    const origem = docSnap.data()?.origem;
+    return origem?.tipo === "atendimento" && origem.documentoId === agendamentoId;
+  });
+
+const criarHandlerExcluir = ({ getDb: obterDb = getDb, agora = () => FieldValue.serverTimestamp() } = {}) =>
+  responder(async (req) => {
+    const escopo = validarEscopo(req.body);
+    if (!idValido(req.params?.id)) throw erro(400, "Agendamento invalido.", "agenda_nao_encontrada");
+    const db = obterDb();
+    return db.runTransaction(async (tx) => {
+      const empresaRef = await verificarAcessoAgenda(db, tx, { uid: req.user.uid, ...escopo });
+      const documentoRef = empresaRef.collection("agendamentos").doc(req.params.id);
+      const agendamentoSnap = await tx.get(documentoRef);
+      if (!existe(agendamentoSnap)) {
+        throw erro(404, "Agendamento nao encontrado.", "agenda_nao_encontrada");
+      }
+
+      const [contasSnapshot, faturamentosSnapshot] = await Promise.all([
+        tx.get(empresaRef.collection("contasReceber").where("origem.documentoId", "==", req.params.id)),
+        tx.get(empresaRef.collection("faturamentos").where("origem.documentoId", "==", req.params.id)),
+      ]);
+      if (possuiVinculoAtendimento(contasSnapshot, req.params.id) ||
+          possuiVinculoAtendimento(faturamentosSnapshot, req.params.id)) {
+        throw erro(
+          409,
+          "Este agendamento possui movimentacao financeira ou faturamento vinculado e nao pode ser excluido.",
+          "agenda_possui_vinculo"
+        );
+      }
+
+      const agendamento = agendamentoSnap.data();
+      const controles = await lerControlesAgenda(tx, empresaRef, [agendamento.data]);
+      tocarControlesAgenda(tx, controles, agora());
+      tx.delete(documentoRef);
+      return { agendamentoId: req.params.id };
+    });
+  });
+
 router.post("/", authFirebase, criarHandlerCriar());
 router.put("/:id", authFirebase, criarHandlerEditar());
+router.delete("/:id", authFirebase, criarHandlerExcluir());
 router.post("/:id/confirmar", authFirebase, criarHandlerTransicao("confirmar"));
 router.post("/:id/iniciar", authFirebase, criarHandlerTransicao("iniciar"));
 router.post("/:id/cancelar", authFirebase, criarHandlerTransicao("cancelar"));
@@ -256,6 +297,7 @@ module.exports = {
   router,
   criarHandlerCriar,
   criarHandlerEditar,
+  criarHandlerExcluir,
   criarHandlerTransicao,
   lerControlesAgenda,
   tocarControlesAgenda,

@@ -19,6 +19,7 @@ const requisitar = async (path, { method = "POST", dados } = {}) => {
       agenda_payload_invalido: "Os dados do agendamento são inválidos.",
       agenda_transicao_invalida: "Este atendimento não permite essa alteração.",
       agenda_sem_permissao: "Você não tem permissão para esta operação.",
+      agenda_possui_vinculo: "Este agendamento possui movimentação financeira ou faturamento vinculado e não pode ser excluído.",
     };
     const error = new Error(mensagens[resultado.codigo] || resultado.error ||
       "Não foi possível concluir a operação.");
@@ -32,5 +33,7 @@ const requisitar = async (path, { method = "POST", dados } = {}) => {
 export const criarAgendamento = (dados) => requisitar("/", { dados });
 export const editarAgendamento = (id, dados) =>
   requisitar(`/${encodeURIComponent(id)}`, { method: "PUT", dados });
+export const excluirAgendamento = (id, dados) =>
+  requisitar(`/${encodeURIComponent(id)}`, { method: "DELETE", dados });
 export const transicionarAgendamento = (id, acao, dados) =>
   requisitar(`/${encodeURIComponent(id)}/${acao}`, { dados });

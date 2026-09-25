@@ -112,3 +112,14 @@ test("Agenda usa o fluxo autenticado centralizado", () => {
   assert.match(agendaApi, /fetchAutenticado\(`/);
   assert.doesNotMatch(agendaApi, /getIdToken\(/);
 });
+
+test("Agenda expõe exclusão autenticada pelo endpoint DELETE", () => {
+  const agendaApi = readFileSync(
+    fileURLToPath(new URL("../agendaApi.js", import.meta.url)),
+    "utf8",
+  );
+
+  assert.match(agendaApi, /export const excluirAgendamento/);
+  assert.match(agendaApi, /method: "DELETE"/);
+  assert.match(agendaApi, /requisitar\(`\/\$\{encodeURIComponent\(id\)\}`/);
+});

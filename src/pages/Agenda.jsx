@@ -12,6 +12,7 @@ import { db } from "../firebase";
 import {
   criarAgendamento,
   editarAgendamento,
+  excluirAgendamento,
   transicionarAgendamento,
 } from "../services/agendaApi";
 import { concluirAtendimento } from "../services/financeiroServicosApi";
@@ -111,6 +112,7 @@ export default function Agenda() {
   const { confirmar } = useConfirmacao();
 
   const [agendamentos, setAgendamentos] = useState([]);
+  const [excluindoId, setExcluindoId] = useState("");
   const [clientesSnapshot, setClientesSnapshot] = useState({ chave: "", lista: [] });
   const [servicosSnapshot, setServicosSnapshot] = useState({ chave: "", lista: [] });
   const [carregando, setCarregando] = useState(true);
@@ -504,6 +506,32 @@ export default function Agenda() {
     }
   };
 
+  const solicitarExclusaoAgendamento = async (agendamento) => {
+    if (!podeEscreverAgenda || excluindoId) return;
+
+    const confirmado = await confirmar({
+      titulo: "Excluir agendamento?",
+      message: "Este agendamento será removido definitivamente. Esta ação não poderá ser desfeita.",
+      textoConfirmar: "Excluir agendamento",
+    });
+    if (!confirmado) return;
+
+    setExcluindoId(agendamento.id);
+    try {
+      await excluirAgendamento(agendamento.id, { ownerUid, empresaId });
+      showToast("Agendamento excluído com sucesso.", "success");
+    } catch (error) {
+      showToast(
+        error.status === 409
+          ? error.message
+          : error.message || "Não foi possível excluir o agendamento.",
+        "error"
+      );
+    } finally {
+      setExcluindoId("");
+    }
+  };
+
   const somenteLeitura = !podeEscreverAgenda ||
     Boolean(agendamentoEditando && !podeEditarDadosAgendamento(agendamentoEditando.status));
 
@@ -664,6 +692,12 @@ export default function Agenda() {
                                 danger: proximo === "cancelado",
                                 onClick: () => atualizarStatusAgendamento(agendamento, proximo),
                               })) : []),
+                              ...(podeEscreverAgenda ? [{
+                                label: excluindoId === agendamento.id ? "Excluindo..." : "Excluir agendamento",
+                                danger: true,
+                                disabled: Boolean(excluindoId),
+                                onClick: () => solicitarExclusaoAgendamento(agendamento),
+                              }] : []),
                             ]}
                           />
                       </td>

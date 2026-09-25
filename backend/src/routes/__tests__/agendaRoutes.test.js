@@ -1,9 +1,12 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { readFileSync } = require("node:fs");
+const path = require("node:path");
 const app = require("../../server");
 const {
   criarHandlerCriar,
   criarHandlerEditar,
+  criarHandlerExcluir,
   criarHandlerTransicao,
 } = require("../agendaRoutes");
 
@@ -28,6 +31,7 @@ const criarBanco = ({ segmento = "clientes", role = "comercial", ativo = true, c
   if (servico) docs.set(`${caminhoEmpresa}/servicos/s1`, {
     nome: "Servico Canonico", valor: 125, tempoEstimadoMinutos: 60, status: "ativo",
   });
+  const obterCampo = (data, campo) => campo.split(".").reduce((valor, chave) => valor?.[chave], data);
   const snapshot = (path) => ({ exists: docs.has(path), id: path.split("/").at(-1), data: () => docs.get(path) });
   const ref = (path) => ({
     path, id: path.split("/").at(-1),
@@ -47,7 +51,8 @@ const criarBanco = ({ segmento = "clientes", role = "comercial", ativo = true, c
           if (item.consulta) return {
             docs: [...docs.entries()]
               .filter(([path, data]) => path.startsWith(`${item.path}/`) &&
-                path.slice(item.path.length + 1).split("/").length === 1 && data[item.campo] === item.valor)
+                path.slice(item.path.length + 1).split("/").length === 1 &&
+                obterCampo(data, item.campo) === item.valor)
               .map(([path]) => snapshot(path)),
           };
           return snapshot(item.path);
@@ -58,6 +63,7 @@ const criarBanco = ({ segmento = "clientes", role = "comercial", ativo = true, c
           options.merge ? { ...docs.get(item.path), ...data } : data
         )),
         update: (item, data) => writes.push(() => docs.set(item.path, { ...docs.get(item.path), ...data })),
+        delete: (item) => writes.push(() => docs.delete(item.path)),
       };
       const resultado = await callback(tx);
       writes.forEach((write) => write());
@@ -86,9 +92,21 @@ test("rota final /api/agenda esta montada e autenticada", async () => {
       method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
     });
     assert.equal(response.status, 401);
+    const deleteResponse = await fetch(`http://127.0.0.1:${server.address().port}/api/agenda/a1`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" }, body: "{}",
+    });
+    assert.equal(deleteResponse.status, 401);
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
+});
+
+test("Rules mantem exclusao direta de agendamentos bloqueada", () => {
+  const rules = readFileSync(path.resolve(__dirname, "../../../..", "firestore.rules"), "utf8");
+  assert.match(
+    rules,
+    /match \/agendamentos\/\{agendamentoId\}\s*\{[\s\S]*?allow create, update: if false;\s*allow delete: if false;/,
+  );
 });
 
 test("criacao autorizada congela fontes canonicas sem produzir campos fiscais", async () => {
@@ -284,4 +302,65 @@ test("transicao invalida e documento inexistente sao rejeitados", async () => {
   assert.equal((await chamar(criarHandlerTransicao("cancelar", { getDb: () => db }))).statusHttp, 404);
   docs.set(`${caminhoEmpresa}/agendamentos/a1`, { ...bodyValido, status: "concluido" });
   assert.equal((await chamar(criarHandlerTransicao("cancelar", { getDb: () => db }))).statusHttp, 409);
+});
+
+test("exclusao remove agendamento sem vinculos e toca controle do dia", async () => {
+  const { db, docs } = criarBanco();
+  docs.set(`${caminhoEmpresa}/agendamentos/a1`, { ...bodyValido, status: "agendado" });
+
+  const resposta = await chamar(criarHandlerExcluir({ getDb: () => db, agora: () => "excluido" }));
+
+  assert.equal(resposta.statusHttp, 200);
+  assert.equal(resposta.agendamentoId, "a1");
+  assert.equal(docs.has(`${caminhoEmpresa}/agendamentos/a1`), false);
+  assert.equal(docs.get(`${caminhoEmpresa}/agendaControles/2026-09-24`).versao, 1);
+});
+
+test("exclusao bloqueia conta a receber vinculada sem alterar documentos", async () => {
+  const { db, docs } = criarBanco();
+  const agendaPath = `${caminhoEmpresa}/agendamentos/a1`;
+  const contaPath = `${caminhoEmpresa}/contasReceber/atendimento_a1`;
+  docs.set(agendaPath, { ...bodyValido, status: "concluido" });
+  docs.set(contaPath, { origem: { tipo: "atendimento", documentoId: "a1" } });
+
+  const resposta = await chamar(criarHandlerExcluir({ getDb: () => db }));
+
+  assert.equal(resposta.statusHttp, 409);
+  assert.equal(resposta.codigo, "agenda_possui_vinculo");
+  assert.equal(docs.has(agendaPath), true);
+  assert.equal(docs.has(contaPath), true);
+});
+
+test("exclusao bloqueia faturamento historico vinculado", async () => {
+  const { db, docs } = criarBanco();
+  const agendaPath = `${caminhoEmpresa}/agendamentos/a1`;
+  const faturamentoPath = `${caminhoEmpresa}/faturamentos/atendimento_a1_preparacao_v1`;
+  docs.set(agendaPath, { ...bodyValido, status: "agendado" });
+  docs.set(faturamentoPath, { origem: { tipo: "atendimento", documentoId: "a1" } });
+
+  const resposta = await chamar(criarHandlerExcluir({ getDb: () => db }));
+
+  assert.equal(resposta.statusHttp, 409);
+  assert.equal(docs.has(agendaPath), true);
+  assert.equal(docs.has(faturamentoPath), true);
+});
+
+test("exclusao rejeita inexistente, cross-tenant e perfil sem permissao", async () => {
+  const inexistente = criarBanco();
+  assert.equal((await chamar(criarHandlerExcluir({ getDb: () => inexistente.db }))).statusHttp, 404);
+
+  const crossTenant = criarBanco();
+  crossTenant.docs.set(`${caminhoEmpresa}/agendamentos/a1`, { ...bodyValido, status: "agendado" });
+  const respostaCrossTenant = await chamar(criarHandlerExcluir({ getDb: () => crossTenant.db }), {
+    body: { ownerUid: "outro-owner", empresaId: "outra-empresa" },
+  });
+  assert.equal(respostaCrossTenant.statusHttp, 404);
+  assert.equal(crossTenant.docs.has(`${caminhoEmpresa}/agendamentos/a1`), true);
+
+  const semPermissao = criarBanco({ role: "visualizacao" });
+  semPermissao.docs.set(`${caminhoEmpresa}/agendamentos/a1`, { ...bodyValido, status: "agendado" });
+  assert.equal((await chamar(
+    criarHandlerExcluir({ getDb: () => semPermissao.db }),
+    { uid: "guest" },
+  )).statusHttp, 403);
 });
