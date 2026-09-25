@@ -16,6 +16,7 @@ export const SEGMENTOS_EMPRESA = {
       "fornecedores",
       "relatorios",
       "configuracoes",
+      "parametrosEmpresa",
     ],
   },
   industria: {
@@ -36,6 +37,7 @@ export const SEGMENTOS_EMPRESA = {
       "fornecedores",
       "relatorios",
       "configuracoes",
+      "parametrosEmpresa",
     ],
   },
   oficina: {
@@ -56,6 +58,7 @@ export const SEGMENTOS_EMPRESA = {
       "fornecedores",
       "relatorios",
       "configuracoes",
+      "parametrosEmpresa",
     ],
   },
   clientes: {

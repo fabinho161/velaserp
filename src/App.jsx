@@ -279,9 +279,11 @@ function AuthenticatedApp() {
           <Route
             path="/parametros-empresa"
             element={(
-              <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.parametros}>
-                <ParametrosEmpresa />
-              </EmpresaPermissionRoute>
+              <SegmentoRoute modulo="parametrosEmpresa">
+                <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.parametros}>
+                  <ParametrosEmpresa />
+                </EmpresaPermissionRoute>
+              </SegmentoRoute>
             )}
           />
           <Route

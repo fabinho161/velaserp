@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -71,4 +72,29 @@ test("faturamento nao pertence a gestao de servicos", () => {
   assert.equal(segmentoPossuiModulo("oficina", "faturamento"), true);
   assert.equal(segmentoPossuiModulo("clientes", "faturamento"), false);
   assert.equal(segmentoPossuiModulo("clientes", "atendimentos"), false);
+});
+
+test("parametros da empresa nao pertencem a gestao de servicos", () => {
+  assert.equal(segmentoPossuiModulo("clientes", "parametrosEmpresa"), false);
+  assert.equal(segmentoPossuiModulo("servicos", "parametrosEmpresa"), false);
+  assert.equal(segmentoPossuiModulo("comercio", "parametrosEmpresa"), true);
+  assert.equal(segmentoPossuiModulo("industria", "parametrosEmpresa"), true);
+  assert.equal(segmentoPossuiModulo("oficina", "parametrosEmpresa"), true);
+});
+
+test("sidebar e rota de parametros usam a restricao central por segmento", () => {
+  const sidebar = readFileSync(
+    new URL("../../components/Sidebar.jsx", import.meta.url),
+    "utf8"
+  );
+  const app = readFileSync(new URL("../../App.jsx", import.meta.url), "utf8");
+
+  assert.match(
+    sidebar,
+    /path:\s*["']\/parametros-empresa["'][\s\S]*?modulo:\s*["']parametrosEmpresa["']/
+  );
+  assert.match(
+    app,
+    /path=["']\/parametros-empresa["'][\s\S]*?<SegmentoRoute modulo=["']parametrosEmpresa["']>/
+  );
 });

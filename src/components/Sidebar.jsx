@@ -150,7 +150,12 @@ export default function Sidebar() {
         podeVerMenu(PERMISSOES_EMPRESA.configuracoes) &&
           { path: "/configuracoes", label: "Configuracoes", icon: Settings, modulo: "configuracoes" },
         podeVerMenu(PERMISSOES_EMPRESA.parametros) &&
-          { path: "/parametros-empresa", label: "Parametros Empresa", icon: Settings },
+          {
+            path: "/parametros-empresa",
+            label: "Parametros Empresa",
+            icon: Settings,
+            modulo: "parametrosEmpresa",
+          },
         podeVerMenu(PERMISSOES_EMPRESA.usuariosEmpresa) &&
           { path: "/usuarios-empresa", label: "Usuarios da Empresa", icon: Users },
       ]),
