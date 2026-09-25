@@ -6,6 +6,10 @@ const {
 } = require("../services/sincronizarPlanoEspelhoEmpresasOwner");
 const { ROLE_ADMIN_EMPRESA } = require("../utils/perfisEmpresa");
 const {
+  SEGMENTO_EMPRESA_PADRAO,
+  canonicalizarSegmentoEmpresa,
+} = require("../utils/segmentosEmpresa");
+const {
   logAuditoriaError,
   logAuditoriaInfo,
   registrarErroAuditoria,
@@ -14,13 +18,6 @@ const {
 const router = express.Router();
 
 const LIMITE_NOME_EMPRESA = 120;
-const SEGMENTO_EMPRESA_PADRAO = "industria";
-const SEGMENTOS_EMPRESA_VALIDOS = new Set([
-  "comercio",
-  "industria",
-  "oficina",
-  "clientes",
-]);
 const LIMITES_EMPRESAS_POR_PLANO = {
   gratis: 1,
   basico: 2,
@@ -41,13 +38,13 @@ const normalizarSegmentoEmpresa = (segmento) => {
     throw criarErroHttp(400, "Segmento da empresa invalido.");
   }
 
-  const segmentoTratado = segmento.trim().toLowerCase();
+  const segmentoCanonico = canonicalizarSegmentoEmpresa(segmento);
 
-  if (!SEGMENTOS_EMPRESA_VALIDOS.has(segmentoTratado)) {
+  if (!segmentoCanonico) {
     throw criarErroHttp(400, "Segmento da empresa invalido.");
   }
 
-  return segmentoTratado;
+  return segmentoCanonico;
 };
 
 const validarPayloadCriacaoEmpresa = (body) => {

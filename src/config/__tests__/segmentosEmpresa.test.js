@@ -14,6 +14,13 @@ test("normaliza os quatro segmentos validos", () => {
   }
 });
 
+test("normaliza alias legado servicos para o segmento canonico clientes", () => {
+  assert.equal(normalizarSegmentoEmpresa("servicos"), "clientes");
+  assert.equal(obterSegmentoEmpresa("servicos").id, "clientes");
+  assert.equal(segmentoPossuiModulo("servicos", "agenda"), true);
+  assert.equal(segmentoPossuiModulo("servicos", "financeiro"), true);
+});
+
 test("usa industria como fallback para valores invalidos, undefined e null", () => {
   assert.equal(normalizarSegmentoEmpresa("saude"), "industria");
   assert.equal(normalizarSegmentoEmpresa(undefined), "industria");

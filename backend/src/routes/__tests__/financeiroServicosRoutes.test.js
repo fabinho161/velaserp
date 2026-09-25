@@ -89,6 +89,15 @@ test("reconciliacao nao altera agenda nem duplica conta", async () => {
   assert.equal(Object.hasOwn(agenda, "concluidoEm"), false);
 });
 
+test("financeiro aceita empresa legada servicos como Gestao de Servicos", async () => {
+  const { db, docs } = criarBanco({ segmento: "servicos" });
+  docs.get("users/owner/empresas/empresa/agendamentos/a1").status = "concluido";
+  const resultado = await chamar(criarHandlerSincronizar({ getDb: () => db, agora: () => "agora" }), {});
+
+  assert.equal(resultado.status, 200);
+  assert.equal(resultado.criadas, 1);
+});
+
 test("valor historico invalido bloqueia conclusao e vira pendencia no legado", async () => {
   const { db, docs } = criarBanco();
   const agenda = docs.get("users/owner/empresas/empresa/agendamentos/a1");

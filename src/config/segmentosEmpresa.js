@@ -75,12 +75,16 @@ export const SEGMENTOS_EMPRESA = {
 };
 
 const SEGMENTOS_VALIDOS = new Set(Object.keys(SEGMENTOS_EMPRESA));
+const ALIASES_SEGMENTO_EMPRESA = {
+  servicos: "clientes",
+};
 
 export const normalizarSegmentoEmpresa = (segmento) => {
   const segmentoTratado = String(segmento || "").trim().toLowerCase();
+  const segmentoCanonico = ALIASES_SEGMENTO_EMPRESA[segmentoTratado] || segmentoTratado;
 
-  return SEGMENTOS_VALIDOS.has(segmentoTratado)
-    ? segmentoTratado
+  return SEGMENTOS_VALIDOS.has(segmentoCanonico)
+    ? segmentoCanonico
     : SEGMENTO_EMPRESA_PADRAO;
 };
 

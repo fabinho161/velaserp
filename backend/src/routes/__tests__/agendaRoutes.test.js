@@ -106,6 +106,17 @@ test("criacao autorizada congela fontes canonicas sem produzir campos fiscais", 
   assert.equal(docs.get(`${caminhoEmpresa}/agendaControles/2026-09-24`).versao, 1);
 });
 
+test("agenda aceita empresa legada servicos para owner e administrador_empresa", async () => {
+  const owner = criarBanco({ segmento: "servicos" });
+  assert.equal((await chamar(criarHandlerCriar({ getDb: () => owner.db }))).statusHttp, 201);
+
+  const administrador = criarBanco({ segmento: "servicos", role: "administrador_empresa" });
+  assert.equal((await chamar(
+    criarHandlerCriar({ getDb: () => administrador.db }),
+    { uid: "guest" },
+  )).statusHttp, 201);
+});
+
 test("payload arbitrario ou fiscal e rejeitado pela allowlist", async () => {
   for (const extra of [
     { campoArbitrario: "nao aceitar" },

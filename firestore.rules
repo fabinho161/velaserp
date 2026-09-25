@@ -20,14 +20,21 @@ service cloud.firestore {
 
     function isCompanySegment(ownerUid, empresaId, segmento) {
       return exists(userCompanyPath(ownerUid, empresaId)) &&
-        get(userCompanyPath(ownerUid, empresaId)).data.segmento == segmento;
+        (
+          get(userCompanyPath(ownerUid, empresaId)).data.segmento == segmento ||
+          (
+            segmento == "clientes" &&
+            get(userCompanyPath(ownerUid, empresaId)).data.segmento == "servicos"
+          )
+        );
     }
 
     function isCompanySegmentForServices(ownerUid, empresaId) {
       return exists(userCompanyPath(ownerUid, empresaId)) &&
         (
           get(userCompanyPath(ownerUid, empresaId)).data.segmento == "oficina" ||
-          get(userCompanyPath(ownerUid, empresaId)).data.segmento == "clientes"
+          get(userCompanyPath(ownerUid, empresaId)).data.segmento == "clientes" ||
+          get(userCompanyPath(ownerUid, empresaId)).data.segmento == "servicos"
         );
     }
 

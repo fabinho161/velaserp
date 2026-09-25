@@ -2,6 +2,7 @@ const express = require("express");
 const authFirebase = require("../middlewares/authFirebase");
 const { FieldValue, getDb } = require("../firebaseAdmin");
 const { normalizarRoleEmpresa } = require("../utils/perfisEmpresa");
+const { empresaPertenceAoSegmento } = require("../utils/segmentosEmpresa");
 const {
   FORMAS_PAGAMENTO, idContaAtendimento, montarContaAtendimento,
 } = require("../shared/contasReceberServicos.cjs");
@@ -25,7 +26,7 @@ const verificarAcesso = async (db, tx, { uid, ownerUid, empresaId, permissao }) 
   const atorRef = db.collection("users").doc(uid);
   const [empresaSnap, atorSnap] = await Promise.all([tx.get(empresaRef), tx.get(atorRef)]);
   if (!existe(empresaSnap)) throw erro(404, "Empresa nao encontrada.");
-  if (empresaSnap.data().segmento !== "clientes" ||
+  if (!empresaPertenceAoSegmento(empresaSnap.data().segmento, "clientes") ||
       (empresaSnap.data().ownerUid && empresaSnap.data().ownerUid !== ownerUid)) {
     throw erro(403, "Operacao indisponivel para esta empresa.");
   }

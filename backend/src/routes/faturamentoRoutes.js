@@ -14,16 +14,10 @@ const { CATALOGO_IBS_CBS_2025_002_V1_60 } = require("../shared/catalogoTributari
 const { classificarManualmente } = require("../shared/classificacaoManual.cjs");
 const { revisarContextoFiscalServico } = require("../shared/contextoFiscalServico.cjs");
 const { CATALOGO_SERVICOS_NFSE_V1_01_20260122 } = require("../shared/catalogoServicos.cjs");
+const { normalizarSegmentoEmpresa } = require("../utils/segmentosEmpresa");
 
 const router = express.Router();
 
-const SEGMENTO_EMPRESA_PADRAO = "industria";
-const SEGMENTOS_EMPRESA_VALIDOS = new Set([
-  "comercio",
-  "industria",
-  "oficina",
-  "clientes",
-]);
 const ROLES_PREPARACAO_FATURAMENTO = new Set([
   "administrador_empresa",
   "financeiro",
@@ -156,13 +150,6 @@ const escolherVinculoAcesso = ({ empresaUsuarioSnapshot, usuarioPorAuthSnapshot 
   }
 
   return null;
-};
-
-const normalizarSegmentoEmpresa = (segmento) => {
-  const segmentoTratado = String(segmento || "").trim().toLowerCase();
-  return SEGMENTOS_EMPRESA_VALIDOS.has(segmentoTratado)
-    ? segmentoTratado
-    : SEGMENTO_EMPRESA_PADRAO;
 };
 
 const usuarioAtivoPodePrepararFaturamento = ({

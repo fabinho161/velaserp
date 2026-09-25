@@ -64,3 +64,8 @@ test("visualizacao continua sem escrita e delete de cliente continua negado", ()
   assert.doesNotMatch(permissoesEscrita, /"visualizacao"/);
   assert.match(regraClientes, /allow delete: if false;/);
 });
+
+test("rules tratam servicos apenas como alias legado de clientes", () => {
+  assert.match(rules, /segmento == "clientes"[\s\S]*?\.data\.segmento == "servicos"/);
+  assert.match(rules, /function isCompanySegmentForServices[\s\S]*?\.data\.segmento == "servicos"/);
+});

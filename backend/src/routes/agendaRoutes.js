@@ -2,6 +2,7 @@ const express = require("express");
 const authFirebase = require("../middlewares/authFirebase");
 const { FieldValue, getDb } = require("../firebaseAdmin");
 const { normalizarRoleEmpresa } = require("../utils/perfisEmpresa");
+const { empresaPertenceAoSegmento } = require("../utils/segmentosEmpresa");
 const {
   existeConflitoAgenda,
   montarSnapshotCliente,
@@ -38,7 +39,7 @@ const verificarAcessoAgenda = async (db, tx, { uid, ownerUid, empresaId }) => {
   const atorRef = db.collection("users").doc(uid);
   const [empresaSnap, atorSnap] = await Promise.all([tx.get(empresaRef), tx.get(atorRef)]);
   if (!existe(empresaSnap)) throw erro(404, "Empresa nao encontrada.", "agenda_empresa_invalida");
-  if (dados(empresaSnap).segmento !== "clientes" ||
+  if (!empresaPertenceAoSegmento(dados(empresaSnap).segmento, "clientes") ||
       (dados(empresaSnap).ownerUid && dados(empresaSnap).ownerUid !== ownerUid)) {
     throw erro(403, "Operacao indisponivel para esta empresa.", "agenda_sem_permissao");
   }

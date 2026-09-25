@@ -368,6 +368,19 @@ test("aceita todos os segmentos canonicos", async (t) => {
   }
 });
 
+test("entrada legada servicos e persistida com o segmento canonico clientes", async () => {
+  const { app, db } = criarAmbiente();
+  const { response, data } = await postEmpresa(app, {
+    nome: "Gestao de Servicos",
+    segmento: "servicos",
+  });
+  const empresas = listarEmpresas(db);
+
+  assert.equal(response.status, 201);
+  assert.equal(data.empresa.segmento, "clientes");
+  assert.equal(empresas[0].data.segmento, "clientes");
+});
+
 test("owner consegue excluir propria empresa com limpeza relacionada", async () => {
   const { app, db } = criarAmbiente();
 
