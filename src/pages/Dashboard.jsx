@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { useERP } from "../context/useERP";
+import { normalizarSegmentoEmpresa } from "../config/segmentosEmpresa.js";
 import { useTableSort } from "../hooks/useTableSort";
 import { extrairNumeroPedido } from "../utils/sortUtils";
 import {
@@ -30,6 +31,8 @@ import {
   obterDataPedido,
   ordenarUltimosPedidos,
 } from "../utils/dashboardData.js";
+import { resolverTipoDashboard } from "../utils/dashboardClientes.js";
+import DashboardClientes from "./dashboard/DashboardClientes.jsx";
 
 const MIN_CHART_WIDTH = 80;
 const MIN_CHART_HEIGHT = 180;
@@ -108,7 +111,7 @@ const vendaEstaValidaFinanceiramente = (venda = {}) =>
   String(venda.statusPagamento || "").trim().toLowerCase() !== "cancelado" &&
   String(venda.statusExpedicao || "").trim().toLowerCase() !== "cancelado";
 
-export default function Dashboard() {
+function DashboardPadrao() {
   const { vendas, producoes, insumos, despesas, produtos } = useERP();
   const ordenacaoPedidos = useTableSort({
     chave: "",
@@ -506,4 +509,16 @@ export default function Dashboard() {
       </div>
     </div>
   );
+}
+
+export default function Dashboard() {
+  const { empresaId, empresaOwnerUid, empresas = [], user } = useERP();
+  const empresaAtual = empresas.find((empresa) =>
+    empresa.id === empresaId &&
+    (empresa.ownerUid || user?.uid) === (empresaOwnerUid || user?.uid)
+  );
+
+  return resolverTipoDashboard(normalizarSegmentoEmpresa(empresaAtual?.segmento)) === "clientes"
+    ? <DashboardClientes />
+    : <DashboardPadrao />;
 }

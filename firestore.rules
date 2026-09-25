@@ -31,138 +31,6 @@ service cloud.firestore {
         );
     }
 
-    function isValidAgendaStatus(status) {
-      return ["agendado", "confirmado", "em_atendimento", "concluido", "cancelado"].hasAny([status]);
-    }
-
-    function isValidAgendaTransition(before, after) {
-      return (before == "agendado" && ["confirmado", "em_atendimento", "concluido", "cancelado"].hasAny([after])) ||
-        (before == "confirmado" && ["em_atendimento", "concluido", "cancelado"].hasAny([after])) ||
-        (before == "em_atendimento" && ["concluido", "cancelado"].hasAny([after]));
-    }
-
-    function hasValidAgendaMilestone(marco) {
-      return !resource.data.keys().hasAny([marco]) &&
-        request.resource.data.keys().hasAny([marco]) &&
-        request.resource.data[marco] == request.time &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(["status", "atualizadoEm", marco]);
-    }
-
-    function hasValidAgendaLocalPrestacao() {
-      return !request.resource.data.keys().hasAny(["localPrestacao"]) ||
-        request.resource.data.localPrestacao == null ||
-        (
-          request.resource.data.localPrestacao is map &&
-          request.resource.data.localPrestacao.keys().hasOnly([
-            "tipo", "codigoMunicipio", "municipio", "uf", "codigoPais"
-          ]) &&
-          request.resource.data.localPrestacao.keys().hasAll([
-            "tipo", "codigoMunicipio", "municipio", "uf", "codigoPais"
-          ]) &&
-          request.resource.data.localPrestacao.tipo == "brasil" &&
-          request.resource.data.localPrestacao.codigoMunicipio is string &&
-          request.resource.data.localPrestacao.municipio is string &&
-          request.resource.data.localPrestacao.uf is string &&
-          request.resource.data.localPrestacao.codigoPais == "BR"
-        );
-    }
-
-    function hasValidAgendaServicoFiscalSnapshot() {
-      return !request.resource.data.keys().hasAny(["servicoFiscalSnapshot"]) ||
-        (
-          request.resource.data.servicoFiscalSnapshot is map &&
-          request.resource.data.servicoFiscalSnapshot.keys().hasOnly([
-            "versao", "codigoTributacaoNacional", "codigoTributacaoMunicipal", "nbs", "descricaoFiscal"
-          ]) &&
-          request.resource.data.servicoFiscalSnapshot.versao == 1 &&
-          request.resource.data.servicoFiscalSnapshot.get("codigoTributacaoNacional", "") is string &&
-          request.resource.data.servicoFiscalSnapshot.get("codigoTributacaoMunicipal", "") is string &&
-          request.resource.data.servicoFiscalSnapshot.get("nbs", "") is string &&
-          request.resource.data.servicoFiscalSnapshot.get("descricaoFiscal", "") is string
-        );
-    }
-
-    function hasValidAgendaPayload() {
-      return request.resource.data.keys().hasOnly([
-          "clienteId",
-          "clienteNome",
-          "clienteTelefone",
-          "servicoId",
-          "servicoNome",
-          "valorServico",
-          "data",
-          "horaInicio",
-          "horaFim",
-          "duracaoMinutos",
-          "status",
-          "observacoes",
-          "localPrestacao",
-          "servicoFiscalSnapshot",
-          "criadoEm",
-          "atualizadoEm",
-          "criadoPor",
-          "confirmadoEm",
-          "iniciadoEm",
-          "concluidoEm",
-          "canceladoEm"
-        ]) &&
-        request.resource.data.clienteId is string &&
-        request.resource.data.clienteNome is string &&
-        request.resource.data.clienteTelefone is string &&
-        request.resource.data.servicoId is string &&
-        request.resource.data.servicoNome is string &&
-        request.resource.data.valorServico is number &&
-        request.resource.data.valorServico >= 0 &&
-        request.resource.data.data is string &&
-        request.resource.data.horaInicio is string &&
-        (!request.resource.data.keys().hasAny(["horaFim"]) ||
-          request.resource.data.horaFim is string) &&
-        request.resource.data.duracaoMinutos is int &&
-        request.resource.data.duracaoMinutos > 0 &&
-        request.resource.data.status is string &&
-        isValidAgendaStatus(request.resource.data.status) &&
-        request.resource.data.observacoes is string &&
-        hasValidAgendaLocalPrestacao() &&
-        hasValidAgendaServicoFiscalSnapshot() &&
-        request.resource.data.criadoPor is string;
-    }
-
-    function hasValidAgendaCreate() {
-      return hasValidAgendaPayload() &&
-        request.resource.data.status == "agendado" &&
-        !request.resource.data.keys().hasAny([
-          "confirmadoEm", "iniciadoEm", "concluidoEm", "canceladoEm"
-        ]) &&
-        request.resource.data.criadoPor == request.auth.uid &&
-        request.resource.data.criadoEm == request.time &&
-        request.resource.data.atualizadoEm == request.time;
-    }
-
-    function hasValidAgendaUpdate() {
-      return hasValidAgendaPayload() &&
-        request.resource.data.criadoPor == resource.data.criadoPor &&
-        request.resource.data.criadoEm == resource.data.criadoEm &&
-        (
-          (
-            request.resource.data.status == resource.data.status &&
-            ["agendado", "confirmado"].hasAny([resource.data.status]) &&
-            !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-              "confirmadoEm", "iniciadoEm", "concluidoEm", "canceladoEm"
-            ])
-          ) ||
-          (
-            isValidAgendaTransition(resource.data.status, request.resource.data.status) &&
-            (
-              (request.resource.data.status == "confirmado" && hasValidAgendaMilestone("confirmadoEm")) ||
-              (request.resource.data.status == "em_atendimento" && hasValidAgendaMilestone("iniciadoEm")) ||
-              (request.resource.data.status == "cancelado" && hasValidAgendaMilestone("canceladoEm"))
-            )
-          )
-        ) &&
-        request.resource.data.atualizadoEm == request.time;
-    }
-
     function companyUserPath(ownerUid, empresaId, usuarioEmpresaId) {
       return /databases/$(database)/documents/users/$(ownerUid)/empresas/$(empresaId)/usuariosEmpresa/$(usuarioEmpresaId);
     }
@@ -867,13 +735,12 @@ service cloud.firestore {
         match /agendamentos/{agendamentoId} {
           allow read: if isCompanySegment(userId, empresaId, "clientes") &&
             canReadModule(userId, empresaId, "agenda");
-          allow create: if isCompanySegment(userId, empresaId, "clientes") &&
-            canWriteModule(userId, empresaId, "agenda") &&
-            hasValidAgendaCreate();
-          allow update: if isCompanySegment(userId, empresaId, "clientes") &&
-            canWriteModule(userId, empresaId, "agenda") &&
-            hasValidAgendaUpdate();
+          allow create, update: if false;
           allow delete: if false;
+        }
+
+        match /agendaControles/{dataControle} {
+          allow read, write: if false;
         }
 
         match /contasReceber/{contaId} {

@@ -1,11 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  addDoc,
   collection,
-  doc,
   onSnapshot,
-  serverTimestamp,
-  updateDoc,
 } from "firebase/firestore";
 import { CalendarDays, CheckCircle2, Filter, Plus, Search } from "lucide-react";
 import ActionMenu from "../components/ActionMenu";
@@ -13,6 +9,11 @@ import { useConfirmacao } from "../context/useConfirmacao";
 import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
 import { db } from "../firebase";
+import {
+  criarAgendamento,
+  editarAgendamento,
+  transicionarAgendamento,
+} from "../services/agendaApi";
 import { concluirAtendimento } from "../services/financeiroServicosApi";
 import {
   calcularDuracaoAgendamento,
@@ -20,7 +21,6 @@ import {
   existeConflitoAgendamento,
   normalizarStatusAgendamento,
   obterHoraFimAgendamento,
-  montarAtualizacaoStatusAgendamento,
   montarPayloadAgendamento,
   podeEditarDadosAgendamento,
   podeTransicionarStatusAgendamento,
@@ -370,7 +370,6 @@ export default function Agenda() {
       form, agendamentoEditando,
       cliente,
       servico: servico || (agendamentoEditando?.servicoId === form.servicoId ? { id: form.servicoId } : null),
-      atualizadoEm: serverTimestamp(),
     });
   };
 
@@ -428,13 +427,29 @@ export default function Agenda() {
 
     try {
       if (agendamentoEditando?.id) {
-        await updateDoc(doc(agendamentosRef, agendamentoEditando.id), payload);
+        await editarAgendamento(agendamentoEditando.id, {
+          ownerUid,
+          empresaId,
+          clienteId: form.clienteId,
+          servicoId: form.servicoId,
+          data: payload.data,
+          horaInicio: payload.horaInicio,
+          horaFim: payload.horaFim,
+          duracaoMinutos: payload.duracaoMinutos,
+          observacoes: payload.observacoes,
+        });
         showToast("Alterações salvas com sucesso.", "success");
       } else {
-        await addDoc(agendamentosRef, {
-          ...payload,
-          criadoEm: serverTimestamp(),
-          criadoPor: user.uid,
+        await criarAgendamento({
+          ownerUid,
+          empresaId,
+          clienteId: form.clienteId,
+          servicoId: form.servicoId,
+          data: payload.data,
+          horaInicio: payload.horaInicio,
+          horaFim: payload.horaFim,
+          duracaoMinutos: payload.duracaoMinutos,
+          observacoes: payload.observacoes,
         });
         showToast("Cadastro realizado com sucesso.", "success");
       }
@@ -442,7 +457,7 @@ export default function Agenda() {
       limparModal();
     } catch (error) {
       console.error("Erro ao salvar agendamento:", error);
-      showToast("Não foi possível salvar. Tente novamente.", "error");
+      showToast(error.message || "Não foi possível salvar. Tente novamente.", "error");
     } finally {
       setSalvando(false);
     }
@@ -473,12 +488,9 @@ export default function Agenda() {
     }
 
     try {
-      const patch = montarAtualizacaoStatusAgendamento(agendamento, status, serverTimestamp());
-      if (!patch) {
-        showToast("Não foi possível alterar este atendimento.", "warning");
-        return;
-      }
-      await updateDoc(doc(agendamentosRef, agendamento.id), patch);
+      const acao = status === "confirmado" ? "confirmar" :
+        status === "em_atendimento" ? "iniciar" : "cancelar";
+      await transicionarAgendamento(agendamento.id, acao, { ownerUid, empresaId });
 
       showToast(
         status === "cancelado"
@@ -488,7 +500,7 @@ export default function Agenda() {
       );
     } catch (error) {
       console.error("Erro ao atualizar status do agendamento:", error);
-      showToast("Não foi possível concluir a operação.", "error");
+      showToast(error.message || "Não foi possível concluir a operação.", "error");
     }
   };
 

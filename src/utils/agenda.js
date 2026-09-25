@@ -117,6 +117,7 @@ export const montarPayloadAgendamento = ({ form, agendamentoEditando = null, cli
     clienteNome: mesmoCliente ? texto(agendamentoEditando.clienteNome) :
       (cliente.nome || cliente.clienteNome || "Cliente"),
     clienteTelefone: mesmoCliente ? texto(agendamentoEditando.clienteTelefone) : texto(cliente.telefone),
+    clienteEmail: mesmoCliente ? texto(agendamentoEditando.clienteEmail) : texto(cliente.email),
     ...snapshotServico,
     duracaoMinutos: calcularDuracaoAgendamento(form.horaInicio, form.horaFim),
     data: form.data,
