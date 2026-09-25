@@ -1679,6 +1679,17 @@ body {
   white-space: nowrap;
 }
 
+.agenda-row-actions .action-menu-dropdown {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  white-space: normal;
+}
+
+.agenda-row-actions .action-menu-dropdown button {
+  white-space: nowrap;
+}
+
 .agenda-primary-action {
   min-height: 32px;
   margin: 0;
