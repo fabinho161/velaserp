@@ -6,6 +6,7 @@ import { CheckCircle2, Clock3, LogOut, ShieldAlert } from "lucide-react";
 import { auth, db } from "../firebase";
 import Login from "./Login";
 import { getPerfilEmpresaConfig, normalizarRoleEmpresa } from "../config/perfisEmpresa";
+import { API_URL } from "../config/api.js";
 import { useToast } from "../context/useToast";
 
 const dataSistema = (valor) => {
@@ -29,10 +30,6 @@ const formatarDataHora = (valor) => {
 };
 
 const emailNormalizado = (email) => String(email || "").trim().toLowerCase();
-const API_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.VITE_API_URL ||
-  "http://localhost:10000";
 
 export default function AceitarConvite() {
   const { token } = useParams();

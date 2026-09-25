@@ -29,13 +29,10 @@ import {
   normalizarSegmentoEmpresa,
   segmentoPossuiModulo,
 } from "../config/segmentosEmpresa.js";
+import { API_URL } from "../config/api.js";
 import { registrarErroFirestore } from "../utils/firestoreDiagnostico.js";
 
 const assinaturaPadrao = assinaturaGratisPadrao;
-const API_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.VITE_API_URL ||
-  "http://localhost:10000";
 const EVENTO_PRIMEIRA_EMPRESA_CRIADA = "renovarPrimeiraEmpresaCriada";
 const limparOnboardingPrimeiraEmpresa = async (usuario) => {
   if (!usuario?.uid) return false;

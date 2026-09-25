@@ -16,15 +16,12 @@ import {
   getLimiteUsuariosEfetivo,
   normalizarLimiteUsuariosManual,
 } from "../config/planos";
+import { API_URL } from "../config/api.js";
 
 const assinaturaPadraoCliente = assinaturaGratisPadrao;
 const planos = Object.keys(PLANOS);
 const statusAssinatura = ["active", "inactive", "blocked"];
 const formasPagamento = ["", "manual", "pix", "cartao", "boleto"];
-const API_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.VITE_API_URL ||
-  "http://localhost:10000";
 
 const formatarDataSistema = (valor) => {
   if (!valor) return "-";

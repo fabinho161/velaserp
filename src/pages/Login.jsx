@@ -7,14 +7,11 @@ import {
 import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { useToast } from "../context/useToast";
+import { API_URL } from "../config/api.js";
 import { SEGMENTOS_EMPRESA, SEGMENTO_EMPRESA_PADRAO } from "../config/segmentosEmpresa.js";
 import saasLogo from "../assets/saas-logo.png";
 
 const NOME_SAAS = "Renovar ERP";
-const API_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.VITE_API_URL ||
-  "http://localhost:10000";
 const EVENTO_PRIMEIRA_EMPRESA_CRIADA = "renovarPrimeiraEmpresaCriada";
 const LABELS_SEGMENTO_CADASTRO = {
   comercio: "Comércio",

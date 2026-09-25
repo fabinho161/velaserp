@@ -1,9 +1,5 @@
 import { auth } from "../firebase";
-
-const API_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.VITE_API_URL ||
-  "http://localhost:10000";
+import { API_URL } from "../config/api.js";
 
 const lerJsonSeguro = async (response) => {
   try {

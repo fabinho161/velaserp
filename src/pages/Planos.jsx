@@ -23,6 +23,7 @@ import { usePlano } from "../hooks/usePlano";
 import { useToast } from "../context/useToast";
 import { moedaBR } from "../utils/formatters";
 import { auth } from "../firebase";
+import { API_URL } from "../config/api.js";
 
 const DESCRICOES_PLANOS = {
   gratis:
@@ -35,7 +36,6 @@ const DESCRICOES_PLANOS = {
     "Para grupos, franquias ou operações com múltiplas empresas, CRM completo e prioridade de expansão.",
 };
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:10000";
 const MENSAGEM_PAGAMENTO_CONFIRMADO =
   "Pagamento confirmado! Plano ativado com sucesso.";
 

@@ -23,9 +23,9 @@ import { auth, db } from "../firebase";
 import { useToast } from "../context/useToast";
 import { useERP } from "../context/useERP";
 import { moedaBR } from "../utils/formatters";
+import { API_URL } from "../config/api.js";
 
 const LIMITE_REGISTROS = 30;
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:10000";
 const AVISO_DIAGNOSTICO_PARCIAL =
   "Diagnóstico carregado parcialmente. Checkout sessions e pagamentos foram consultados por usuário. Logs técnicos de webhook não estão disponíveis nesta tela por segurança.";
 

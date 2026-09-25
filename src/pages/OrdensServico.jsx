@@ -18,6 +18,7 @@ import {
   baixarOrdemServicoPdf,
   imprimirOrdemServicoPdf,
 } from "../utils/ordemServicoPdf";
+import { API_URL } from "../config/api.js";
 
 const STATUS_OS = [
   { valor: "aberta", label: "Aberta", classe: "badge-info" },
@@ -53,10 +54,6 @@ const PERFIS_ESCRITA_OS = new Set([
   "comercial",
   "producao",
 ]);
-const API_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.VITE_API_URL ||
-  "http://localhost:10000";
 
 const osInicial = {
   clienteId: "",
