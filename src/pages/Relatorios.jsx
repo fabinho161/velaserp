@@ -23,6 +23,7 @@ import { segmentoPossuiModulo } from "../config/segmentosEmpresa";
 import { PERMISSOES_EMPRESA } from "../config/perfisEmpresa.js";
 import {
   prepararRelatorioAtendimentos,
+  prepararDreServicos,
   prepararRelatorioFinanceiroServicos,
   prepararRelatorioServicos,
   filtrarRelatoriosPorSegmento,
@@ -406,6 +407,14 @@ export default function Relatorios() {
       clienteId: clienteSelecionado?.id || "",
     })
     : null;
+  const resumoDreServicos = apresentacaoRelatorios.isGestaoServicos && podeVerFinanceiro
+    ? prepararDreServicos({
+      despesas,
+      contasReceber,
+      inicio: filtro.inicio,
+      fim: filtro.fim,
+    })
+    : null;
   const servicosFiltro = [...servicosCatalogo].sort((a, b) =>
     String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR", {
       numeric: true,
@@ -618,7 +627,9 @@ export default function Relatorios() {
     {
       tipo: "dre",
       titulo: "DRE Gerencial",
-      descricao: "Receita, custos, despesas, lucro bruto e resultado líquido.",
+      descricao: apresentacaoRelatorios.isGestaoServicos
+        ? "Receita de serviços, despesas e resultado do período por competência."
+        : "Receita, custos, despesas, lucro bruto e resultado líquido.",
       Icone: FileChartLine,
       cor: "amber",
     },
@@ -647,7 +658,7 @@ export default function Relatorios() {
     },
   ], empresaAtiva?.segmento).filter((relatorio) =>
     !apresentacaoRelatorios.isGestaoServicos ||
-    relatorio.tipo !== "financeiro" ||
+    !["financeiro", "dre"].includes(relatorio.tipo) ||
     podeVerFinanceiro
   );
 
@@ -894,7 +905,7 @@ export default function Relatorios() {
       return;
     }
 
-    if (tipo === "financeiro" && apresentacaoRelatorios.isGestaoServicos &&
+    if (["financeiro", "dre"].includes(tipo) && apresentacaoRelatorios.isGestaoServicos &&
         !podeVerFinanceiro) {
       showToast("Seu perfil não possui acesso aos dados financeiros.", "warning");
       return;
@@ -1198,6 +1209,77 @@ export default function Relatorios() {
     }
 
     if (tipo === "dre") {
+      if (apresentacaoRelatorios.isGestaoServicos) {
+        let y = await gerarCabecalhoPDF(
+          doc,
+          "DRE - Gestão de Serviços",
+          "Resultado econômico por competência no período selecionado.",
+          "Não aplicável"
+        );
+
+        y = desenharCardsPDF(
+          doc,
+          [
+            { label: "Receita de Serviços", value: moedaBR(resumoDreServicos.receitaServicos), color: PDF_COLORS.blue },
+            { label: "Despesas", value: moedaBR(resumoDreServicos.despesas), color: PDF_COLORS.red },
+            {
+              label: "Resultado do período",
+              value: moedaBR(resumoDreServicos.resultadoPeriodo),
+              color: resumoDreServicos.resultadoPeriodo >= 0 ? PDF_COLORS.green : PDF_COLORS.red,
+            },
+          ],
+          y
+        );
+
+        y = desenharAvisoPDF(
+          doc,
+          "Regime de competência: recebimentos e pagamentos não alteram o período de reconhecimento.",
+          y
+        );
+
+        tabelaPDF(doc, {
+          startY: y,
+          head: [["Descrição", "Valor"]],
+          body: [
+            ["Receita de Serviços", moedaBR(resumoDreServicos.receitaServicos)],
+            ["(-) Despesas", moedaBR(resumoDreServicos.despesas)],
+            ["= Resultado do período", moedaBR(resumoDreServicos.resultadoPeriodo)],
+          ],
+          columnStyles: {
+            0: { fontStyle: "bold" },
+            1: { halign: "right" },
+          },
+          didParseCell: (data) => {
+            if (data.section !== "body" || data.column.index !== 1 || data.row.index !== 2) return;
+            data.cell.styles.textColor = resumoDreServicos.resultadoPeriodo >= 0
+              ? PDF_COLORS.green
+              : PDF_COLORS.red;
+            data.cell.styles.fontStyle = "bold";
+          },
+        });
+
+        y = doc.lastAutoTable.finalY + 10;
+        doc.setFontSize(13);
+        doc.setTextColor(15, 23, 42);
+        doc.text("Despesas por Categoria", 14, y);
+
+        tabelaPDF(doc, {
+          startY: y + 6,
+          head: [["Categoria", "Valor"]],
+          body: Object.entries(resumoDreServicos.despesasPorCategoria).length > 0
+            ? Object.entries(resumoDreServicos.despesasPorCategoria).map(([categoria, valor]) => [
+                categoria,
+                moedaBR(valor),
+              ])
+            : [["Nenhuma despesa no período", moedaBR(0)]],
+          columnStyles: { 1: { halign: "right" } },
+        });
+
+        gerarRodapePDF(doc);
+        doc.save("dre-gestao-servicos-renovar-erp.pdf");
+        return;
+      }
+
       let y = await gerarCabecalhoPDF(
         doc,
         "DRE Gerencial - Demonstrativo de Resultado",

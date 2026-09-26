@@ -6,6 +6,7 @@ import {
   filtrarAtendimentosRelatorio,
   filtrarRelatoriosPorSegmento,
   obterApresentacaoRelatorios,
+  prepararDreServicos,
   prepararRelatorioAtendimentos,
   prepararRelatorioFinanceiroServicos,
   prepararRelatorioServicos,
@@ -410,7 +411,10 @@ test("Relatorios condiciona listener e bloco financeiro a permissao financeira",
     fonte,
     /if \(!chaveRelatoriosServicos \|\| !podeVerFinanceiro\) return undefined;[\s\S]*?"contasReceber"/,
   );
-  assert.match(fonte, /relatorio\.tipo !== "financeiro" \|\|\s*podeVerFinanceiro/);
+  assert.match(
+    fonte,
+    /!\["financeiro", "dre"\]\.includes\(relatorio\.tipo\) \|\|\s*podeVerFinanceiro/,
+  );
   assert.match(fonte, /Seu perfil não possui acesso aos dados financeiros/);
 });
 
@@ -424,6 +428,148 @@ test("PDF financeiro de Servicos usa movimentos de caixa e separa carteira", asy
   assert.match(fonte, /label: "Saldo de caixa"[\s\S]*?resumoFinanceiroServicos\.saldo/);
   assert.match(fonte, /head: \[\["Data", "Tipo", "Descrição", "Categoria", "Valor"\]\]/);
   assert.match(fonte, /resumoFinanceiroServicos\.movimentacoesCaixa\.map/);
+});
+
+test("DRE de Servicos reconhece receita e despesa por competencia", () => {
+  const resultado = prepararDreServicos({
+    contasReceber: [
+      {
+        origem: { tipo: "atendimento" }, status: "pendente", valor: 500,
+        dataCompetencia: "2026-09-20", pagamento: null,
+      },
+      {
+        origem: { tipo: "atendimento" }, status: "recebido", valor: 500,
+        dataCompetencia: "2026-09-21",
+        pagamento: { dataRecebimento: "2026-10-05", valorRecebido: 450 },
+      },
+      {
+        origem: { tipo: "venda" }, status: "pendente", valor: 999,
+        dataCompetencia: "2026-09-20",
+      },
+    ],
+    despesas: [
+      {
+        descricao: "Pendente", categoria: "Estrutura", valor: 200,
+        dataCompetencia: "2026-09-15", dataVencimento: "2026-09-30",
+        statusFinanceiro: "pendente", situacao: "ativo", pagamento: null,
+      },
+      {
+        descricao: "Paga", categoria: "Estrutura", valor: 100,
+        dataCompetencia: "2026-09-16", dataVencimento: "2026-09-30",
+        statusFinanceiro: "pago", situacao: "ativo",
+        pagamento: {
+          dataPagamento: "2026-10-03", formaPagamento: "pix", valorPago: 80,
+          pagoEm: { seconds: 1 }, pagoPor: "usuario-1",
+        },
+      },
+    ],
+    inicio: "2026-09-01",
+    fim: "2026-09-30",
+  });
+
+  assert.equal(resultado.receitaServicos, 1000);
+  assert.equal(resultado.despesas, 300);
+  assert.equal(resultado.resultadoPeriodo, 700);
+  assert.deepEqual(resultado.despesasPorCategoria, { Estrutura: 300 });
+});
+
+test("DRE e caixa usam eventos temporais distintos", () => {
+  const contasReceber = [{
+    origem: { tipo: "atendimento" }, status: "recebido", valor: 1000,
+    dataCompetencia: "2026-09-20",
+    pagamento: { dataRecebimento: "2026-10-05", valorRecebido: 1000 },
+  }];
+  const despesas = [{
+    descricao: "Despesa", categoria: "Outros", valor: 300,
+    dataCompetencia: "2026-09-15", dataVencimento: "2026-09-30",
+    statusFinanceiro: "pago", situacao: "ativo",
+    pagamento: {
+      dataPagamento: "2026-10-03", formaPagamento: "pix", valorPago: 300,
+      pagoEm: { seconds: 1 }, pagoPor: "usuario-1",
+    },
+  }];
+
+  const dreSetembro = prepararDreServicos({
+    contasReceber, despesas, inicio: "2026-09-01", fim: "2026-09-30",
+  });
+  const dreOutubro = prepararDreServicos({
+    contasReceber, despesas, inicio: "2026-10-01", fim: "2026-10-31",
+  });
+  const caixaSetembro = prepararRelatorioFinanceiroServicos({
+    contasReceber, despesas, inicio: "2026-09-01", fim: "2026-09-30",
+  });
+  const caixaOutubro = prepararRelatorioFinanceiroServicos({
+    contasReceber, despesas, inicio: "2026-10-01", fim: "2026-10-31",
+  });
+
+  assert.deepEqual(
+    [dreSetembro.receitaServicos, dreSetembro.despesas, dreSetembro.resultadoPeriodo],
+    [1000, 300, 700],
+  );
+  assert.deepEqual(
+    [dreOutubro.receitaServicos, dreOutubro.despesas, dreOutubro.resultadoPeriodo],
+    [0, 0, 0],
+  );
+  assert.equal(caixaSetembro.saldo, 0);
+  assert.deepEqual([caixaOutubro.recebido, caixaOutubro.despesas, caixaOutubro.saldo], [1000, 300, 700]);
+});
+
+test("DRE inclui despesas legadas por data e exclui canceladas", () => {
+  const resultado = prepararDreServicos({
+    despesas: [
+      { descricao: "Legada paga", categoria: "A", valor: 200, data: "2026-08-10", status: "Pago" },
+      { descricao: "Legada pendente", categoria: "B", valor: 100, data: "2026-08-11", status: "Pendente" },
+      { descricao: "Legada sem status", categoria: "C", valor: 50, data: "2026-08-12" },
+      { descricao: "Cancelada", categoria: "D", valor: 900, data: "2026-08-13", status: "cancelado" },
+      { descricao: "Fora", categoria: "E", valor: 800, data: "2026-09-01", status: "Pago" },
+    ],
+    inicio: "2026-08-01",
+    fim: "2026-08-31",
+  });
+
+  assert.equal(resultado.despesas, 350);
+  assert.deepEqual(resultado.despesasPorCategoria, { A: 200, B: 100, C: 50 });
+});
+
+test("DRE ignora dados invalidos e nao cria receita para atendimento gratuito sem conta", () => {
+  const resultado = prepararDreServicos({
+    contasReceber: [
+      { origem: { tipo: "atendimento" }, status: "cancelado", valor: 100, dataCompetencia: "2026-09-10" },
+      { origem: { tipo: "atendimento" }, status: "pendente", valor: -1, dataCompetencia: "2026-09-10" },
+      { origem: { tipo: "atendimento" }, status: "pendente", valor: 100, dataCompetencia: "invalida" },
+    ],
+    despesas: [{ valor: 100, dataCompetencia: "invalida", situacao: "ativo" }],
+  });
+
+  assert.equal(resultado.receitaServicos, 0);
+  assert.equal(resultado.despesas, 0);
+  assert.equal(resultado.resultadoPeriodo, 0);
+});
+
+test("DRE de Servicos nao recebe filtros de cliente ou servico e exige permissao financeira", async () => {
+  const fonte = await readFile(
+    new URL("../../pages/Relatorios.jsx", import.meta.url),
+    "utf8",
+  );
+  const chamadaDre = fonte.match(/prepararDreServicos\(\{[\s\S]*?\n\s{4}\}\)/)?.[0] || "";
+  assert.match(chamadaDre, /despesas,[\s\S]*?contasReceber,[\s\S]*?inicio: filtro\.inicio,[\s\S]*?fim: filtro\.fim/);
+  assert.doesNotMatch(chamadaDre, /clienteId:/);
+  assert.doesNotMatch(chamadaDre, /servicoId:/);
+  assert.match(fonte, /!\["financeiro", "dre"\]\.includes\(relatorio\.tipo\) \|\|[\s\S]*?podeVerFinanceiro/);
+  assert.match(fonte, /\["financeiro", "dre"\]\.includes\(tipo\)[\s\S]*?!podeVerFinanceiro/);
+});
+
+test("PDF da DRE de Servicos apresenta somente competencia e resultado suportado", async () => {
+  const fonte = await readFile(
+    new URL("../../pages/Relatorios.jsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(fonte, /"DRE - Gestão de Serviços"/);
+  assert.match(fonte, /"Receita de Serviços"[\s\S]*?resumoDreServicos\.receitaServicos/);
+  assert.match(fonte, /"\(-\) Despesas"[\s\S]*?resumoDreServicos\.despesas/);
+  assert.match(fonte, /"= Resultado do período"[\s\S]*?resumoDreServicos\.resultadoPeriodo/);
+  assert.match(fonte, /Regime de competência: recebimentos e pagamentos não alteram/);
+  assert.match(fonte, /resumoDreServicos\.despesasPorCategoria/);
 });
 
 test("relatorio de servicos vazio retorna totais seguros", () => {

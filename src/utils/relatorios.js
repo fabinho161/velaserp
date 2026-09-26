@@ -6,6 +6,7 @@ import {
 } from "./agenda.js";
 import { agruparServicosRealizados } from "./analiticaServicos.js";
 import { resumirFinanceiroServicos } from "./financeiroServicos.js";
+import { normalizarDataCivilDespesa, normalizarDespesa } from "./despesas.js";
 
 const RELATORIOS_GESTAO_SERVICOS = new Set([
   "atendimentos",
@@ -125,4 +126,55 @@ export const prepararRelatorioFinanceiroServicos = ({
     : contasReceber;
 
   return resumirFinanceiroServicos(despesas, contasDoCliente, { inicio, fim });
+};
+
+const dataNoPeriodo = (data, { inicio = "", fim = "" } = {}) =>
+  Boolean(data) && (!inicio || data >= inicio) && (!fim || data <= fim);
+
+const valorEconomicoValido = (valor) =>
+  typeof valor === "number" && Number.isFinite(valor) && valor >= 0;
+
+export const prepararDreServicos = ({
+  despesas = [],
+  contasReceber = [],
+  inicio = "",
+  fim = "",
+} = {}) => {
+  const filtro = { inicio, fim };
+  const contasCompetencia = contasReceber.filter((conta) => {
+    const dataCompetencia = normalizarDataCivilDespesa(conta?.dataCompetencia);
+    return conta?.origem?.tipo === "atendimento" &&
+      ["pendente", "recebido"].includes(conta?.status) &&
+      valorEconomicoValido(conta?.valor) &&
+      dataNoPeriodo(dataCompetencia, filtro);
+  });
+  const despesasCompetencia = despesas
+    .map(normalizarDespesa)
+    .filter((despesa) =>
+      despesa.situacao === "ativo" &&
+      valorEconomicoValido(despesa.valor) &&
+      dataNoPeriodo(despesa.dataCompetencia, filtro)
+    );
+  const receitaServicos = contasCompetencia.reduce(
+    (total, conta) => total + conta.valor,
+    0,
+  );
+  const totalDespesas = despesasCompetencia.reduce(
+    (total, despesa) => total + despesa.valor,
+    0,
+  );
+  const despesasPorCategoria = despesasCompetencia.reduce((categorias, despesa) => {
+    const categoria = despesa.categoria || "Outros";
+    categorias[categoria] = (categorias[categoria] || 0) + despesa.valor;
+    return categorias;
+  }, {});
+
+  return {
+    receitaServicos,
+    despesas: totalDespesas,
+    resultadoPeriodo: receitaServicos - totalDespesas,
+    contasCompetencia,
+    despesasCompetencia,
+    despesasPorCategoria,
+  };
 };
