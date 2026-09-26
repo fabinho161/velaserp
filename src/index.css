@@ -639,12 +639,18 @@ body {
 
 .finance-categories-item {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+  max-width: 100%;
   padding: 12px;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
+}
+
+.finance-categories-item > .badge {
+  flex-shrink: 0;
 }
 
 .finance-categories-name,
@@ -661,10 +667,15 @@ body {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  min-width: 0;
+  flex-shrink: 0;
 }
 
 .finance-categories-actions button {
+  width: auto;
+  min-width: max-content;
   margin: 0;
+  white-space: nowrap;
 }
 
 .finance-categories-actions .finance-categories-deactivate {
