@@ -20,8 +20,10 @@ import {
   calcularEstoqueProdutos,
 } from "../utils/estoqueProdutos";
 import { segmentoPossuiModulo } from "../config/segmentosEmpresa";
+import { PERMISSOES_EMPRESA } from "../config/perfisEmpresa.js";
 import {
   prepararRelatorioAtendimentos,
+  prepararRelatorioFinanceiroServicos,
   prepararRelatorioServicos,
   filtrarRelatoriosPorSegmento,
   obterApresentacaoRelatorios,
@@ -63,6 +65,7 @@ export default function Relatorios() {
     configuracoes,
     clientesComerciais = [],
     perfilEmpresaAtual,
+    temPermissaoEmpresaAtual,
     user,
   } = useERP();
   const { showToast } = useToast();
@@ -74,17 +77,24 @@ export default function Relatorios() {
     empresaAtiva?.segmento
   );
   const ownerUid = empresaOwnerUid || user?.uid || null;
+  const podeVerFinanceiro = Boolean(
+    temPermissaoEmpresaAtual?.(PERMISSOES_EMPRESA.financeiro)
+  );
   const chaveRelatoriosServicos = apresentacaoRelatorios.isGestaoServicos &&
     ownerUid && empresaId
     ? `${ownerUid}/${empresaId}`
     : "";
   const [agendaSnapshot, setAgendaSnapshot] = useState({ chave: "", lista: [] });
   const [servicosSnapshot, setServicosSnapshot] = useState({ chave: "", lista: [] });
+  const [contasSnapshot, setContasSnapshot] = useState({ chave: "", lista: [] });
   const agendamentos = agendaSnapshot.chave === chaveRelatoriosServicos
     ? agendaSnapshot.lista
     : [];
   const servicosCatalogo = servicosSnapshot.chave === chaveRelatoriosServicos
     ? servicosSnapshot.lista
+    : [];
+  const contasReceber = contasSnapshot.chave === chaveRelatoriosServicos
+    ? contasSnapshot.lista
     : [];
 
   // ================================
@@ -139,6 +149,36 @@ export default function Relatorios() {
     empresaId,
     ownerUid,
     perfilEmpresaAtual,
+    showToast,
+  ]);
+
+  useEffect(() => {
+    if (!chaveRelatoriosServicos || !podeVerFinanceiro) return undefined;
+    return onSnapshot(
+      collection(db, "users", ownerUid, "empresas", empresaId, "contasReceber"),
+      (snapshot) => setContasSnapshot({
+        chave: chaveRelatoriosServicos,
+        lista: snapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
+      }),
+      (error) => {
+        registrarErroFirestore({
+          origem: "Relatorios",
+          colecao: "contasReceber",
+          operacao: "list:onSnapshot",
+          error,
+          perfil: perfilEmpresaAtual,
+          segmento: "clientes",
+        });
+        setContasSnapshot({ chave: chaveRelatoriosServicos, lista: [] });
+        showToast("Não foi possível carregar os dados financeiros.", "error");
+      }
+    );
+  }, [
+    chaveRelatoriosServicos,
+    empresaId,
+    ownerUid,
+    perfilEmpresaAtual,
+    podeVerFinanceiro,
     showToast,
   ]);
 
@@ -357,6 +397,15 @@ export default function Relatorios() {
     clienteId: clienteSelecionado?.id || "",
     servicoId: filtro.servico,
   });
+  const resumoFinanceiroServicos = apresentacaoRelatorios.isGestaoServicos && podeVerFinanceiro
+    ? prepararRelatorioFinanceiroServicos({
+      despesas,
+      contasReceber,
+      inicio: filtro.inicio,
+      fim: filtro.fim,
+      clienteId: clienteSelecionado?.id || "",
+    })
+    : null;
   const servicosFiltro = [...servicosCatalogo].sort((a, b) =>
     String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR", {
       numeric: true,
@@ -560,7 +609,9 @@ export default function Relatorios() {
     {
       tipo: "financeiro",
       titulo: "Relatório Financeiro",
-      descricao: "Entradas, saídas, saldo, despesas pendentes e fluxo de caixa.",
+      descricao: apresentacaoRelatorios.isGestaoServicos
+        ? "Recebimentos, pagamentos, carteira e saldo de caixa realizado."
+        : "Entradas, saídas, saldo, despesas pendentes e fluxo de caixa.",
       Icone: Wallet,
       cor: "blue",
     },
@@ -594,7 +645,11 @@ export default function Relatorios() {
       Icone: Boxes,
       cor: "teal",
     },
-  ], empresaAtiva?.segmento);
+  ], empresaAtiva?.segmento).filter((relatorio) =>
+    !apresentacaoRelatorios.isGestaoServicos ||
+    relatorio.tipo !== "financeiro" ||
+    podeVerFinanceiro
+  );
 
   // ================================
   // 🔹 PDF - CONVERTER LOGO PARA BASE64
@@ -839,6 +894,12 @@ export default function Relatorios() {
       return;
     }
 
+    if (tipo === "financeiro" && apresentacaoRelatorios.isGestaoServicos &&
+        !podeVerFinanceiro) {
+      showToast("Seu perfil não possui acesso aos dados financeiros.", "warning");
+      return;
+    }
+
     if (!podeGerarPDF) {
       showToast("Recurso disponível no plano Profissional.", "warning");
       return;
@@ -1024,6 +1085,56 @@ export default function Relatorios() {
 
       gerarRodapePDF(doc);
       doc.save("relatorio-servicos-renovar-erp.pdf");
+      return;
+    }
+
+    if (tipo === "financeiro" && apresentacaoRelatorios.isGestaoServicos) {
+      let y = await gerarCabecalhoPDF(
+        doc,
+        "Relatório Financeiro",
+        "Caixa realizado por recebimentos e pagamentos com data conhecida. Carteira e obrigações são apresentadas separadamente."
+      );
+
+      y = desenharCardsPDF(
+        doc,
+        [
+          { label: "Recebimentos", value: moedaBR(resumoFinanceiroServicos.recebido), color: PDF_COLORS.green },
+          { label: "Pagamentos", value: moedaBR(resumoFinanceiroServicos.despesas), color: PDF_COLORS.red },
+          {
+            label: "Saldo de caixa",
+            value: moedaBR(resumoFinanceiroServicos.saldo),
+            color: resumoFinanceiroServicos.saldo >= 0 ? PDF_COLORS.green : PDF_COLORS.red,
+          },
+          { label: "A receber (posição atual)", value: moedaBR(resumoFinanceiroServicos.aReceber), color: PDF_COLORS.blue },
+          { label: "A pagar no período", value: moedaBR(resumoFinanceiroServicos.totalDespesasPendentes), color: PDF_COLORS.amber },
+        ],
+        y
+      );
+      y = desenharAvisoPDF(
+        doc,
+        filtroClienteAtivo
+          ? "O filtro Cliente afeta recebimentos e carteira; despesas gerais não são rateadas por cliente."
+          : "Carteira e obrigações não compõem o saldo de caixa até o pagamento efetivo.",
+        y
+      );
+
+      tabelaPDF(doc, {
+        startY: y,
+        head: [["Data", "Tipo", "Descrição", "Categoria", "Valor"]],
+        body: resumoFinanceiroServicos.movimentacoesCaixa.map((movimento) => [
+          dataBR(movimento.data),
+          movimento.tipo,
+          textoPDF(movimento.descricao),
+          textoPDF(movimento.categoria),
+          moedaBR(movimento.valor),
+        ]),
+        columnStyles: {
+          4: { halign: "right" },
+        },
+      });
+
+      gerarRodapePDF(doc);
+      doc.save("relatorio-financeiro-renovar-erp.pdf");
       return;
     }
 
@@ -1588,7 +1699,7 @@ export default function Relatorios() {
           </div>
         )}
 
-        {apresentacaoRelatorios.exibirDespesas && (
+        {apresentacaoRelatorios.exibirDespesas && !apresentacaoRelatorios.isGestaoServicos && (
           <div className="reports-kpi-card reports-kpi-red">
             <span className="reports-kpi-icon">
               <Wallet size={18} />
@@ -1601,6 +1712,31 @@ export default function Relatorios() {
                 : "Saídas no período"}
             </small>
           </div>
+        )}
+
+        {apresentacaoRelatorios.isGestaoServicos && podeVerFinanceiro && (
+          <>
+            <div className="reports-kpi-card reports-kpi-green">
+              <span className="reports-kpi-icon"><Wallet size={18} /></span>
+              <p>Recebimentos no período</p>
+              <strong>{moedaBR(resumoFinanceiroServicos.recebido)}</strong>
+              <small>Caixa recebido pela data do pagamento</small>
+            </div>
+            <div className="reports-kpi-card reports-kpi-red">
+              <span className="reports-kpi-icon"><Wallet size={18} /></span>
+              <p>Pagamentos no período</p>
+              <strong>{moedaBR(resumoFinanceiroServicos.despesas)}</strong>
+              <small>Caixa pago pela data do pagamento</small>
+            </div>
+            <div className="reports-kpi-card reports-kpi-blue">
+              <span className="reports-kpi-icon"><TrendingUp size={18} /></span>
+              <p>Saldo de caixa</p>
+              <strong className={resumoFinanceiroServicos.saldo >= 0 ? "text-blue" : "text-red"}>
+                {moedaBR(resumoFinanceiroServicos.saldo)}
+              </strong>
+              <small>Recebimentos menos pagamentos efetivos</small>
+            </div>
+          </>
         )}
 
         {apresentacaoRelatorios.isGestaoServicos && (
@@ -1662,9 +1798,9 @@ export default function Relatorios() {
           <div>
             <h2>Central de Relatórios</h2>
             <p>Escolha um relatório para gerar um PDF profissional com os filtros atuais.</p>
-            {apresentacaoRelatorios.isGestaoServicos && (
+            {apresentacaoRelatorios.isGestaoServicos && !podeVerFinanceiro && (
               <p className="reports-filter-note">
-                A adaptação financeira específica para serviços será disponibilizada em uma próxima etapa.
+                Seu perfil mantém acesso aos relatórios operacionais, sem acesso aos dados financeiros.
               </p>
             )}
           </div>

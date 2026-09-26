@@ -1,4 +1,5 @@
 import { agruparServicosRealizados } from "./analiticaServicos.js";
+import { montarEntradasCaixaServicos } from "./financeiroServicos.js";
 
 export { agruparServicosRealizados } from "./analiticaServicos.js";
 
@@ -40,12 +41,12 @@ export const obterProximoAtendimento = (agendamentos = [], hoje, agoraMinutos) =
 export const resumirFinanceiroDashboard = (contas = [], prefixoMes = "") => {
   const contasAtendimento = contas.filter((conta) => conta.origem?.tipo === "atendimento");
   const pendentes = contasAtendimento.filter((conta) => conta.status === "pendente");
-  const recebidasMes = contasAtendimento.filter((conta) =>
-    conta.status === "recebido" &&
-    String(conta.pagamento?.dataRecebimento || "").startsWith(prefixoMes)
-  );
+  const recebidasMes = montarEntradasCaixaServicos(contasAtendimento, {
+    inicio: prefixoMes ? `${prefixoMes}-01` : "",
+    fim: prefixoMes ? `${prefixoMes}-31` : "",
+  });
   const aReceber = pendentes.reduce((total, conta) => total + numeroSeguro(conta.valor), 0);
-  const recebidoMes = recebidasMes.reduce((total, conta) => total + numeroSeguro(conta.valor), 0);
+  const recebidoMes = recebidasMes.reduce((total, movimento) => total + movimento.valor, 0);
   return {
     aReceber,
     pendencias: pendentes.length,

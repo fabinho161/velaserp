@@ -5,6 +5,7 @@ import {
   resumirServicosAgendamento,
 } from "./agenda.js";
 import { agruparServicosRealizados } from "./analiticaServicos.js";
+import { resumirFinanceiroServicos } from "./financeiroServicos.js";
 
 const RELATORIOS_GESTAO_SERVICOS = new Set([
   "atendimentos",
@@ -110,4 +111,18 @@ export const prepararRelatorioServicos = (agendamentos = [], filtro = {}) => {
     totalTipos: linhas.length,
     valorHistorico: linhas.reduce((total, linha) => total + linha.valor, 0),
   };
+};
+
+export const prepararRelatorioFinanceiroServicos = ({
+  despesas = [],
+  contasReceber = [],
+  inicio = "",
+  fim = "",
+  clienteId = "",
+} = {}) => {
+  const contasDoCliente = clienteId
+    ? contasReceber.filter((conta) => conta?.cliente?.clienteId === clienteId)
+    : contasReceber;
+
+  return resumirFinanceiroServicos(despesas, contasDoCliente, { inicio, fim });
 };

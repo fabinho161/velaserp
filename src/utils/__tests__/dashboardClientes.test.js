@@ -54,12 +54,38 @@ test("financeiro usa somente contas de atendimento nos estados corretos", () => 
   const resumo = resumirFinanceiroDashboard([
     { status: "pendente", valor: 100, origem: { tipo: "atendimento" } },
     { status: "pendente", valor: undefined, origem: { tipo: "atendimento" } },
-    { status: "recebido", valor: 200, origem: { tipo: "atendimento" }, pagamento: { dataRecebimento: "2026-09-10" } },
-    { status: "recebido", valor: 300, origem: { tipo: "atendimento" }, pagamento: { dataRecebimento: "2026-08-10" } },
+    { status: "recebido", valor: 999, origem: { tipo: "atendimento" }, pagamento: { dataRecebimento: "2026-09-10", valorRecebido: 200 } },
+    { status: "recebido", valor: 999, origem: { tipo: "atendimento" }, pagamento: { dataRecebimento: "2026-08-10", valorRecebido: 300 } },
     { status: "pendente", valor: 999, origem: { tipo: "venda" } },
   ], "2026-09");
   assert.deepEqual(resumo, {
     aReceber: 100, pendencias: 2, recebidoMes: 200, recebimentosMes: 1, ticketMedioRecebido: 200,
+  });
+});
+
+test("Dashboard usa valorRecebido e nao transforma carteira em caixa", () => {
+  const resumo = resumirFinanceiroDashboard([
+    { status: "pendente", valor: 900, origem: { tipo: "atendimento" } },
+    {
+      status: "recebido",
+      valor: 1000,
+      origem: { tipo: "atendimento" },
+      pagamento: { dataRecebimento: "2026-09-15", valorRecebido: 750 },
+    },
+    {
+      status: "recebido",
+      valor: 300,
+      origem: { tipo: "atendimento" },
+      pagamento: { dataRecebimento: "2026-09-20" },
+    },
+  ], "2026-09");
+
+  assert.deepEqual(resumo, {
+    aReceber: 900,
+    pendencias: 1,
+    recebidoMes: 750,
+    recebimentosMes: 1,
+    ticketMedioRecebido: 750,
   });
 });
 
@@ -106,7 +132,7 @@ test("ranking expande servicos sem multiplicar atendimentos nem receita", () => 
       origem: { tipo: "atendimento" },
       status: "recebido",
       valor: 640,
-      pagamento: { dataRecebimento: hoje },
+      pagamento: { dataRecebimento: hoje, valorRecebido: 640 },
     }],
     hoje,
     agoraMinutos: 0,

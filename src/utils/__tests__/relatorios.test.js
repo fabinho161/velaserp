@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 
 import {
   filtrarAtendimentosRelatorio,
   filtrarRelatoriosPorSegmento,
   obterApresentacaoRelatorios,
   prepararRelatorioAtendimentos,
+  prepararRelatorioFinanceiroServicos,
   prepararRelatorioServicos,
 } from "../relatorios.js";
 
@@ -302,6 +304,126 @@ test("reconcilia A 220 e B 50 com total historico de 270", () => {
   ]);
   assert.equal(analitico.valorHistorico, 270);
   assert.equal(atendimentos.valorAtendimentosConcluidos, 270);
+});
+
+test("relatorio financeiro de servicos reutiliza caixa realizado", () => {
+  const resultado = prepararRelatorioFinanceiroServicos({
+    contasReceber: [
+      {
+        id: "recebida",
+        origem: { tipo: "atendimento" },
+        cliente: { clienteId: "cliente-1", nome: "João" },
+        descricao: "Atendimento",
+        status: "recebido",
+        valor: 999,
+        dataCompetencia: "2026-09-10",
+        pagamento: { dataRecebimento: "2026-10-07", valorRecebido: 1000 },
+      },
+      {
+        origem: { tipo: "atendimento" },
+        cliente: { clienteId: "cliente-1" },
+        status: "pendente",
+        valor: 300,
+        dataCompetencia: "2026-09-15",
+      },
+    ],
+    despesas: [
+      {
+        id: "paga",
+        descricao: "Aluguel",
+        categoria: "Estrutura",
+        valor: 800,
+        dataCompetencia: "2026-09-20",
+        dataVencimento: "2026-09-30",
+        statusFinanceiro: "pago",
+        situacao: "ativo",
+        pagamento: {
+          dataPagamento: "2026-10-05",
+          formaPagamento: "pix",
+          valorPago: 500,
+          pagoEm: { seconds: 1 },
+          pagoPor: "usuario-1",
+        },
+      },
+      {
+        id: "pendente",
+        descricao: "Energia",
+        categoria: "Estrutura",
+        valor: 200,
+        dataCompetencia: "2026-10-10",
+        dataVencimento: "2026-10-20",
+        statusFinanceiro: "pendente",
+        situacao: "ativo",
+        pagamento: null,
+      },
+      { descricao: "Legada", categoria: "Outros", valor: 100, data: "2026-10-01", status: "Pago" },
+    ],
+    inicio: "2026-10-01",
+    fim: "2026-10-31",
+  });
+
+  assert.equal(resultado.recebido, 1000);
+  assert.equal(resultado.despesas, 500);
+  assert.equal(resultado.saldo, 500);
+  assert.equal(resultado.aReceber, 300);
+  assert.equal(resultado.totalDespesasPendentes, 200);
+  assert.deepEqual(resultado.movimentacoesCaixa.map(({ data, tipo, valor }) => ({
+    data, tipo, valor,
+  })), [
+    { data: "2026-10-07", tipo: "Entrada", valor: 1000 },
+    { data: "2026-10-05", tipo: "Saída", valor: 500 },
+  ]);
+});
+
+test("filtro Cliente afeta recebimentos e carteira, mas nao despesas gerais", () => {
+  const pagamento = {
+    dataPagamento: "2026-10-05",
+    formaPagamento: "pix",
+    valorPago: 100,
+    pagoEm: { seconds: 1 },
+    pagoPor: "usuario-1",
+  };
+  const resultado = prepararRelatorioFinanceiroServicos({
+    clienteId: "cliente-1",
+    contasReceber: [
+      { origem: { tipo: "atendimento" }, cliente: { clienteId: "cliente-1" }, status: "recebido", pagamento: { dataRecebimento: "2026-10-01", valorRecebido: 200 } },
+      { origem: { tipo: "atendimento" }, cliente: { clienteId: "cliente-2" }, status: "recebido", pagamento: { dataRecebimento: "2026-10-01", valorRecebido: 900 } },
+    ],
+    despesas: [{
+      descricao: "Despesa geral", categoria: "Outros", valor: 100,
+      dataCompetencia: "2026-10-01", dataVencimento: "2026-10-05",
+      statusFinanceiro: "pago", situacao: "ativo", pagamento,
+    }],
+  });
+
+  assert.equal(resultado.recebido, 200);
+  assert.equal(resultado.despesas, 100);
+  assert.equal(resultado.saldo, 100);
+});
+
+test("Relatorios condiciona listener e bloco financeiro a permissao financeira", async () => {
+  const fonte = await readFile(
+    new URL("../../pages/Relatorios.jsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    fonte,
+    /if \(!chaveRelatoriosServicos \|\| !podeVerFinanceiro\) return undefined;[\s\S]*?"contasReceber"/,
+  );
+  assert.match(fonte, /relatorio\.tipo !== "financeiro" \|\|\s*podeVerFinanceiro/);
+  assert.match(fonte, /Seu perfil não possui acesso aos dados financeiros/);
+});
+
+test("PDF financeiro de Servicos usa movimentos de caixa e separa carteira", async () => {
+  const fonte = await readFile(
+    new URL("../../pages/Relatorios.jsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(fonte, /label: "Recebimentos"[\s\S]*?resumoFinanceiroServicos\.recebido/);
+  assert.match(fonte, /label: "Pagamentos"[\s\S]*?resumoFinanceiroServicos\.despesas/);
+  assert.match(fonte, /label: "Saldo de caixa"[\s\S]*?resumoFinanceiroServicos\.saldo/);
+  assert.match(fonte, /head: \[\["Data", "Tipo", "Descrição", "Categoria", "Valor"\]\]/);
+  assert.match(fonte, /resumoFinanceiroServicos\.movimentacoesCaixa\.map/);
 });
 
 test("relatorio de servicos vazio retorna totais seguros", () => {
