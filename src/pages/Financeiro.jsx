@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { collection, doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
-import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info, Settings2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import ActionMenu from "../components/ActionMenu";
+import GerenciadorCategoriasDespesa from "../components/GerenciadorCategoriasDespesa";
 import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
 import { useConfirmacao } from "../context/useConfirmacao";
@@ -10,6 +11,11 @@ import { usePlano } from "../hooks/usePlano";
 import { useTableSort } from "../hooks/useTableSort";
 import { moedaBR, inteiroBR, dataBR, numeroBR } from "../utils/formatters";
 import { useParametros } from "../hooks/useParametros";
+import {
+  filtrarCategoriasDespesaAtivas,
+  obterCategoriaHistoricaInativa,
+  podeGerenciarCategoriasDespesa,
+} from "../utils/categoriasDespesa.js";
 import { ehFinanceiroServicos, filtrarContasServicos, filtrarMovimentacoesPeriodo, resumirFinanceiroServicos } from "../utils/financeiroServicos.js";
 import { receberAtendimento, sincronizarAtendimentos } from "../services/financeiroServicosApi";
 import { pagarDespesa } from "../services/financeiroDespesasApi.js";
@@ -99,7 +105,12 @@ export default function Financeiro() {
   const { showToast } = useToast();
   const { confirmar } = useConfirmacao();
   const { podeUsarDRE } = usePlano();
-  const { categoriasDespesa = [] } = useParametros();
+  const {
+    categoriasDespesa = [],
+    adicionarParametro,
+    editarParametro,
+    desativarParametro,
+  } = useParametros();
   const empresaAtual = empresas.find((empresa) =>
     empresa.id === empresaId &&
     (empresa.ownerUid || user?.uid) === (empresaOwnerUid || user?.uid)
@@ -117,7 +128,13 @@ export default function Financeiro() {
     formaPagamento: "",
   });
   const [salvandoPagamentoDespesa, setSalvandoPagamentoDespesa] = useState(false);
+  const [gerenciandoCategorias, setGerenciandoCategorias] = useState(false);
   const podeEscreverFinanceiro = temPermissaoEmpresaAtual("financeiro");
+  const podeEscreverParametros = temPermissaoEmpresaAtual("parametros");
+  const podeGerenciarCategorias = podeGerenciarCategoriasDespesa(
+    empresaAtual?.segmento,
+    { podeEscreverFinanceiro, podeEscreverParametros },
+  );
   const contasServicos = contasSnapshot.chave === chaveEmpresa ? contasSnapshot.lista : [];
 
   useEffect(() => {
@@ -149,9 +166,7 @@ export default function Financeiro() {
       });
   }, [empresaId, isPrestacaoServicos, ownerUid, showToast]);
 
-  const categoriasDespesaAtivas = categoriasDespesa.filter(
-    (categoria) => categoria.ativo
-  );
+  const categoriasDespesaAtivas = filtrarCategoriasDespesaAtivas(categoriasDespesa);
   const ordenacaoFluxo = useTableSort({
     chave: "data",
     direcao: "desc",
@@ -181,6 +196,9 @@ export default function Financeiro() {
   const [editIndex, setEditIndex] = useState(null);
   const despesaEmEdicao = editIndex !== null ? despesasAtivas[editIndex] : null;
   const editandoLegado = Boolean(despesaEmEdicao && ehDespesaLegada(despesaEmEdicao));
+  const categoriaHistoricaInativa = editIndex !== null
+    ? obterCategoriaHistoricaInativa(categoriasDespesa, form.categoria)
+    : "";
 
   // ================================
   // 🔹 FILTROS
@@ -927,7 +945,14 @@ const margemLiquida =
           🔹 CADASTRO DE DESPESAS
       ================================= */}
       <div className="card">
-        <h3>{editIndex !== null ? "Editar Despesa" : "Nova Despesa"}</h3>
+        <div className="finance-expense-form-header">
+          <h3>{editIndex !== null ? "Editar Despesa" : "Nova Despesa"}</h3>
+          {podeGerenciarCategorias && (
+            <button type="button" onClick={() => setGerenciandoCategorias(true)}>
+              <Settings2 size={16} /> Gerenciar categorias
+            </button>
+          )}
+        </div>
 
         <div className="finance-form-grid">
           <input
@@ -941,6 +966,12 @@ const margemLiquida =
             onChange={(e) => setForm({ ...form, categoria: e.target.value })}
           >
             <option value="">Selecione uma categoria</option>
+
+            {categoriaHistoricaInativa && (
+              <option value={categoriaHistoricaInativa}>
+                {categoriaHistoricaInativa} (Categoria histórica inativa)
+              </option>
+            )}
 
             {categoriasDespesaAtivas.length > 0 ? (
               categoriasDespesaAtivas.map((categoria) => (
@@ -992,6 +1023,18 @@ const margemLiquida =
           )}
         </div>
       </div>
+
+      {gerenciandoCategorias && podeGerenciarCategorias && (
+        <GerenciadorCategoriasDespesa
+          categorias={categoriasDespesa}
+          adicionarCategoria={(nome) => adicionarParametro("categoriasDespesa", nome)}
+          editarCategoria={(id, nome, ativo) =>
+            editarParametro("categoriasDespesa", id, nome, ativo)}
+          alterarAtividadeCategoria={(id, ativo) =>
+            desativarParametro("categoriasDespesa", id, ativo)}
+          fechar={() => setGerenciandoCategorias(false)}
+        />
+      )}
 
       <br />
 

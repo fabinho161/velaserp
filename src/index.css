@@ -560,6 +560,131 @@ body {
   margin: 0;
 }
 
+.finance-expense-form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.finance-expense-form-header h3 {
+  margin: 0;
+}
+
+.finance-expense-form-header button,
+.finance-categories-new button,
+.finance-categories-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.finance-categories-modal {
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 32px));
+  overflow-y: auto;
+}
+
+.finance-categories-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.finance-categories-header h3 {
+  margin: 10px 0 4px;
+}
+
+.finance-categories-header p {
+  margin: 0;
+  color: #64748b;
+}
+
+.finance-categories-close {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+.finance-categories-new {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  margin: 20px 0;
+}
+
+.finance-categories-new input,
+.finance-categories-new button {
+  min-height: 42px;
+  margin: 0;
+}
+
+.finance-categories-list {
+  display: grid;
+  gap: 10px;
+}
+
+.finance-categories-item {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.finance-categories-name,
+.finance-categories-name input {
+  min-width: 0;
+  width: 100%;
+}
+
+.finance-categories-name strong {
+  overflow-wrap: anywhere;
+}
+
+.finance-categories-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.finance-categories-actions button {
+  margin: 0;
+}
+
+.finance-categories-actions .finance-categories-deactivate {
+  background: #d97706;
+}
+
+@media (max-width: 680px) {
+  .finance-expense-form-header,
+  .finance-categories-header {
+    align-items: stretch;
+  }
+
+  .finance-expense-form-header {
+    flex-direction: column;
+  }
+
+  .finance-categories-new,
+  .finance-categories-item {
+    grid-template-columns: 1fr;
+  }
+
+  .finance-categories-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
 .finance-services-page {
   min-width: 0;
 }
