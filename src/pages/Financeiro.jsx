@@ -12,7 +12,20 @@ import { moedaBR, inteiroBR, dataBR, numeroBR } from "../utils/formatters";
 import { useParametros } from "../hooks/useParametros";
 import { ehFinanceiroServicos, filtrarContasServicos, filtrarMovimentacoesPeriodo, resumirFinanceiroServicos } from "../utils/financeiroServicos.js";
 import { receberAtendimento, sincronizarAtendimentos } from "../services/financeiroServicosApi";
+import { pagarDespesa } from "../services/financeiroDespesasApi.js";
 import { db } from "../firebase";
+import {
+  ehDespesaLegada,
+  FORMAS_PAGAMENTO_DESPESA,
+  montarAtualizacaoDespesa,
+  montarCancelamentoDespesa,
+  montarPayloadNovaDespesa,
+  normalizarDespesa,
+  normalizarDataCivilDespesa,
+  podeCancelarDespesa,
+  podeEditarDespesa,
+  podeRegistrarPagamentoDespesa,
+} from "../utils/despesas.js";
 
 const vendaCanceladaPorExpedicao = (venda = {}) =>
   String(venda.statusExpedicao || "").trim().toLowerCase() === "cancelado";
@@ -81,6 +94,7 @@ export default function Financeiro() {
     ordensServico = [],
     addItem,
     updateItem,
+    temPermissaoEmpresaAtual,
   } = useERP();
   const { showToast } = useToast();
   const { confirmar } = useConfirmacao();
@@ -97,6 +111,13 @@ export default function Financeiro() {
   const [contaRecebendo, setContaRecebendo] = useState(null);
   const [pagamentoForm, setPagamentoForm] = useState({ dataRecebimento: "", formaPagamento: "" });
   const [salvandoRecebimento, setSalvandoRecebimento] = useState(false);
+  const [despesaPagando, setDespesaPagando] = useState(null);
+  const [pagamentoDespesaForm, setPagamentoDespesaForm] = useState({
+    dataPagamento: "",
+    formaPagamento: "",
+  });
+  const [salvandoPagamentoDespesa, setSalvandoPagamentoDespesa] = useState(false);
+  const podeEscreverFinanceiro = temPermissaoEmpresaAtual("financeiro");
   const contasServicos = contasSnapshot.chave === chaveEmpresa ? contasSnapshot.lista : [];
 
   useEffect(() => {
@@ -150,14 +171,16 @@ export default function Financeiro() {
     descricao: "",
     categoria: "",
     valor: "",
-    data: "",
-    status: "Pago",
+    dataCompetencia: "",
+    dataVencimento: "",
   });
 
   // ================================
   // 🔹 CONTROLE DE EDIÇÃO
   // ================================
   const [editIndex, setEditIndex] = useState(null);
+  const despesaEmEdicao = editIndex !== null ? despesasAtivas[editIndex] : null;
+  const editandoLegado = Boolean(despesaEmEdicao && ehDespesaLegada(despesaEmEdicao));
 
   // ================================
   // 🔹 FILTROS
@@ -236,6 +259,28 @@ export default function Financeiro() {
       showToast(error.message || "Não foi possível registrar o recebimento.", "error");
     } finally {
       setSalvandoRecebimento(false);
+    }
+  };
+
+  const registrarPagamentoDespesa = async () => {
+    if (!despesaPagando || !normalizarDataCivilDespesa(pagamentoDespesaForm.dataPagamento) ||
+        !FORMAS_PAGAMENTO_DESPESA.includes(pagamentoDespesaForm.formaPagamento)) {
+      showToast("Informe uma data valida e a forma de pagamento.", "warning");
+      return;
+    }
+    setSalvandoPagamentoDespesa(true);
+    try {
+      await pagarDespesa({
+        empresaId,
+        despesaId: despesaPagando.id,
+        ...pagamentoDespesaForm,
+      });
+      setDespesaPagando(null);
+      showToast("Pagamento da despesa registrado com sucesso.", "success");
+    } catch (error) {
+      showToast(error.message || "Nao foi possivel registrar o pagamento.", "error");
+    } finally {
+      setSalvandoPagamentoDespesa(false);
     }
   };
 
@@ -425,8 +470,8 @@ const margemLiquida =
       descricao: "",
       categoria: "",
       valor: "",
-      data: "",
-      status: "Pago",
+      dataCompetencia: "",
+      dataVencimento: "",
     });
 
     setEditIndex(null);
@@ -436,23 +481,7 @@ const margemLiquida =
   // 🔹 SALVAR / ATUALIZAR DESPESA
   // ================================
   const salvarDespesa = async () => {
-    if (
-      !form.descricao ||
-      !form.categoria ||
-      !form.data ||
-      Number(form.valor) <= 0
-    ) {
-      showToast("Preencha descrição, categoria, data e um valor maior que zero.", "warning");
-      return;
-    }
-
-    const despesaTratada = {
-      descricao: form.descricao,
-      categoria: form.categoria,
-      valor: Number(form.valor),
-      data: form.data,
-      status: form.status,
-    };
+    const timestamp = serverTimestamp();
 
     if (editIndex !== null) {
       const despesa = despesasAtivas[editIndex];
@@ -462,9 +491,33 @@ const margemLiquida =
         return;
       }
 
-      await updateItem("despesas", despesa.id, despesaTratada);
+      const atualizacao = montarAtualizacaoDespesa(despesa, form, {
+        uid: user?.uid,
+        timestamp,
+      });
+      if (!atualizacao) {
+        showToast(
+          editandoLegado
+            ? "Preencha descrição, categoria, competência válida e valor maior que zero."
+            : "Preencha descrição, categoria, competência, vencimento e valor maior que zero.",
+          "warning"
+        );
+        return;
+      }
+      await updateItem("despesas", despesa.id, atualizacao);
     } else {
-      await addItem("despesas", despesaTratada);
+      const novaDespesa = montarPayloadNovaDespesa(form, {
+        uid: user?.uid,
+        timestamp,
+      });
+      if (!novaDespesa) {
+        showToast(
+          "Preencha descrição, categoria, competência, vencimento e valor maior que zero.",
+          "warning"
+        );
+        return;
+      }
+      await addItem("despesas", novaDespesa);
     }
 
     limparFormulario();
@@ -475,13 +528,18 @@ const margemLiquida =
   // ================================
   const editarDespesa = (index) => {
     const despesa = despesasAtivas[index];
+    if (!podeEditarDespesa(despesa)) {
+      showToast("Despesas com pagamento registrado nao podem ser editadas.", "warning");
+      return;
+    }
+    const normalizada = normalizarDespesa(despesa);
 
     setForm({
       descricao: despesa.descricao || "",
       categoria: despesa.categoria || "",
       valor: despesa.valor || "",
-      data: despesa.data || "",
-      status: despesa.status || "Pago",
+      dataCompetencia: normalizada.dataCompetencia || "",
+      dataVencimento: normalizada.dataVencimento || "",
     });
 
     setEditIndex(index);
@@ -491,12 +549,15 @@ const margemLiquida =
   // 🔹 EXCLUIR DESPESA
   // ================================
   const excluirDespesa = async (index) => {
+    const despesa = despesasAtivas[index];
+    if (!podeCancelarDespesa(despesa)) {
+      showToast("Despesas pagas ou canceladas nao podem ser excluidas sem estorno.", "warning");
+      return;
+    }
     const confirmado = await confirmar(
       "Excluir esta despesa? A despesa sera removida dos lancamentos e dos calculos financeiros, mas o historico sera preservado."
     );
     if (!confirmado) return;
-
-    const despesa = despesasAtivas[index];
 
     if (!despesa?.id || !user?.uid || !empresaId || !empresaOwnerUid) {
       showToast("Não foi possível concluir a operação.", "error");
@@ -504,6 +565,14 @@ const margemLiquida =
     }
 
     try {
+      const cancelamento = montarCancelamentoDespesa(despesa, {
+        uid: user.uid,
+        timestamp: serverTimestamp(),
+      });
+      if (!cancelamento) {
+        showToast("Não foi possível concluir a operação.", "error");
+        return;
+      }
       await updateDoc(
         doc(
           db,
@@ -514,13 +583,7 @@ const margemLiquida =
           "despesas",
           despesa.id
         ),
-        {
-          excluida: true,
-          excluidaEm: serverTimestamp(),
-          excluidaPor: user.uid,
-          status: "cancelado",
-          atualizadoEm: serverTimestamp(),
-        }
+        cancelamento
       );
       showToast("Despesa excluída da listagem.", "success");
     } catch (error) {
@@ -534,22 +597,32 @@ const margemLiquida =
     }
   };
 
-  const renderMenuDespesa = (index) => (
-    <ActionMenu
-      label="Abrir acoes da despesa"
-      items={[
-        {
-          label: "Editar despesa",
-          onClick: () => editarDespesa(index),
+  const renderMenuDespesa = (index) => {
+    const despesa = despesasAtivas[index];
+    if (!podeEscreverFinanceiro) return "-";
+    const items = [];
+    if (podeRegistrarPagamentoDespesa(despesa)) {
+      items.push({
+        label: "Registrar pagamento",
+        disabled: salvandoPagamentoDespesa,
+        onClick: () => {
+          setDespesaPagando(despesa);
+          setPagamentoDespesaForm({ dataPagamento: "", formaPagamento: "" });
         },
-        {
-          label: "Excluir despesa",
-          danger: true,
-          onClick: () => excluirDespesa(index),
-        },
-      ]}
-    />
-  );
+      });
+    }
+    if (podeEditarDespesa(despesa)) {
+      items.push({ label: "Editar despesa", onClick: () => editarDespesa(index) });
+    }
+    if (podeCancelarDespesa(despesa)) {
+      items.push({
+        label: "Excluir despesa",
+        danger: true,
+        onClick: () => excluirDespesa(index),
+      });
+    }
+    return items.length ? <ActionMenu label="Abrir acoes da despesa" items={items} /> : "-";
+  };
 
   // ================================
   // 🔹 ESTILO AUXILIAR DOS CARDS
@@ -820,6 +893,36 @@ const margemLiquida =
         </div>
       )}
 
+      {despesaPagando && (
+        <div className="modal-overlay" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !salvandoPagamentoDespesa) setDespesaPagando(null);
+        }}>
+          <div className="modal-card finance-services-payment-modal" role="dialog" aria-modal="true" aria-label="Registrar pagamento de despesa">
+            <h3>Registrar pagamento</h3>
+            <p>{despesaPagando.descricao || "Despesa sem descricao"}</p>
+            <strong>{moedaBR(despesaPagando.valor)}</strong>
+            <label>Data do pagamento
+              <input type="date" value={pagamentoDespesaForm.dataPagamento} onChange={(event) =>
+                setPagamentoDespesaForm((atual) => ({ ...atual, dataPagamento: event.target.value }))} />
+            </label>
+            <label>Forma de pagamento
+              <select value={pagamentoDespesaForm.formaPagamento} onChange={(event) =>
+                setPagamentoDespesaForm((atual) => ({ ...atual, formaPagamento: event.target.value }))}>
+                <option value="">Selecione</option>
+                {FORMAS_RECEBIMENTO.filter(([id]) => FORMAS_PAGAMENTO_DESPESA.includes(id))
+                  .map(([id, nome]) => <option key={id} value={id}>{nome}</option>)}
+              </select>
+            </label>
+            <div className="modal-actions">
+              <button type="button" disabled={salvandoPagamentoDespesa} onClick={() => setDespesaPagando(null)}>Cancelar</button>
+              <button type="button" disabled={salvandoPagamentoDespesa} onClick={registrarPagamentoDespesa}>
+                {salvandoPagamentoDespesa ? "Salvando..." : "Confirmar pagamento"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ================================
           🔹 CADASTRO DE DESPESAS
       ================================= */}
@@ -860,19 +963,25 @@ const margemLiquida =
             onChange={(e) => setForm({ ...form, valor: e.target.value })}
           />
 
-          <input
-            type="date"
-            value={form.data}
-            onChange={(e) => setForm({ ...form, data: e.target.value })}
-          />
+          <label>
+            Data de competência
+            <input
+              type="date"
+              value={form.dataCompetencia}
+              onChange={(e) => setForm({ ...form, dataCompetencia: e.target.value })}
+            />
+          </label>
 
-          <select
-            value={form.status}
-            onChange={(e) => setForm({ ...form, status: e.target.value })}
-          >
-            <option>Pago</option>
-            <option>Pendente</option>
-          </select>
+          <label>
+            Data de vencimento
+            <input
+              type="date"
+              value={form.dataVencimento}
+              disabled={editandoLegado}
+              onChange={(e) => setForm({ ...form, dataVencimento: e.target.value })}
+            />
+            {editandoLegado && <small>Não informada no documento legado.</small>}
+          </label>
 
           <button onClick={salvarDespesa}>
             {editIndex !== null ? "Atualizar Despesa" : "Salvar Despesa"}
@@ -1123,7 +1232,8 @@ const margemLiquida =
           <table>
           <thead>
             <tr>
-              <th>{renderCabecalhoOrdenavel("Data", "data", ordenacaoDespesas)}</th>
+              <th>{renderCabecalhoOrdenavel("Competência", "data", ordenacaoDespesas)}</th>
+              <th>Vencimento</th>
               <th>{renderCabecalhoOrdenavel("Categoria", "categoria", ordenacaoDespesas)}</th>
               <th>{renderCabecalhoOrdenavel("Descrição", "descricao", ordenacaoDespesas)}</th>
               <th>{renderCabecalhoOrdenavel("Status", "status", ordenacaoDespesas)}</th>
@@ -1133,9 +1243,12 @@ const margemLiquida =
           </thead>
 
           <tbody>
-            {despesasOrdenadas.map(({ despesa, index }) => (
+            {despesasOrdenadas.map(({ despesa, index }) => {
+              const normalizada = normalizarDespesa(despesa);
+              return (
               <tr key={despesa.id || index}>
-                <td>{dataBR(despesa.data)}</td>
+                <td>{dataBR(normalizada.dataCompetencia)}</td>
+                <td>{normalizada.dataVencimento ? dataBR(normalizada.dataVencimento) : "-"}</td>
                 <td>{despesa.categoria}</td>
                 <td>{despesa.descricao}</td>
 
@@ -1145,23 +1258,29 @@ const margemLiquida =
                       padding: "5px 10px",
                       borderRadius: "20px",
                       background:
-                        despesa.status === "Pago" ? "#dcfce7" : "#fef3c7",
-                      color: despesa.status === "Pago" ? "#166534" : "#92400e",
+                        normalizada.statusFinanceiro === "pago" ? "#dcfce7" : "#fef3c7",
+                      color: normalizada.statusFinanceiro === "pago" ? "#166534" : "#92400e",
                     }}
                   >
-                    {despesa.status}
+                    {normalizada.statusFinanceiro === "pago" ? "Pago" : "Pendente"}
                   </span>
+                  {normalizada.pagamento?.dataPagamento && (
+                    <small style={{ display: "block", marginTop: "4px" }}>
+                      {dataBR(normalizada.pagamento.dataPagamento)}
+                    </small>
+                  )}
                 </td>
 
                 <td>{moedaBR(despesa.valor || 0)}</td>
 
                 <td>{renderMenuDespesa(index)}</td>
               </tr>
-            ))}
+              );
+            })}
 
             {despesasAtivas.length === 0 && (
               <tr>
-                <td colSpan="6">Nenhuma despesa cadastrada.</td>
+                <td colSpan="7">Nenhuma despesa cadastrada.</td>
               </tr>
             )}
           </tbody>

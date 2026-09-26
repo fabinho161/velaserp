@@ -691,6 +691,41 @@ service cloud.firestore {
         }
 
         match /despesas/{documentId} {
+          function despesaNovaPendenteValida() {
+            return request.resource.data.keys().hasAll([
+                "dataCompetencia", "dataVencimento", "statusFinanceiro", "situacao", "pagamento",
+                "data", "status", "criadoEm", "criadoPor", "atualizadoEm", "atualizadoPor"
+              ]) &&
+              request.resource.data.statusFinanceiro == "pendente" &&
+              request.resource.data.situacao == "ativo" &&
+              request.resource.data.pagamento == null &&
+              request.resource.data.status == "Pendente";
+          }
+
+          function despesaEstavaPendente() {
+            return (resource.data.keys().hasAll(["statusFinanceiro"]) &&
+                resource.data.statusFinanceiro == "pendente" &&
+                resource.data.situacao == "ativo" &&
+                resource.data.pagamento == null) ||
+              (!resource.data.keys().hasAny(["statusFinanceiro", "pagamento"]) &&
+                resource.data.status == "Pendente");
+          }
+
+          function camposFinanceirosAutoritativosIntactos() {
+            return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+              "statusFinanceiro", "pagamento", "criadoEm", "criadoPor"
+            ]);
+          }
+
+          function estadoDespesaPermitido() {
+            let alterados = request.resource.data.diff(resource.data).affectedKeys();
+            return !alterados.hasAny(["situacao", "status", "excluida", "excluidaEm", "excluidaPor"]) ||
+              (request.resource.data.status == "cancelado" &&
+                request.resource.data.excluida == true &&
+                (!resource.data.keys().hasAny(["situacao"]) ||
+                  request.resource.data.situacao == "cancelado"));
+          }
+
           allow read: if hasCompanyRole(userId, empresaId, [
             "administrador_empresa",
             "financeiro",
@@ -699,7 +734,12 @@ service cloud.firestore {
             "estoque",
             "visualizacao"
           ]);
-          allow create, update: if canWriteModule(userId, empresaId, "despesas");
+          allow create: if canWriteModule(userId, empresaId, "despesas") &&
+            despesaNovaPendenteValida();
+          allow update: if canWriteModule(userId, empresaId, "despesas") &&
+            despesaEstavaPendente() &&
+            camposFinanceirosAutoritativosIntactos() &&
+            estadoDespesaPermitido();
           allow delete: if false;
         }
 

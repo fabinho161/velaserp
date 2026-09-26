@@ -1,4 +1,6 @@
-import { normalizarServicosAgendamento } from "./agenda.js";
+import { agruparServicosRealizados } from "./analiticaServicos.js";
+
+export { agruparServicosRealizados } from "./analiticaServicos.js";
 
 const STATUS_ATIVOS = new Set(["agendado", "confirmado", "em_atendimento"]);
 const STATUS_CONHECIDOS = ["agendado", "confirmado", "em_atendimento", "concluido", "cancelado"];
@@ -51,25 +53,6 @@ export const resumirFinanceiroDashboard = (contas = [], prefixoMes = "") => {
     recebimentosMes: recebidasMes.length,
     ticketMedioRecebido: recebidasMes.length ? recebidoMes / recebidasMes.length : 0,
   };
-};
-
-export const agruparServicosRealizados = (agendamentos = []) => {
-  const ranking = new Map();
-  for (const agendamento of agendamentos) {
-    for (const servico of normalizarServicosAgendamento(agendamento)) {
-      const chave = `id:${servico.servicoId}`;
-      const atual = ranking.get(chave) || {
-        servicoId: servico.servicoId,
-        nome: servico.servicoNome,
-        quantidade: 0,
-        valor: 0,
-      };
-      atual.quantidade += 1;
-      atual.valor += servico.valorUnitario;
-      ranking.set(chave, atual);
-    }
-  }
-  return [...ranking.values()];
 };
 
 export const calcularDashboardClientes = ({

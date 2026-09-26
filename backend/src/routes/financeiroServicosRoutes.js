@@ -1,66 +1,14 @@
 const express = require("express");
 const authFirebase = require("../middlewares/authFirebase");
 const { FieldValue, getDb } = require("../firebaseAdmin");
-const { normalizarRoleEmpresa } = require("../utils/perfisEmpresa");
-const { empresaPertenceAoSegmento } = require("../utils/segmentosEmpresa");
+const {
+  erro, executar, existe, idValido, validarEscopo, verificarAcesso,
+} = require("../shared/financeiroAutorizacao.cjs");
 const {
   FORMAS_PAGAMENTO, idContaAtendimento, montarContaAtendimento,
 } = require("../shared/contasReceberServicos.cjs");
 
 const router = express.Router();
-const ROLES_AGENDA = new Set(["administrador_empresa", "comercial"]);
-const ROLES_FINANCEIRO = new Set(["administrador_empresa", "financeiro"]);
-
-const erro = (status, mensagem) => Object.assign(new Error(mensagem), { status });
-const idValido = (valor) => typeof valor === "string" && valor.trim() && !valor.includes("/");
-const existe = (snap) => Boolean(snap?.exists);
-
-const validarEscopo = (req) => {
-  const { ownerUid, empresaId } = req.body || {};
-  if (!idValido(ownerUid) || !idValido(empresaId)) throw erro(400, "Empresa invalida.");
-  return { ownerUid: ownerUid.trim(), empresaId: empresaId.trim() };
-};
-
-const verificarAcesso = async (db, tx, { uid, ownerUid, empresaId, permissao }) => {
-  const empresaRef = db.collection("users").doc(ownerUid).collection("empresas").doc(empresaId);
-  const atorRef = db.collection("users").doc(uid);
-  const [empresaSnap, atorSnap] = await Promise.all([tx.get(empresaRef), tx.get(atorRef)]);
-  if (!existe(empresaSnap)) throw erro(404, "Empresa nao encontrada.");
-  if (!empresaPertenceAoSegmento(empresaSnap.data().segmento, "clientes") ||
-      (empresaSnap.data().ownerUid && empresaSnap.data().ownerUid !== ownerUid)) {
-    throw erro(403, "Operacao indisponivel para esta empresa.");
-  }
-  if (uid === ownerUid || atorSnap.data()?.role === "admin_master") return empresaRef;
-
-  const authRef = db.collection("usuariosPorAuth").doc(uid).collection("empresas").doc(empresaId);
-  const userRef = atorRef.collection("empresas").doc(empresaId);
-  const [authSnap, userSnap] = await Promise.all([tx.get(authRef), tx.get(userRef)]);
-  const vinculo = existe(authSnap) ? authSnap.data() : existe(userSnap) ? userSnap.data() : null;
-  if (!vinculo || vinculo.ownerUid !== ownerUid || vinculo.status !== "ativo" ||
-      !idValido(vinculo.usuarioEmpresaId)) throw erro(403, "Vinculo ativo nao encontrado.");
-
-  const membroRef = empresaRef.collection("usuariosEmpresa").doc(vinculo.usuarioEmpresaId);
-  const membroSnap = await tx.get(membroRef);
-  const membro = membroSnap.data();
-  if (!existe(membroSnap) || membro.uidAuth !== uid || membro.status !== "ativo") {
-    throw erro(403, "Vinculo ativo nao encontrado.");
-  }
-  const roles = permissao === "agenda" ? ROLES_AGENDA : ROLES_FINANCEIRO;
-  if (!roles.has(normalizarRoleEmpresa(membro))) throw erro(403, "Permissao insuficiente.");
-  return empresaRef;
-};
-
-const executar = (handler) => async (req, res) => {
-  try {
-    if (!req.user?.uid) throw erro(401, "Autenticacao necessaria.");
-    const resultado = await handler(req);
-    res.status(200).json({ ok: true, ...resultado });
-  } catch (error) {
-    const status = error.status || 500;
-    if (status === 500) console.error("Erro no financeiro de servicos:", error);
-    res.status(status).json({ ok: false, error: status === 500 ? "Nao foi possivel concluir a operacao." : error.message });
-  }
-};
 
 const garantirConta = ({ tx, empresaRef, agendamentoId, agendamento, atorUid, timestamp, contaSnap }) => {
   const contaRef = empresaRef.collection("contasReceber").doc(idContaAtendimento(agendamentoId));

@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Boxes,
+  CalendarCheck2,
   ChartColumnIncreasing,
   Factory,
   FileChartLine,
@@ -9,6 +10,7 @@ import {
   TrendingUp,
   Wallet,
 } from "lucide-react";
+import { collection, onSnapshot } from "firebase/firestore";
 import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
 import { usePlano } from "../hooks/usePlano";
@@ -18,6 +20,14 @@ import {
   calcularEstoqueProdutos,
 } from "../utils/estoqueProdutos";
 import { segmentoPossuiModulo } from "../config/segmentosEmpresa";
+import {
+  prepararRelatorioAtendimentos,
+  prepararRelatorioServicos,
+  filtrarRelatoriosPorSegmento,
+  obterApresentacaoRelatorios,
+} from "../utils/relatorios.js";
+import { db } from "../firebase";
+import { registrarErroFirestore } from "../utils/firestoreDiagnostico.js";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import saasLogo from "../assets/saas-logo.png";
@@ -49,11 +59,33 @@ export default function Relatorios() {
     despesas,
     empresas,
     empresaId,
+    empresaOwnerUid,
     configuracoes,
     clientesComerciais = [],
+    perfilEmpresaAtual,
+    user,
   } = useERP();
   const { showToast } = useToast();
   const { podeUsarDRE, podeGerarPDF } = usePlano();
+  const empresaAtiva = (empresas || []).find(
+    (empresa) => empresa.id === empresaId
+  );
+  const apresentacaoRelatorios = obterApresentacaoRelatorios(
+    empresaAtiva?.segmento
+  );
+  const ownerUid = empresaOwnerUid || user?.uid || null;
+  const chaveRelatoriosServicos = apresentacaoRelatorios.isGestaoServicos &&
+    ownerUid && empresaId
+    ? `${ownerUid}/${empresaId}`
+    : "";
+  const [agendaSnapshot, setAgendaSnapshot] = useState({ chave: "", lista: [] });
+  const [servicosSnapshot, setServicosSnapshot] = useState({ chave: "", lista: [] });
+  const agendamentos = agendaSnapshot.chave === chaveRelatoriosServicos
+    ? agendaSnapshot.lista
+    : [];
+  const servicosCatalogo = servicosSnapshot.chave === chaveRelatoriosServicos
+    ? servicosSnapshot.lista
+    : [];
 
   // ================================
   // 🔹 FILTRO GLOBAL DOS RELATÓRIOS
@@ -62,9 +94,53 @@ export default function Relatorios() {
     inicio: "",
     fim: "",
     cliente: "",
+    servico: "",
   });
   const [buscaCliente, setBuscaCliente] = useState("");
   const [clienteDropdownAberto, setClienteDropdownAberto] = useState(false);
+
+  useEffect(() => {
+    if (!chaveRelatoriosServicos) return undefined;
+
+    const basePath = ["users", ownerUid, "empresas", empresaId];
+    const ouvirColecao = (nome, atualizar) => onSnapshot(
+      collection(db, ...basePath, nome),
+      (snapshot) => atualizar({
+        chave: chaveRelatoriosServicos,
+        lista: snapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
+      }),
+      (error) => {
+        registrarErroFirestore({
+          origem: "Relatorios",
+          colecao: nome,
+          operacao: "list:onSnapshot",
+          error,
+          perfil: perfilEmpresaAtual,
+          segmento: "clientes",
+        });
+        atualizar({ chave: chaveRelatoriosServicos, lista: [] });
+        showToast(
+          nome === "agendamentos"
+            ? "Não foi possível carregar os atendimentos."
+            : "Não foi possível carregar os serviços.",
+          "error"
+        );
+      }
+    );
+
+    const unsubAgenda = ouvirColecao("agendamentos", setAgendaSnapshot);
+    const unsubServicos = ouvirColecao("servicos", setServicosSnapshot);
+    return () => {
+      unsubAgenda();
+      unsubServicos();
+    };
+  }, [
+    chaveRelatoriosServicos,
+    empresaId,
+    ownerUid,
+    perfilEmpresaAtual,
+    showToast,
+  ]);
 
   const normalizarTexto = (valor = "") =>
     String(valor || "")
@@ -173,6 +249,14 @@ export default function Relatorios() {
     });
   });
 
+  agendamentos.forEach((agendamento) => {
+    adicionarClienteRelatorio({
+      id: agendamento.clienteId || "",
+      nome: agendamento.clienteNome || "",
+      origem: "Atendimento",
+    });
+  });
+
   const clientesRelatorio = Array.from(clientesRelatorioMap.values()).sort(
     (a, b) =>
       String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR", {
@@ -261,6 +345,27 @@ export default function Relatorios() {
   );
   const despesasFiltradas = filtrarPorPeriodo(despesasAtivas);
   const producoesFiltradas = filtrarPorPeriodo(producoes);
+  const resumoAtendimentos = prepararRelatorioAtendimentos(agendamentos, {
+    inicio: filtro.inicio,
+    fim: filtro.fim,
+    clienteId: clienteSelecionado?.id || "",
+    servicoId: filtro.servico,
+  });
+  const resumoServicos = prepararRelatorioServicos(agendamentos, {
+    inicio: filtro.inicio,
+    fim: filtro.fim,
+    clienteId: clienteSelecionado?.id || "",
+    servicoId: filtro.servico,
+  });
+  const servicosFiltro = [...servicosCatalogo].sort((a, b) =>
+    String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR", {
+      numeric: true,
+      sensitivity: "base",
+    })
+  );
+  const servicoSelecionado = servicosFiltro.find(
+    (servico) => servico.id === filtro.servico
+  ) || null;
 
   // ================================
   // 🔹 INDICADORES GERAIS
@@ -388,9 +493,6 @@ export default function Relatorios() {
   // ================================
   // 🔹 EMPRESA ATIVA PARA PDF
   // ================================
-  const empresaAtiva = (empresas || []).find(
-    (empresa) => empresa.id === empresaId
-  );
   const segmentoPossuiProducao = segmentoPossuiModulo(
     empresaAtiva?.segmento,
     "producao"
@@ -433,13 +535,27 @@ export default function Relatorios() {
   // ================================
   // 🔹 RELATÓRIOS DISPONÍVEIS
   // ================================
-  const relatoriosDisponiveis = [
+  const relatoriosDisponiveis = filtrarRelatoriosPorSegmento([
     {
       tipo: "vendas",
       titulo: "Relatório de Vendas",
       descricao: "Resumo de pedidos, clientes, itens vendidos, receita e margem.",
       Icone: Receipt,
       cor: "green",
+    },
+    {
+      tipo: "atendimentos",
+      titulo: "Relatório de Atendimentos",
+      descricao: "Atendimentos, clientes, serviços, horários, duração e valores históricos.",
+      Icone: CalendarCheck2,
+      cor: "green",
+    },
+    {
+      tipo: "servicos",
+      titulo: "Relatório de Serviços",
+      descricao: "Serviços executados, quantidade e valores históricos dos atendimentos.",
+      Icone: ChartColumnIncreasing,
+      cor: "blue",
     },
     {
       tipo: "financeiro",
@@ -478,7 +594,7 @@ export default function Relatorios() {
       Icone: Boxes,
       cor: "teal",
     },
-  ];
+  ], empresaAtiva?.segmento);
 
   // ================================
   // 🔹 PDF - CONVERTER LOGO PARA BASE64
@@ -788,6 +904,126 @@ export default function Relatorios() {
 
       gerarRodapePDF(doc);
       doc.save("relatorio-vendas-renovar-erp.pdf");
+      return;
+    }
+
+    if (tipo === "atendimentos") {
+      let y = await gerarCabecalhoPDF(
+        doc,
+        "Relatório de Atendimentos",
+        "Histórico operacional de atendimentos, clientes, composição de serviços, horários, duração reservada e valores históricos."
+      );
+
+      y = desenharCardsPDF(
+        doc,
+        [
+          {
+            label: "Total de atendimentos",
+            value: inteiroBR(resumoAtendimentos.totalAtendimentos),
+            color: PDF_COLORS.blue,
+          },
+          {
+            label: "Atendimentos concluídos",
+            value: inteiroBR(resumoAtendimentos.totalConcluidos),
+            color: PDF_COLORS.green,
+          },
+          {
+            label: "Valor dos concluídos",
+            value: moedaBR(resumoAtendimentos.valorAtendimentosConcluidos),
+            detail: "Valor histórico operacional",
+            color: PDF_COLORS.amber,
+          },
+        ],
+        y
+      );
+
+      if (servicoSelecionado) {
+        y = desenharAvisoPDF(
+          doc,
+          `Filtro de serviço: ${servicoSelecionado.nome || "Serviço selecionado"}`,
+          y,
+          PDF_COLORS.blue
+        );
+      }
+
+      tabelaPDF(doc, {
+        startY: y,
+        head: [["Data", "Cliente", "Serviços", "Status", "Horário", "Duração", "Valor"]],
+        body: resumoAtendimentos.linhas.map((linha) => [
+          dataBR(linha.data),
+          textoPDF(linha.clienteNome),
+          textoPDF(linha.servicosNomes),
+          linha.statusLabel,
+          linha.horario,
+          `${inteiroBR(linha.duracaoMinutos)} min`,
+          moedaBR(linha.valorHistorico),
+        ]),
+        columnStyles: {
+          5: { halign: "right" },
+          6: { halign: "right" },
+        },
+      });
+
+      gerarRodapePDF(doc);
+      doc.save("relatorio-atendimentos-renovar-erp.pdf");
+      return;
+    }
+
+    if (tipo === "servicos") {
+      let y = await gerarCabecalhoPDF(
+        doc,
+        "Relatório de Serviços",
+        "Serviços executados em atendimentos concluídos, quantidade de execuções e valores históricos operacionais."
+      );
+
+      y = desenharCardsPDF(
+        doc,
+        [
+          {
+            label: "Serviços executados",
+            value: inteiroBR(resumoServicos.totalExecucoes),
+            color: PDF_COLORS.blue,
+          },
+          {
+            label: "Tipos de serviço",
+            value: inteiroBR(resumoServicos.totalTipos),
+            color: PDF_COLORS.green,
+          },
+          {
+            label: "Valor histórico dos concluídos",
+            value: moedaBR(resumoServicos.valorHistorico),
+            detail: "Serviços de atendimentos concluídos",
+            color: PDF_COLORS.amber,
+          },
+        ],
+        y
+      );
+
+      if (servicoSelecionado) {
+        y = desenharAvisoPDF(
+          doc,
+          `Filtro de serviço: ${servicoSelecionado.nome || "Serviço selecionado"}`,
+          y,
+          PDF_COLORS.blue
+        );
+      }
+
+      tabelaPDF(doc, {
+        startY: y,
+        head: [["Serviço", "Execuções", "Valor histórico"]],
+        body: resumoServicos.linhas.map((linha) => [
+          textoPDF(linha.nome),
+          inteiroBR(linha.quantidade),
+          moedaBR(linha.valor),
+        ]),
+        columnStyles: {
+          1: { halign: "right" },
+          2: { halign: "right" },
+        },
+      });
+
+      gerarRodapePDF(doc);
+      doc.save("relatorio-servicos-renovar-erp.pdf");
       return;
     }
 
@@ -1172,7 +1408,7 @@ export default function Relatorios() {
   };
 
   const limparFiltrosRelatorios = () => {
-    setFiltro({ inicio: "", fim: "", cliente: "" });
+    setFiltro({ inicio: "", fim: "", cliente: "", servico: "" });
     setBuscaCliente("");
     setClienteDropdownAberto(false);
   };
@@ -1194,7 +1430,11 @@ export default function Relatorios() {
         <div className="reports-filter-heading">
           <div>
             <h3>Filtros</h3>
-            <p>Combine período e cliente para refinar a análise.</p>
+            <p>
+              {apresentacaoRelatorios.isGestaoServicos
+                ? "Combine período e cliente para refinar os relatórios disponíveis."
+                : "Combine período e cliente para refinar a análise."}
+            </p>
           </div>
 
           {clienteSelecionado && (
@@ -1289,16 +1529,43 @@ export default function Relatorios() {
             </div>
           </div>
 
+          {apresentacaoRelatorios.isGestaoServicos && (
+            <label className="reports-filter-field">
+              <span>Serviço</span>
+              <select
+                value={filtro.servico}
+                onChange={(event) => setFiltro({
+                  ...filtro,
+                  servico: event.target.value,
+                })}
+              >
+                <option value="">Todos os serviços</option>
+                {servicosFiltro.map((servico) => (
+                  <option key={servico.id} value={servico.id}>
+                    {servico.nome || "Serviço sem nome"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
           <button type="button" onClick={limparFiltrosRelatorios}>
             Limpar filtros
           </button>
         </div>
 
-        {clienteSelecionado && (
+        {clienteSelecionado && !apresentacaoRelatorios.isGestaoServicos && (
           <p className="reports-filter-note">
             Vendas, Financeiro e DRE respeitam o cliente selecionado.{" "}
             {segmentoPossuiProducao ? "Produção, Estoque e Insumos" : "Estoque e Insumos"}{" "}
             continuam como relatórios operacionais da empresa.
+          </p>
+        )}
+        {apresentacaoRelatorios.isGestaoServicos && filtro.servico && (
+          <p className="reports-filter-note">
+            O filtro Serviço afeta o card, o Relatório de Atendimentos e o Relatório
+            de Serviços. Despesas, Relatório Financeiro e DRE permanecem sem associação
+            por serviço nesta etapa.
           </p>
         )}
       </div>
@@ -1307,54 +1574,73 @@ export default function Relatorios() {
           🔹 INDICADORES PRINCIPAIS
       ================================= */}
       <div className="reports-kpi-grid">
-        <div className="reports-kpi-card reports-kpi-green">
-          <span className="reports-kpi-icon">
-            <Receipt size={18} />
-          </span>
-          <p>Vendas</p>
-          <strong>{moedaBR(totalVendas)}</strong>
-          <small>
-            {inteiroBR(vendasFiltradas.length)} vendas no período
-            {clienteSelecionado ? ` para ${clienteSelecionado.nome}` : ""}
-          </small>
-        </div>
+        {apresentacaoRelatorios.exibirIndicadoresVendas && (
+          <div className="reports-kpi-card reports-kpi-green">
+            <span className="reports-kpi-icon">
+              <Receipt size={18} />
+            </span>
+            <p>Vendas</p>
+            <strong>{moedaBR(totalVendas)}</strong>
+            <small>
+              {inteiroBR(vendasFiltradas.length)} vendas no período
+              {clienteSelecionado ? ` para ${clienteSelecionado.nome}` : ""}
+            </small>
+          </div>
+        )}
 
-        <div className="reports-kpi-card reports-kpi-red">
-          <span className="reports-kpi-icon">
-            <Wallet size={18} />
-          </span>
-          <p>Despesas</p>
-          <strong>{moedaBR(totalDespesas)}</strong>
-          <small>
-            {clienteSelecionado
-              ? "Saídas gerais da empresa, sem rateio por cliente"
-              : "Saídas no período"}
-          </small>
-        </div>
+        {apresentacaoRelatorios.exibirDespesas && (
+          <div className="reports-kpi-card reports-kpi-red">
+            <span className="reports-kpi-icon">
+              <Wallet size={18} />
+            </span>
+            <p>Despesas</p>
+            <strong>{moedaBR(totalDespesas)}</strong>
+            <small>
+              {clienteSelecionado
+                ? "Saídas gerais da empresa, sem rateio por cliente"
+                : "Saídas no período"}
+            </small>
+          </div>
+        )}
 
-        <div className="reports-kpi-card reports-kpi-blue">
-          <span className="reports-kpi-icon">
-            <TrendingUp size={18} />
-          </span>
-          <p>Saldo</p>
-          <strong className={saldoFinanceiro >= 0 ? "text-blue" : "text-red"}>
-            {moedaBR(saldoFinanceiro)}
-          </strong>
-          <small>
-            {clienteSelecionado
-              ? "Lucro bruto do cliente, sem despesas gerais"
-              : "Vendas - despesas"}
-          </small>
-        </div>
+        {apresentacaoRelatorios.isGestaoServicos && (
+          <div className="reports-kpi-card reports-kpi-green">
+            <span className="reports-kpi-icon">
+              <CalendarCheck2 size={18} />
+            </span>
+            <p>Atendimentos Concluídos</p>
+            <strong>{inteiroBR(resumoAtendimentos.totalConcluidos)}</strong>
+            <small>Atendimentos concluídos com os filtros operacionais</small>
+          </div>
+        )}
 
-        <div className="reports-kpi-card reports-kpi-amber">
-          <span className="reports-kpi-icon">
-            <ChartColumnIncreasing size={18} />
-          </span>
-          <p>Margem Bruta</p>
-          <strong>{numeroBR(margemBruta, 2)}%</strong>
-          <small>Lucro bruto sobre vendas</small>
-        </div>
+        {apresentacaoRelatorios.exibirIndicadoresVendas && (
+          <div className="reports-kpi-card reports-kpi-blue">
+            <span className="reports-kpi-icon">
+              <TrendingUp size={18} />
+            </span>
+            <p>Saldo</p>
+            <strong className={saldoFinanceiro >= 0 ? "text-blue" : "text-red"}>
+              {moedaBR(saldoFinanceiro)}
+            </strong>
+            <small>
+              {clienteSelecionado
+                ? "Lucro bruto do cliente, sem despesas gerais"
+                : "Vendas - despesas"}
+            </small>
+          </div>
+        )}
+
+        {apresentacaoRelatorios.exibirIndicadoresVendas && (
+          <div className="reports-kpi-card reports-kpi-amber">
+            <span className="reports-kpi-icon">
+              <ChartColumnIncreasing size={18} />
+            </span>
+            <p>Margem Bruta</p>
+            <strong>{numeroBR(margemBruta, 2)}%</strong>
+            <small>Lucro bruto sobre vendas</small>
+          </div>
+        )}
 
         {segmentoPossuiProducao && (
           <div className="reports-kpi-card reports-kpi-slate">
@@ -1376,6 +1662,11 @@ export default function Relatorios() {
           <div>
             <h2>Central de Relatórios</h2>
             <p>Escolha um relatório para gerar um PDF profissional com os filtros atuais.</p>
+            {apresentacaoRelatorios.isGestaoServicos && (
+              <p className="reports-filter-note">
+                A adaptação financeira específica para serviços será disponibilizada em uma próxima etapa.
+              </p>
+            )}
           </div>
         </div>
 
