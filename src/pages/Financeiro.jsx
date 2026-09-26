@@ -254,11 +254,13 @@ export default function Financeiro() {
   // ================================
   // 🔹 MOVIMENTAÇÕES GERAIS COM FILTRO
   // ================================
-  const movimentacoes = filtrarMovimentacoesPeriodo([...entradas, ...saidas], filtro)
-    .sort((a, b) => new Date(b.data) - new Date(a.data));
   const resumoServicos = isPrestacaoServicos
-    ? resumirFinanceiroServicos(movimentacoes, contasServicos, filtro)
+    ? resumirFinanceiroServicos(despesasAtivas, contasServicos, filtro)
     : null;
+  const movimentacoes = (isPrestacaoServicos
+    ? resumoServicos.movimentacoesCaixa
+    : filtrarMovimentacoesPeriodo([...entradas, ...saidas], filtro))
+    .sort((a, b) => new Date(b.data) - new Date(a.data));
   const contasVisiveis = isPrestacaoServicos
     ? filtrarContasServicos(contasServicos, filtro)
     : [];
@@ -344,13 +346,15 @@ export default function Financeiro() {
         ) / totalVendas
       : 0;
 
-  const despesasPendentes = despesasAtivas.filter(
-    (despesa) => despesa.status === "Pendente"
-  ).length;
+  const despesasPendentes = isPrestacaoServicos
+    ? resumoServicos.despesasPendentes
+    : despesasAtivas.filter((despesa) => despesa.status === "Pendente").length;
 
-  const totalDespesasPendentes = despesasAtivas
-    .filter((despesa) => despesa.status === "Pendente")
-    .reduce((total, despesa) => total + Number(despesa.valor ?? 0), 0);
+  const totalDespesasPendentes = isPrestacaoServicos
+    ? resumoServicos.totalDespesasPendentes
+    : despesasAtivas
+      .filter((despesa) => despesa.status === "Pendente")
+      .reduce((total, despesa) => total + Number(despesa.valor ?? 0), 0);
 
   const temDespesasPendentes = despesasPendentes > 0;
   const saudeFinanceira =
@@ -663,12 +667,24 @@ const margemLiquida =
           </div>
           <div className="finance-services-summary">
             <div className="card finance-services-metric finance-services-received">
-              <p>Recebido no período</p>
+              <p>Entradas recebidas no período</p>
               <strong>{moedaBR(resumoServicos.recebido)}</strong>
+            </div>
+            <div className="card finance-services-metric finance-services-expenses">
+              <p>Saídas pagas no período</p>
+              <strong>{moedaBR(resumoServicos.despesas)}</strong>
+            </div>
+            <div className="card finance-services-metric finance-services-cash">
+              <p>Saldo de caixa no período</p>
+              <strong>{moedaBR(resumoServicos.saldo)}</strong>
             </div>
             <div className="card finance-services-metric finance-services-pending">
               <p>A receber (posição atual)</p>
               <strong>{moedaBR(resumoServicos.aReceber)}</strong>
+            </div>
+            <div className="card finance-services-metric finance-services-payable">
+              <p>Despesas a pagar no período</p>
+              <strong>{moedaBR(resumoServicos.totalDespesasPendentes)}</strong>
             </div>
             <div className="card finance-services-metric finance-services-count">
               <p>Atendimentos pagos</p>
@@ -680,8 +696,8 @@ const margemLiquida =
             </div>
           </div>
           <div className="finance-services-balance">
-            <span>Despesas no período: <strong>{moedaBR(resumoServicos.despesas)}</strong></span>
-            <span>Resultado no período: <strong>{moedaBR(resumoServicos.saldo)}</strong></span>
+            <span>Caixa considera somente recebimentos e pagamentos com data registrada.</span>
+            <span>Obrigações pendentes: <strong>{inteiroBR(resumoServicos.despesasPendentes)}</strong></span>
           </div>
         </>
       ) : (
@@ -1177,7 +1193,7 @@ const margemLiquida =
           🔹 FLUXO DE CAIXA
       ================================= */}
       <div className="card">
-        <h3>{isPrestacaoServicos ? "Histórico financeiro" : "Fluxo de Caixa"}</h3>
+        <h3>{isPrestacaoServicos ? "Caixa realizado" : "Fluxo de Caixa"}</h3>
 
         <div className="table-wrapper">
           <table>
@@ -1255,7 +1271,7 @@ const margemLiquida =
 
             {movimentacoesOrdenadas.length === 0 && (
               <tr>
-                <td colSpan="6">{isPrestacaoServicos ? "Nenhuma despesa encontrada no período." : "Nenhuma movimentação encontrada."}</td>
+                <td colSpan="6">{isPrestacaoServicos ? "Nenhuma movimentação de caixa no período." : "Nenhuma movimentação encontrada."}</td>
               </tr>
             )}
           </tbody>
@@ -1310,6 +1326,12 @@ const margemLiquida =
                   {normalizada.pagamento?.dataPagamento && (
                     <small style={{ display: "block", marginTop: "4px" }}>
                       {dataBR(normalizada.pagamento.dataPagamento)}
+                    </small>
+                  )}
+                  {isPrestacaoServicos && normalizada.statusFinanceiro === "pago" &&
+                    !normalizada.pagamento && (
+                    <small style={{ display: "block", marginTop: "4px" }}>
+                      Pagamento histórico — data não registrada
                     </small>
                   )}
                 </td>
