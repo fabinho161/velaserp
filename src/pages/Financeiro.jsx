@@ -540,6 +540,7 @@ const margemLiquida =
         return;
       }
       await addItem("despesas", novaDespesa);
+      showToast("Despesa salva com sucesso!", "success");
     }
 
     limparFormulario();
