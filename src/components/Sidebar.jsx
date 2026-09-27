@@ -52,7 +52,7 @@ export default function Sidebar() {
   const location = useLocation();
   const {
     podeUsarCRMComercial,
-    podeUsarRelatoriosAvancados,
+    podeUsarRelatoriosOperacionais,
     podeUsarVendas,
   } = usePlano();
   const [menuAberto, setMenuAberto] = useState(false);
@@ -137,7 +137,7 @@ export default function Sidebar() {
         ...(podeVerMenu(PERMISSOES_EMPRESA.fornecedores)
           ? [{ path: "/fornecedores", label: "Fornecedores", icon: Truck, modulo: "fornecedores" }]
           : []),
-        ...(podeVerMenu(PERMISSOES_EMPRESA.relatorios, podeUsarRelatoriosAvancados)
+        ...(podeVerMenu(PERMISSOES_EMPRESA.relatorios, podeUsarRelatoriosOperacionais)
           ? [{ path: "/relatorios", label: "Relatorios", icon: FileText, modulo: "relatorios" }]
           : []),
       ]),

@@ -87,6 +87,8 @@ export function usePlano() {
         isAdminMaster || assinaturaAtiva && Boolean(limites.personalizacao),
       podeUsarRelatoriosAvancados:
         isAdminMaster || assinaturaAtiva && Boolean(limites.relatoriosAvancados),
+      podeUsarRelatoriosOperacionais:
+        isAdminMaster || assinaturaAtiva && Boolean(limites.relatoriosOperacionais),
       podeUsarCRMComercial:
         isAdminMaster || assinaturaAtiva && Boolean(limites.crmComercial),
       podeUsarCRMBasico:

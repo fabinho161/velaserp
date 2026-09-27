@@ -45,7 +45,7 @@ function AuthenticatedApp() {
   const {
     podeUsarVendas,
     podeUsarCRMComercial,
-    podeUsarRelatoriosAvancados,
+    podeUsarRelatoriosOperacionais,
   } = usePlano();
 
   return (
@@ -224,10 +224,10 @@ function AuthenticatedApp() {
               <SegmentoRoute modulo="relatorios">
                 <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.relatorios}>
                   <PlanoRoute
-                    permitido={podeUsarRelatoriosAvancados}
-                    titulo="Relatorios avancados indisponiveis"
-                    descricao="A central de relatorios avancados e recursos premium fica disponivel no plano Premium."
-                    planoMinimo="Plano Premium"
+                    permitido={podeUsarRelatoriosOperacionais}
+                    titulo="Relatorios indisponiveis no plano atual"
+                    descricao="A central de relatorios depende de uma assinatura ativa."
+                    planoMinimo="Assinatura ativa"
                   >
                     <Relatorios />
                   </PlanoRoute>

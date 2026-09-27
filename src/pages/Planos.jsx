@@ -20,10 +20,12 @@ import {
 } from "lucide-react";
 import { PLANOS, getPlanoNivel } from "../config/planos";
 import { usePlano } from "../hooks/usePlano";
+import { useERP } from "../context/useERP";
 import { useToast } from "../context/useToast";
 import { moedaBR } from "../utils/formatters";
 import { auth } from "../firebase";
 import { API_URL } from "../config/api.js";
+import { normalizarSegmentoEmpresa } from "../config/segmentosEmpresa.js";
 
 const DESCRICOES_PLANOS = {
   gratis:
@@ -89,6 +91,33 @@ const PLANOS_VISUAIS = {
   },
 };
 
+const PLANOS_VISUAIS_POR_SEGMENTO = {
+  comercio: {
+    gratis: { titulo: "Organize sua operacao e conheca o Renovar ERP.", idealPara: ["Comecando agora", "Testando o ERP", "Operacao individual"] },
+    basico: { titulo: "Seu comercio organizado por um preco que cabe no mes.", idealPara: ["MEI", "Lojas pequenas", "Pequenos negocios"] },
+    profissional: { titulo: "Mais controle comercial para crescer com seguranca.", idealPara: ["Empresas em crescimento", "Equipes pequenas", "Gestao completa"] },
+    premium: { titulo: "Escala, equipe e recursos avancados para seu comercio.", idealPara: ["Multiempresa", "Equipes maiores", "Operacoes em expansao"] },
+  },
+  industria: {
+    gratis: { titulo: "Organize sua operacao e conheca o Renovar ERP.", idealPara: ["Comecando agora", "Testando o ERP", "Operacao individual"] },
+    basico: { titulo: "Sua industria organizada por um preco que cabe no mes.", idealPara: ["Pequenas industrias", "Producao enxuta", "Pequenos negocios"] },
+    profissional: { titulo: "Gestao industrial e comercial em uma rotina completa.", idealPara: ["Fabricas", "Producao recorrente", "Gestao completa"] },
+    premium: { titulo: "Escala, equipe e recursos avancados para sua industria.", idealPara: ["Multiempresa", "Equipes maiores", "Operacoes em expansao"] },
+  },
+  oficina: {
+    gratis: { titulo: "Organize sua oficina e conheca o Renovar ERP.", idealPara: ["Comecando agora", "Testando o ERP", "Operacao individual"] },
+    basico: { titulo: "Clientes, veiculos e ordens de servico em uma unica rotina.", idealPara: ["MEI", "Oficinas pequenas", "Pequenos negocios"] },
+    profissional: { titulo: "Mais controle para sua oficina crescer com seguranca.", idealPara: ["Oficinas em crescimento", "Equipes pequenas", "Gestao completa"] },
+    premium: { titulo: "Escala, equipe e recursos avancados para sua oficina.", idealPara: ["Multiempresa", "Equipes maiores", "Operacoes em expansao"] },
+  },
+  clientes: {
+    gratis: { titulo: "Organize os primeiros clientes e servicos.", idealPara: ["Comecando agora", "Testando o ERP", "Operacao individual"] },
+    basico: { titulo: "Gerencie clientes, servicos, agenda e financeiro em uma unica rotina.", idealPara: ["MEI", "Autonomos", "Pequenos negocios"] },
+    profissional: { titulo: "Tenha agenda, financeiro, DRE, relatorios e gestao completa.", idealPara: ["Empresas em crescimento", "Equipes pequenas", "Gestao completa"] },
+    premium: { titulo: "Escala, equipe e recursos avancados para sua operacao de servicos.", idealPara: ["Multiempresa", "Equipes maiores", "Operacoes em expansao"] },
+  },
+};
+
 const SECOES_RECURSOS_PLANOS = {
   gratis: {
     Operacao: ["Dashboard basico", "Producao basica", "Estoque integrado", "Financeiro simples"],
@@ -99,21 +128,61 @@ const SECOES_RECURSOS_PLANOS = {
   basico: {
     Operacao: ["Estoque integrado", "Controle operacional", "Vendas ilimitadas"],
     Comercial: ["Cadastro de clientes", "CRM basico", "Historico por cliente"],
-    Gestao: ["1 empresa", "Ate 2 usuarios"],
+    Gestao: ["Financeiro completo", "Relatorios operacionais basicos"],
     "Recursos Premium": ["DRE e automacoes comerciais nos planos superiores"],
   },
   profissional: {
     Operacao: ["Producao", "Estoque integrado", "Perdas e doacoes", "Controle fiscal"],
     Comercial: ["CRM inteligente", "Recompra prevista", "Follow-up comercial"],
-    Gestao: ["Dashboard executivo", "DRE completo", "PDF profissional", "Convites e equipe"],
+    Gestao: ["Dashboard executivo", "DRE completo", "PDF profissional", "Relatorios completos"],
     "Recursos Premium": ["Relatorios premium e WhatsApp nos planos superiores"],
   },
   premium: {
-    Operacao: ["Multiempresa", "Producao", "Estoque integrado", "Rastreabilidade operacional"],
+    Operacao: ["Producao", "Estoque integrado", "Rastreabilidade operacional"],
     Comercial: ["CRM completo", "WhatsApp para clientes", "Contatos de hoje"],
     Gestao: ["Dashboard executivo", "Relatorios avancados", "Controle fiscal", "Convites e equipe"],
     "Recursos Premium": ["Identidade visual completa", "Prioridade no suporte"],
   },
+};
+
+const SECOES_RECURSOS_SERVICOS = {
+  gratis: {
+    Operacao: ["Clientes e servicos essenciais", "Agenda para conhecer o fluxo", "Financeiro basico"],
+    Gestao: ["Dashboard basico", "Relatorios operacionais basicos"],
+  },
+  basico: {
+    Operacao: ["Clientes, servicos e agenda", "Financeiro completo", "Operacao diaria completa"],
+    Gestao: ["Relatorios operacionais basicos", "CRM basico quando aplicavel"],
+  },
+  profissional: {
+    Operacao: ["Tudo do Basico", "Agenda e gestao completas", "Follow-up quando aplicavel"],
+    Gestao: ["Relatorios completos", "DRE", "PDF profissional", "CRM inteligente"],
+  },
+  premium: {
+    Operacao: ["Tudo do Profissional", "Multiempresa", "Equipe ampliada"],
+    Gestao: ["Relatorios avancados", "Personalizacao completa", "WhatsApp integrado", "Prioridade no suporte"],
+  },
+};
+
+const SECOES_RECURSOS_COMERCIO = {
+  gratis: { Operacao: ["Cadastros essenciais", "Estoque basico", "Financeiro basico"], Gestao: ["Dashboard basico", "Relatorios operacionais basicos"] },
+  basico: { Operacao: ["Vendas, clientes e estoque", "Financeiro completo", "Operacao comercial completa"], Comercial: ["CRM basico", "Historico por cliente"], Gestao: ["Relatorios operacionais basicos"] },
+  profissional: { Operacao: ["Tudo do Basico", "Gestao comercial completa"], Comercial: ["CRM inteligente", "Recompra e follow-up"], Gestao: ["Relatorios completos", "DRE", "PDF profissional"] },
+  premium: { Operacao: ["Tudo do Profissional", "Multiempresa e equipe ampliada"], Comercial: ["CRM completo", "WhatsApp integrado"], Gestao: ["Relatorios avancados", "Personalizacao completa", "Prioridade no suporte"] },
+};
+
+const SECOES_RECURSOS_OFICINA = {
+  gratis: { Operacao: ["Clientes e veiculos essenciais", "Financeiro basico"], Gestao: ["Dashboard basico", "Relatorios operacionais basicos"] },
+  basico: { Operacao: ["Clientes, veiculos e ordens de servico", "Financeiro completo", "Operacao completa da oficina"], Gestao: ["Relatorios operacionais basicos", "CRM basico quando aplicavel"] },
+  profissional: { Operacao: ["Tudo do Basico", "Gestao completa da oficina"], Gestao: ["Relatorios completos", "DRE", "PDF profissional", "CRM inteligente"] },
+  premium: { Operacao: ["Tudo do Profissional", "Multiempresa e equipe ampliada"], Gestao: ["Relatorios avancados", "Personalizacao completa", "WhatsApp integrado", "Prioridade no suporte"] },
+};
+
+const SECOES_RECURSOS_POR_SEGMENTO = {
+  comercio: SECOES_RECURSOS_COMERCIO,
+  industria: SECOES_RECURSOS_PLANOS,
+  oficina: SECOES_RECURSOS_OFICINA,
+  clientes: SECOES_RECURSOS_SERVICOS,
 };
 
 const ICONES_SECAO_PLANO = {
@@ -144,25 +213,10 @@ const formatarVencimento = (valor) => {
 };
 
 const formatarLimitePlano = (plano) => {
-  const limites = [
+  return [
     plano.empresas === 1 ? "1 empresa" : `Ate ${plano.empresas} empresas`,
     plano.usuarios === 1 ? "1 usuario" : `Ate ${plano.usuarios} usuarios`,
-    plano.vendasMes === 0
-      ? "Vendas disponiveis nos planos superiores"
-      : plano.vendasMes
-        ? `Ate ${plano.vendasMes} vendas por mes`
-        : "Vendas ilimitadas",
   ];
-
-  const recursosSuperiores = (plano.limitacoes || []).map((limitacao) => {
-    const recurso = String(limitacao)
-      .replace(/^Sem\s+/i, "")
-      .replace(/\s+$/, "");
-
-    return `${recurso} disponivel nos planos superiores`;
-  });
-
-  return [...limites, ...recursosSuperiores].slice(0, 6);
 };
 
 const getStatusAssinaturaLabel = (status) => {
@@ -176,6 +230,7 @@ const getStatusAssinaturaLabel = (status) => {
 };
 
 export default function Planos() {
+  const { empresaId, empresas = [] } = useERP();
   const { showToast } = useToast();
   const { planoAtual, planoNivel, status } = usePlano();
   const [planoProcessando, setPlanoProcessando] = useState(null);
@@ -184,6 +239,9 @@ export default function Planos() {
   const [pagamentoErro, setPagamentoErro] = useState("");
   const [pagamentoResultado, setPagamentoResultado] = useState(null);
   const [boletoForm, setBoletoForm] = useState(boletoFormInicial);
+  const segmentoAtual = normalizarSegmentoEmpresa(
+    empresas.find((empresa) => empresa.id === empresaId)?.segmento
+  );
   const fechamentoAutomaticoRef = useRef(null);
   const confirmacaoFrameRef = useRef(null);
 
@@ -695,9 +753,13 @@ export default function Planos() {
           const planoInferior = planoOfertaNivel < planoNivel;
           const planoAcima = planoOfertaNivel > planoNivel;
           const recomendado = chave === "profissional";
-          const visual = PLANOS_VISUAIS[chave] || PLANOS_VISUAIS.gratis;
+          const visualBase = PLANOS_VISUAIS[chave] || PLANOS_VISUAIS.gratis;
+          const visual = {
+            ...visualBase,
+            ...(PLANOS_VISUAIS_POR_SEGMENTO[segmentoAtual]?.[chave] || {}),
+          };
           const IconePlano = visual.Icone;
-          const secoes = SECOES_RECURSOS_PLANOS[chave] || {};
+          const secoes = SECOES_RECURSOS_POR_SEGMENTO[segmentoAtual]?.[chave] || {};
           const limitesPlano = formatarLimitePlano(plano);
 
           return (

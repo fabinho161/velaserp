@@ -1,5 +1,6 @@
 export const featuresPorPlano = {
   gratis: {
+    relatoriosOperacionais: true,
     vendas: false,
     crmComercial: false,
     crmBasico: false,
@@ -8,6 +9,7 @@ export const featuresPorPlano = {
     crmFollowUp: false,
   },
   basico: {
+    relatoriosOperacionais: true,
     vendas: true,
     crmComercial: true,
     crmBasico: true,
@@ -16,6 +18,7 @@ export const featuresPorPlano = {
     crmFollowUp: false,
   },
   profissional: {
+    relatoriosOperacionais: true,
     vendas: true,
     crmComercial: true,
     crmBasico: true,
@@ -24,6 +27,7 @@ export const featuresPorPlano = {
     crmFollowUp: true,
   },
   premium: {
+    relatoriosOperacionais: true,
     vendas: true,
     crmComercial: true,
     crmBasico: true,
@@ -54,11 +58,10 @@ export const PLANOS = {
     ...featuresPorPlano.gratis,
     recursos: [
       "Dashboard básico",
-      "1 empresa",
-      "1 usuário",
-      "Produção básica",
-      "Estoque básico",
-      "Financeiro simples",
+      "Operação básica do segmento",
+      "Financeiro básico",
+      "Clientes básicos",
+      "Relatórios operacionais básicos",
     ],
     limitacoes: [
       "Sem Vendas",
@@ -82,13 +85,12 @@ export const PLANOS = {
     relatoriosAvancados: false,
     ...featuresPorPlano.basico,
     recursos: [
-      "1 empresa",
-      "Até 2 usuários",
-      "Vendas ilimitadas",
-      "Operação comercial básica",
-      "Cadastro de clientes",
+      "Operação completa do segmento",
+      "Financeiro completo",
+      "Clientes completos",
+      "Vendas e agenda completas quando aplicáveis",
+      "Relatórios operacionais básicos",
       "CRM básico de clientes",
-      "Histórico simples por cliente",
     ],
     limitacoes: [
       "Sem DRE avançado",
@@ -112,13 +114,11 @@ export const PLANOS = {
     ...featuresPorPlano.profissional,
     recursos: [
       "Tudo do Básico",
-      "Até 3 empresas",
-      "Até 5 usuários",
+      "Relatórios operacionais completos",
       "DRE completo",
       "PDF profissional com logo",
       "CRM inteligente",
       "Recompra prevista",
-      "Indicadores da carteira",
       "Follow-up comercial",
     ],
     limitacoes: [
@@ -141,8 +141,6 @@ export const PLANOS = {
     ...featuresPorPlano.premium,
     recursos: [
       "Tudo do Profissional",
-      "Até 10 empresas",
-      "Até 15 usuários",
       "Identidade visual completa",
       "Relatórios avançados",
       "CRM completo",
