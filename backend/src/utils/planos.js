@@ -1,15 +1,15 @@
 const PLANOS_PAGOS = {
   basico: {
     nome: "Basico",
-    valor: 49,
+    valor: 19.9,
   },
   profissional: {
     nome: "Profissional",
-    valor: 99,
+    valor: 39.9,
   },
   premium: {
     nome: "Premium",
-    valor: 149,
+    valor: 69.9,
   },
 };
 

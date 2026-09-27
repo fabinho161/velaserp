@@ -327,7 +327,7 @@ test("owner autorizado cria convite com vaga", async () => {
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.operacao, "criado");
   assert.equal(res.body.vagasOcupadas, 2);
-  assert.equal(res.body.limiteUsuarios, 3);
+  assert.equal(res.body.limiteUsuarios, 2);
   assert.equal(res.body.conviteEnviado, true);
   assert.equal("token" in res.body, false);
   assert.equal(usuarioEmpresa.conviteToken, "token-auto-1");
@@ -338,6 +338,7 @@ test("owner autorizado cria convite com vaga", async () => {
 test("administrador_empresa ativo e autorizado", async () => {
   const ambiente = criarAmbiente({
     atorUid: "ator-1",
+    plano: "profissional",
     usuariosEmpresa: [{
       id: "admin",
       uidAuth: "ator-1",
@@ -439,15 +440,7 @@ test("novo convite sem vaga retorna 409 sem writes operacionais", async () => {
 });
 
 test("duas criacoes concorrentes para a ultima vaga deixam apenas uma passar", async () => {
-  const ambienteA = criarAmbiente({
-    usuariosEmpresa: [{
-      id: "ativo-1",
-      uidAuth: "ativo-1",
-      email: "ativo@erp.com",
-      status: "ativo",
-      role: "visualizacao",
-    }],
-  });
+  const ambienteA = criarAmbiente();
   const ambienteB = {
     ...ambienteA,
     req: {

@@ -99,7 +99,7 @@ const SECOES_RECURSOS_PLANOS = {
   basico: {
     Operacao: ["Estoque integrado", "Controle operacional", "Vendas ilimitadas"],
     Comercial: ["Cadastro de clientes", "CRM basico", "Historico por cliente"],
-    Gestao: ["Ate 2 empresas", "Ate 3 usuarios"],
+    Gestao: ["1 empresa", "Ate 2 usuarios"],
     "Recursos Premium": ["DRE e automacoes comerciais nos planos superiores"],
   },
   profissional: {

@@ -2,9 +2,9 @@ const { FieldValue } = require("../firebaseAdmin");
 
 const PLANOS_USUARIOS = Object.freeze({
   gratis: Object.freeze({ nivel: 0, limiteUsuarios: 1 }),
-  basico: Object.freeze({ nivel: 1, limiteUsuarios: 3 }),
-  profissional: Object.freeze({ nivel: 2, limiteUsuarios: 8 }),
-  premium: Object.freeze({ nivel: 3, limiteUsuarios: 25 }),
+  basico: Object.freeze({ nivel: 1, limiteUsuarios: 2 }),
+  profissional: Object.freeze({ nivel: 2, limiteUsuarios: 5 }),
+  premium: Object.freeze({ nivel: 3, limiteUsuarios: 15 }),
 });
 
 const STATUS_PLANO_VALIDOS = new Set(["active", "inactive", "blocked"]);

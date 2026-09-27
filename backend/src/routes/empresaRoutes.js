@@ -20,8 +20,8 @@ const router = express.Router();
 const LIMITE_NOME_EMPRESA = 120;
 const LIMITES_EMPRESAS_POR_PLANO = {
   gratis: 1,
-  basico: 2,
-  profissional: 5,
+  basico: 1,
+  profissional: 3,
   premium: 10,
 };
 

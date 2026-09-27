@@ -250,14 +250,14 @@ const carregarRotaEmpresa = (db, usuario = { uid: "owner-1", email: "owner@erp.c
   return require("../empresaRoutes");
 };
 
-const criarAmbiente = (usuario) => {
+const criarAmbiente = (usuario, plano = "premium") => {
   const db = new FakeDb();
   db.set("users/owner-1", {
     email: "owner@erp.com",
     role: "cliente",
   });
   db.set("users/owner-1/assinatura/plano", {
-    plano: "premium",
+    plano,
     status: "active",
   });
 
@@ -379,6 +379,29 @@ test("entrada legada servicos e persistida com o segmento canonico clientes", as
   assert.equal(response.status, 201);
   assert.equal(data.empresa.segmento, "clientes");
   assert.equal(empresas[0].data.segmento, "clientes");
+});
+
+test("limites de empresas seguem a matriz comercial vigente", async (t) => {
+  for (const [plano, limite] of Object.entries({
+    gratis: 1,
+    basico: 1,
+    profissional: 3,
+    premium: 10,
+  })) {
+    await t.test(plano, async () => {
+      const { app } = criarAmbiente(undefined, plano);
+
+      for (let indice = 0; indice < limite; indice += 1) {
+        const { response } = await postEmpresa(app, { nome: `Empresa ${indice + 1}` });
+        assert.equal(response.status, 201);
+      }
+
+      const bloqueada = await postEmpresa(app, { nome: "Empresa excedente" });
+      assert.equal(bloqueada.response.status, 409);
+      assert.equal(bloqueada.data.motivo, "limite_empresas_atingido");
+      assert.equal(bloqueada.data.limiteEmpresas, limite);
+    });
+  }
 });
 
 test("owner consegue excluir propria empresa com limpeza relacionada", async () => {

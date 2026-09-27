@@ -331,7 +331,7 @@ test("plano valido resolve limite correto", () => {
   });
 
   assert.equal(resultado.plano, "profissional");
-  assert.equal(resultado.limite, 8);
+  assert.equal(resultado.limite, 5);
   assert.equal(resultado.fonteLimite, "planoEspelho");
 });
 
@@ -369,7 +369,7 @@ test("planoEspelho invalido cai para assinatura valida", () => {
   });
 
   assert.equal(resultado.plano, "basico");
-  assert.equal(resultado.limite, 3);
+  assert.equal(resultado.limite, 2);
   assert.equal(resultado.fonteLimite, "assinaturaOwner");
 });
 
@@ -392,7 +392,7 @@ test("limite manual valido e considerado; inexistente nao e presumido", () => {
     },
   });
 
-  assert.equal(semManual.limite, 3);
+  assert.equal(semManual.limite, 2);
   assert.equal(semManual.limiteUsuariosManual, null);
   assert.equal(comManual.limite, 10);
 });
@@ -408,7 +408,7 @@ test("limite manual invalido ou excessivo e rejeitado", () => {
     },
   });
 
-  assert.equal(resultado.limite, 25);
+  assert.equal(resultado.limite, 15);
   assert.equal(resultado.inconsistencias[0].tipo, "limiteUsuariosManual_invalido_ignorado");
 });
 
@@ -424,7 +424,7 @@ test("limite manual zero, negativo, textual e decimal sao ignorados", () => {
       },
     });
 
-    assert.equal(resultado.limite, 25);
+    assert.equal(resultado.limite, 15);
     assert.equal(
       resultado.inconsistencias.some(
         (item) => item.tipo === "limiteUsuariosManual_invalido_ignorado"

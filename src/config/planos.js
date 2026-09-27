@@ -72,9 +72,9 @@ export const PLANOS = {
 
   basico: {
     nome: "Básico",
-    preco: 49,
-    empresas: 2,
-    usuarios: 3,
+    preco: 19.9,
+    empresas: 1,
+    usuarios: 2,
     vendasMes: null,
     dre: false,
     pdfProfissional: false,
@@ -82,8 +82,8 @@ export const PLANOS = {
     relatoriosAvancados: false,
     ...featuresPorPlano.basico,
     recursos: [
-      "Até 2 empresas",
-      "Até 3 usuários",
+      "1 empresa",
+      "Até 2 usuários",
       "Vendas ilimitadas",
       "Operação comercial básica",
       "Cadastro de clientes",
@@ -101,9 +101,9 @@ export const PLANOS = {
 
   profissional: {
     nome: "Profissional",
-    preco: 99,
-    empresas: 5,
-    usuarios: 8,
+    preco: 39.9,
+    empresas: 3,
+    usuarios: 5,
     vendasMes: null,
     dre: true,
     pdfProfissional: true,
@@ -112,8 +112,8 @@ export const PLANOS = {
     ...featuresPorPlano.profissional,
     recursos: [
       "Tudo do Básico",
-      "Até 5 empresas",
-      "Até 8 usuários",
+      "Até 3 empresas",
+      "Até 5 usuários",
       "DRE completo",
       "PDF profissional com logo",
       "CRM inteligente",
@@ -130,9 +130,9 @@ export const PLANOS = {
 
   premium: {
     nome: "Premium",
-    preco: 149,
+    preco: 69.9,
     empresas: 10,
-    usuarios: 25,
+    usuarios: 15,
     vendasMes: null,
     dre: true,
     pdfProfissional: true,
@@ -142,7 +142,7 @@ export const PLANOS = {
     recursos: [
       "Tudo do Profissional",
       "Até 10 empresas",
-      "Até 25 usuários",
+      "Até 15 usuários",
       "Identidade visual completa",
       "Relatórios avançados",
       "CRM completo",
