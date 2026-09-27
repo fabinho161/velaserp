@@ -39,6 +39,22 @@ test("convidado ativo usa planoEspelho da empresa e ignora assinatura pessoal", 
   assert.equal(resultado.assinatura.status, "active");
 });
 
+test("convidado ativo resolve planoEspelho gratis ativo", () => {
+  const resultado = resolverPlanoEfetivo({
+    assinaturaUsuario: { plano: "gratis", status: "inactive" },
+    empresaAtual: {
+      id: "empresa-gratis",
+      planoEspelho: { plano: "gratis", status: "active" },
+    },
+    usuarioConvidadoEmpresa: true,
+    usuarioEmpresaAtual: { status: "ativo" },
+  });
+
+  assert.equal(resultado.fonte, "planoEspelho");
+  assert.equal(resultado.assinatura.plano, "gratis");
+  assert.equal(resultado.assinatura.status, "active");
+});
+
 test("convidado carregando empresa nao assume plano gratis como estado final", () => {
   const resultado = resolverPlanoEfetivo({
     usuarioConvidadoEmpresa: true,

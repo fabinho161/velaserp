@@ -2,6 +2,7 @@ const express = require("express");
 const authFirebase = require("../middlewares/authFirebase");
 const { FieldValue, getDb } = require("../firebaseAdmin");
 const {
+  montarAssinaturaGratisAtiva,
   normalizarAssinatura,
 } = require("../services/sincronizarPlanoEspelhoEmpresasOwner");
 const { ROLE_ADMIN_EMPRESA } = require("../utils/perfisEmpresa");
@@ -193,9 +194,10 @@ router.post("/", authFirebase, async (req, res) => {
 
       const ownerData = ownerSnapshot.data() || {};
       const isAdminMaster = ownerData.role === "admin_master";
-      const assinaturaNormalizada = normalizarAssinatura(
-        assinaturaSnapshot.exists ? assinaturaSnapshot.data() : {}
-      );
+      const assinaturaFonte = assinaturaSnapshot.exists
+        ? assinaturaSnapshot.data()
+        : montarAssinaturaGratisAtiva();
+      const assinaturaNormalizada = normalizarAssinatura(assinaturaFonte);
       const limiteEmpresas = getLimiteEmpresas({
         plano: assinaturaNormalizada.plano,
         status: assinaturaNormalizada.status,
@@ -233,6 +235,9 @@ router.post("/", authFirebase, async (req, res) => {
         criadoEm,
       });
 
+      if (!assinaturaSnapshot.exists) {
+        transaction.set(assinaturaRef, assinaturaFonte);
+      }
       transaction.set(empresaRef, empresa);
       transaction.set(usuarioDonoRef, usuarioDono);
       transaction.set(

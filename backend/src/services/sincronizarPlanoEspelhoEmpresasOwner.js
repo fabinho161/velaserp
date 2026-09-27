@@ -7,15 +7,15 @@ const PLANOS_CANONICOS = {
   },
   basico: {
     nivel: 1,
-    limiteUsuarios: 3,
+    limiteUsuarios: 2,
   },
   profissional: {
     nivel: 2,
-    limiteUsuarios: 8,
+    limiteUsuarios: 5,
   },
   premium: {
     nivel: 3,
-    limiteUsuarios: 25,
+    limiteUsuarios: 15,
   },
 };
 
@@ -28,6 +28,19 @@ const normalizarLimiteUsuariosManual = (limite) => {
   const numero = Number(limite);
   return Number.isInteger(numero) && numero > 0 ? numero : null;
 };
+
+const montarAssinaturaGratisAtiva = (atualizadoEm = FieldValue.serverTimestamp()) => ({
+  plano: "gratis",
+  status: "active",
+  vencimento: null,
+  ativadoManual: true,
+  formaPagamento: "manual",
+  valorPago: 0,
+  observacao: "",
+  limiteUsuariosManual: null,
+  motivoLiberacaoUsuarios: "",
+  atualizadoEm,
+});
 
 const normalizarAssinatura = (assinatura = {}) => {
   const dados = assinatura &&
@@ -153,6 +166,7 @@ const sincronizarPlanoEspelhoEmpresasOwner = async ({
 };
 
 module.exports = {
+  montarAssinaturaGratisAtiva,
   normalizarAssinatura,
   sincronizarPlanoEspelhoEmpresasOwner,
 };

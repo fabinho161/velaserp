@@ -268,6 +268,19 @@ const criarAmbiente = (usuario, plano = "premium") => {
   return { app, db };
 };
 
+const criarAmbienteComAssinatura = (assinatura) => {
+  const ambiente = criarAmbiente();
+  const assinaturaPath = "users/owner-1/assinatura/plano";
+
+  if (assinatura === undefined) {
+    ambiente.db.store.delete(assinaturaPath);
+  } else {
+    ambiente.db.set(assinaturaPath, assinatura);
+  }
+
+  return ambiente;
+};
+
 const postEmpresa = async (app, body) => {
   const server = app.listen(0);
   const { port } = server.address();
@@ -379,6 +392,92 @@ test("entrada legada servicos e persistida com o segmento canonico clientes", as
   assert.equal(response.status, 201);
   assert.equal(data.empresa.segmento, "clientes");
   assert.equal(empresas[0].data.segmento, "clientes");
+});
+
+test("cria assinatura gratis ativa e planoEspelho canonico quando assinatura nao existe", async () => {
+  const { app, db } = criarAmbienteComAssinatura(undefined);
+
+  const { response } = await postEmpresa(app, { nome: "Primeira Empresa" });
+  const assinatura = db.get("users/owner-1/assinatura/plano");
+  const [empresa] = listarEmpresas(db);
+
+  assert.equal(response.status, 201);
+  assert.equal(assinatura.plano, "gratis");
+  assert.equal(assinatura.status, "active");
+  assert.equal(assinatura.limiteUsuariosManual, null);
+  assert.equal(assinatura.atualizadoEm, SERVER_TIMESTAMP);
+  assert.deepEqual(empresa.data.planoEspelho, {
+    plano: "gratis",
+    status: "active",
+    nivel: 0,
+    limiteUsuarios: 1,
+    limiteUsuariosManual: null,
+    sincronizadoEm: SERVER_TIMESTAMP,
+  });
+});
+
+test("preserva assinatura gratis ativa existente", async () => {
+  const assinaturaOriginal = {
+    plano: "gratis",
+    status: "active",
+    observacao: "preservar",
+  };
+  const { app, db } = criarAmbienteComAssinatura(assinaturaOriginal);
+
+  const { response } = await postEmpresa(app, { nome: "Empresa Gratis" });
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(db.get("users/owner-1/assinatura/plano"), assinaturaOriginal);
+  assert.equal(listarEmpresas(db)[0].data.planoEspelho.status, "active");
+});
+
+test("preserva assinatura paga ativa e seus limites no planoEspelho", async () => {
+  const assinaturaOriginal = { plano: "profissional", status: "active" };
+  const { app, db } = criarAmbienteComAssinatura(assinaturaOriginal);
+
+  const { response } = await postEmpresa(app, { nome: "Empresa Profissional" });
+  const planoEspelho = listarEmpresas(db)[0].data.planoEspelho;
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(db.get("users/owner-1/assinatura/plano"), assinaturaOriginal);
+  assert.equal(planoEspelho.plano, "profissional");
+  assert.equal(planoEspelho.status, "active");
+  assert.equal(planoEspelho.limiteUsuarios, 5);
+});
+
+test("nao promove assinatura explicitamente inativa", async () => {
+  const assinaturaOriginal = { plano: "gratis", status: "inactive" };
+  const { app, db } = criarAmbienteComAssinatura(assinaturaOriginal);
+
+  const { response } = await postEmpresa(app, { nome: "Empresa Inativa" });
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(db.get("users/owner-1/assinatura/plano"), assinaturaOriginal);
+  assert.equal(listarEmpresas(db)[0].data.planoEspelho.status, "inactive");
+});
+
+test("nao promove assinatura bloqueada", async () => {
+  const assinaturaOriginal = { plano: "gratis", status: "blocked" };
+  const { app, db } = criarAmbienteComAssinatura(assinaturaOriginal);
+
+  const { response } = await postEmpresa(app, { nome: "Empresa Bloqueada" });
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(db.get("users/owner-1/assinatura/plano"), assinaturaOriginal);
+  assert.equal(listarEmpresas(db)[0].data.planoEspelho.status, "blocked");
+});
+
+test("nao promove assinatura existente invalida", async () => {
+  const assinaturaOriginal = { plano: "enterprise", status: "trial" };
+  const { app, db } = criarAmbienteComAssinatura(assinaturaOriginal);
+
+  const { response } = await postEmpresa(app, { nome: "Empresa Conservadora" });
+  const planoEspelho = listarEmpresas(db)[0].data.planoEspelho;
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(db.get("users/owner-1/assinatura/plano"), assinaturaOriginal);
+  assert.equal(planoEspelho.plano, "gratis");
+  assert.equal(planoEspelho.status, "inactive");
 });
 
 test("limites de empresas seguem a matriz comercial vigente", async (t) => {
