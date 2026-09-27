@@ -12,7 +12,8 @@ const {
 
 const caminhoEmpresa = "users/owner/empresas/empresa";
 
-const criarBanco = ({ segmento = "clientes", role = "comercial", ativo = true, cliente = true, servico = true } = {}) => {
+const criarBanco = ({ segmento = "clientes", role = "comercial", ativo = true, cliente = true, servico = true,
+  configuracaoEmpresa, falharLeituraConfiguracao = false } = {}) => {
   let sequencia = 0;
   let filaTransacoes = Promise.resolve();
   const docs = new Map([
@@ -32,6 +33,9 @@ const criarBanco = ({ segmento = "clientes", role = "comercial", ativo = true, c
   if (servico) docs.set(`${caminhoEmpresa}/servicos/s1`, {
     nome: "Servico Canonico", valor: 125, tempoEstimadoMinutos: 60, status: "ativo",
   });
+  if (configuracaoEmpresa) {
+    docs.set(`${caminhoEmpresa}/configuracoes/empresa`, configuracaoEmpresa);
+  }
   const obterCampo = (data, campo) => campo.split(".").reduce((valor, chave) => valor?.[chave], data);
   const snapshot = (path) => ({ exists: docs.has(path), id: path.split("/").at(-1), data: () => docs.get(path) });
   const ref = (path) => ({
@@ -51,6 +55,9 @@ const criarBanco = ({ segmento = "clientes", role = "comercial", ativo = true, c
       const writes = [];
       const tx = {
         get: async (item) => {
+          if (falharLeituraConfiguracao && item.path === `${caminhoEmpresa}/configuracoes/empresa`) {
+            throw new Error("configuracao indisponivel");
+          }
           if (item.consulta) return {
             docs: [...docs.entries()]
               .filter(([path, data]) => path.startsWith(`${item.path}/`) &&
@@ -550,7 +557,11 @@ test("confirmacao inicio e cancelamento sao autoritativos e cancelamento e idemp
 });
 
 test("confirmacao envia email valido uma vez e registra rastreabilidade", async () => {
-  const { db, docs } = criarBanco();
+  const { db, docs } = criarBanco({
+    configuracaoEmpresa: {
+      endereco: { logradouro: "Rua 7", numero: "2", cidade: "Itumbiara", uf: "GO" },
+    },
+  });
   const path = `${caminhoEmpresa}/agendamentos/a1`;
   docs.set(path, {
     ...bodyValido,
@@ -578,6 +589,9 @@ test("confirmacao envia email valido uma vez e registra rastreabilidade", async 
   assert.equal(envios.length, 1);
   assert.equal(envios[0].para, "cliente@exemplo.com");
   assert.equal(envios[0].nomeEmpresa, "Empresa Teste");
+  assert.deepEqual(envios[0].configuracaoEmpresa, {
+    endereco: { logradouro: "Rua 7", numero: "2", cidade: "Itumbiara", uf: "GO" },
+  });
   assert.deepEqual(docs.get(path).notificacaoConfirmacao, {
     status: "enviado",
     destinatario: "cliente@exemplo.com",
@@ -587,6 +601,26 @@ test("confirmacao envia email valido uma vez e registra rastreabilidade", async 
     atualizadoEm: "agora",
     erro: "",
   });
+});
+
+test("ausencia ou falha ao ler endereco opcional nao impede confirmacao nem envio", async () => {
+  for (const opcoes of [{}, { falharLeituraConfiguracao: true }]) {
+    const { db, docs } = criarBanco(opcoes);
+    const path = `${caminhoEmpresa}/agendamentos/a1`;
+    docs.set(path, { ...bodyValido, clienteEmail: "cliente@exemplo.com", status: "agendado" });
+    const envios = [];
+
+    const resposta = await chamar(criarHandlerTransicao("confirmar", {
+      getDb: () => db,
+      agora: () => "agora",
+      enviarConfirmacao: async (payload) => { envios.push(payload); return { provider: "smtp" }; },
+    }));
+
+    assert.equal(resposta.status, "confirmado");
+    assert.equal(envios.length, 1);
+    assert.equal(envios[0].configuracaoEmpresa, null);
+    assert.equal(docs.get(path).notificacaoConfirmacao.status, "enviado");
+  }
 });
 
 for (const clienteEmail of ["", "email-invalido"]) {

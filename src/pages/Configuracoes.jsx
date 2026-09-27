@@ -5,6 +5,13 @@ import { useToast } from "../context/useToast";
 import { usePlano } from "../hooks/usePlano";
 import { PERMISSOES_EMPRESA } from "../config/perfisEmpresa";
 import { normalizarSegmentoEmpresa } from "../config/segmentosEmpresa.js";
+import {
+  UFS_BRASIL,
+  carregarFormularioEmpresa,
+  formatarCepEmpresa,
+  normalizarCepEmpresa,
+  prepararConfiguracaoEmpresa,
+} from "../utils/configuracoesEmpresa.js";
 
 
 const EMPRESA_PADRAO = {
@@ -14,6 +21,7 @@ const EMPRESA_PADRAO = {
   telefone: "",
   email: "",
   logoUrl: "",
+  endereco: carregarFormularioEmpresa().endereco,
 };
 
 const FISCAL_PADRAO = {
@@ -89,10 +97,7 @@ export default function Configuracoes() {
     if (configuracoes?.empresa) {
       // Sincroniza o formulário quando a empresa ativa termina de carregar.
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setForm({
-        ...EMPRESA_PADRAO,
-        ...configuracoes.empresa,
-      });
+      setForm(carregarFormularioEmpresa(configuracoes.empresa));
     }
     if (configuracoes?.fiscal) {
       setFiscalForm({
@@ -144,20 +149,14 @@ export default function Configuracoes() {
       return;
     }
 
-    const dadosBasicos = {
-      nome: form.nome || "",
-      cnpj: form.cnpj || "",
-      cidade: form.cidade || "",
-      telefone: form.telefone || "",
-      email: form.email || "",
-    };
+    const dadosEmpresa = prepararConfiguracaoEmpresa(
+      form,
+      podePersonalizarSistema
+    );
 
     try {
       setSalvandoEmpresa(true);
-      await salvarConfiguracao(
-        "empresa",
-        podePersonalizarSistema ? form : dadosBasicos
-      );
+      await salvarConfiguracao("empresa", dadosEmpresa);
       showToast("Alterações salvas com sucesso.", "success");
     } catch (error) {
       console.error("Erro ao salvar configuracoes da empresa:", error);
@@ -270,15 +269,6 @@ export default function Configuracoes() {
           </label>
 
           <label>
-            Cidade / UF
-            <input
-              placeholder="Ex: Itumbiara-GO"
-              value={form.cidade}
-              onChange={(e) => setForm({ ...form, cidade: e.target.value })}
-            />
-          </label>
-
-          <label>
             Telefone
             <input
               placeholder="(00) 00000-0000"
@@ -294,6 +284,126 @@ export default function Configuracoes() {
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
+          </label>
+        </div>
+      </div>
+
+      <div className="card config-section config-section-full">
+        <h3>Endereço</h3>
+        <p className="config-section-description">
+          Cadastre o endereço da empresa. Todos os campos são opcionais.
+        </p>
+
+        {form.cidade && (
+          <p className="config-legacy-address">
+            Cadastro anterior de cidade/UF: <strong>{form.cidade}</strong>
+          </p>
+        )}
+
+        <div className="config-grid">
+          <label>
+            CEP
+            <input
+              inputMode="numeric"
+              maxLength={9}
+              placeholder="00000-000"
+              value={formatarCepEmpresa(form.endereco?.cep)}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  endereco: {
+                    ...form.endereco,
+                    cep: normalizarCepEmpresa(e.target.value),
+                  },
+                })
+              }
+            />
+          </label>
+
+          <label>
+            Logradouro
+            <input
+              placeholder="Rua, avenida, travessa..."
+              value={form.endereco?.logradouro || ""}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  endereco: { ...form.endereco, logradouro: e.target.value },
+                })
+              }
+            />
+          </label>
+
+          <label>
+            Número
+            <input
+              placeholder="Ex: 123 ou S/N"
+              value={form.endereco?.numero || ""}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  endereco: { ...form.endereco, numero: e.target.value },
+                })
+              }
+            />
+          </label>
+
+          <label>
+            Complemento
+            <input
+              placeholder="Sala, bloco, referência..."
+              value={form.endereco?.complemento || ""}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  endereco: { ...form.endereco, complemento: e.target.value },
+                })
+              }
+            />
+          </label>
+
+          <label>
+            Bairro
+            <input
+              value={form.endereco?.bairro || ""}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  endereco: { ...form.endereco, bairro: e.target.value },
+                })
+              }
+            />
+          </label>
+
+          <label>
+            Cidade
+            <input
+              value={form.endereco?.cidade || ""}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  endereco: { ...form.endereco, cidade: e.target.value },
+                })
+              }
+            />
+          </label>
+
+          <label>
+            UF
+            <select
+              value={form.endereco?.uf || ""}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  endereco: { ...form.endereco, uf: e.target.value },
+                })
+              }
+            >
+              <option value="">Selecione</option>
+              {UFS_BRASIL.map((uf) => (
+                <option key={uf} value={uf}>{uf}</option>
+              ))}
+            </select>
           </label>
         </div>
       </div>

@@ -1655,6 +1655,7 @@ const excluirEmpresa = useCallback(async (id) => {
     } catch (error) {
       console.error(`Erro ao salvar configuração ${chave}:`, error);
       showToast("Erro ao salvar configuração no Firebase. Veja o console.", "error");
+      throw error;
     }
   }, [empresaId, getConfigRef, showToast, user]);
 

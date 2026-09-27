@@ -23,7 +23,37 @@ const formatarDuracao = (minutos) => {
   return restantes ? `${horas}h${String(restantes).padStart(2, "0")}` : `${horas}h`;
 };
 
-const montarConteudoConfirmacaoAgendamento = ({ agendamento = {}, nomeEmpresa }) => {
+const formatarCep = (valor) => {
+  const cep = String(valor || "").replace(/\D/g, "").slice(0, 8);
+  return cep.length === 8 ? `${cep.slice(0, 5)}-${cep.slice(5)}` : String(valor || "").trim();
+};
+
+const montarLinhasEnderecoEmpresa = (configuracaoEmpresa = {}) => {
+  const endereco = configuracaoEmpresa?.endereco;
+  if (!endereco || typeof endereco !== "object" || Array.isArray(endereco)) {
+    const cidadeLegado = String(configuracaoEmpresa?.cidade || "").trim();
+    return cidadeLegado ? [cidadeLegado] : [];
+  }
+
+  const logradouro = String(endereco.logradouro || "").trim();
+  const numero = String(endereco.numero || "").trim();
+  const bairro = String(endereco.bairro || "").trim();
+  const complemento = String(endereco.complemento || "").trim();
+  const cidade = String(endereco.cidade || "").trim();
+  const uf = String(endereco.uf || "").trim().toUpperCase();
+  const cep = formatarCep(endereco.cep);
+  const linhaPrincipal = [logradouro, numero].filter(Boolean).join(", ");
+  const localidade = cidade && uf ? `${cidade}/${uf}` : cidade || uf;
+  const linhaLocalidade = [localidade, cep ? `CEP ${cep}` : ""].filter(Boolean).join(" — ");
+
+  return [
+    [linhaPrincipal, bairro].filter(Boolean).join(" — "),
+    complemento ? `Complemento: ${complemento}` : "",
+    linhaLocalidade,
+  ].filter(Boolean);
+};
+
+const montarConteudoConfirmacaoAgendamento = ({ agendamento = {}, nomeEmpresa, configuracaoEmpresa }) => {
   const nomesServicos = normalizarServicosAgendamento(agendamento).map((item) => item.servicoNome);
   if (nomesServicos.length === 0 && agendamento.servicoNome) {
     nomesServicos.push(String(agendamento.servicoNome).trim());
@@ -38,9 +68,14 @@ const montarConteudoConfirmacaoAgendamento = ({ agendamento = {}, nomeEmpresa })
   const duracao = formatarDuracao(agendamento.duracaoMinutos);
   const horario = `${agendamento.horaInicio || ""} às ${agendamento.horaFim || ""}`;
   const assunto = `Agendamento confirmado — ${empresa}`;
+  const linhasEndereco = montarLinhasEnderecoEmpresa(configuracaoEmpresa);
+  const enderecoTexto = linhasEndereco.length ? ["Endereço:", ...linhasEndereco, ""] : [];
+  const enderecoHtml = linhasEndereco.length
+    ? `<p><strong>Endereço:</strong><br />${linhasEndereco.map(escapeHtml).join("<br />")}</p>`
+    : "";
   const texto = [
     `Olá, ${cliente}!`, "", "Seu agendamento foi confirmado.", "",
-    "Empresa:", empresa, "", "Serviço(s):", listaTexto, "",
+    "Empresa:", empresa, "", ...enderecoTexto, "Serviço(s):", listaTexto, "",
     "Data:", data, "", "Horário:", horario, "", "Duração:", duracao, "",
     "Caso precise alterar ou cancelar o agendamento, entre em contato com a empresa.",
   ].join("\n");
@@ -49,6 +84,7 @@ const montarConteudoConfirmacaoAgendamento = ({ agendamento = {}, nomeEmpresa })
       <p>Olá, <strong>${escapeHtml(cliente)}</strong>!</p>
       <p>Seu agendamento foi confirmado.</p>
       <p><strong>Empresa:</strong><br />${escapeHtml(empresa)}</p>
+      ${enderecoHtml}
       <p><strong>Serviço(s):</strong></p>${listaHtml}
       <p><strong>Data:</strong><br />${escapeHtml(data)}</p>
       <p><strong>Horário:</strong><br />${escapeHtml(horario)}</p>
@@ -59,12 +95,16 @@ const montarConteudoConfirmacaoAgendamento = ({ agendamento = {}, nomeEmpresa })
   return { assunto, html, texto };
 };
 
-const enviarEmailConfirmacaoAgendamento = async ({ agendamento, nomeEmpresa, para }) =>
-  enviarEmail({ ...montarConteudoConfirmacaoAgendamento({ agendamento, nomeEmpresa }), para });
+const enviarEmailConfirmacaoAgendamento = async ({ agendamento, nomeEmpresa, configuracaoEmpresa, para }) =>
+  enviarEmail({
+    ...montarConteudoConfirmacaoAgendamento({ agendamento, nomeEmpresa, configuracaoEmpresa }),
+    para,
+  });
 
 module.exports = {
   enviarEmailConfirmacaoAgendamento,
   formatarDataCivil,
   formatarDuracao,
+  montarLinhasEnderecoEmpresa,
   montarConteudoConfirmacaoAgendamento,
 };

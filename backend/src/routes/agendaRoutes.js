@@ -296,6 +296,15 @@ const sanitizarErroEmail = (error) => {
 const atualizarNotificacaoConfirmacao = (documentoRef, notificacaoConfirmacao) =>
   documentoRef.update({ notificacaoConfirmacao });
 
+const lerConfiguracaoEmpresaOpcional = async (tx, empresaRef) => {
+  try {
+    const snapshot = await tx.get(empresaRef.collection("configuracoes").doc("empresa"));
+    return existe(snapshot) ? snapshot.data() : null;
+  } catch {
+    return null;
+  }
+};
+
 const criarHandlerTransicao = (acao, {
   getDb: obterDb = getDb,
   agora = () => FieldValue.serverTimestamp(),
@@ -340,11 +349,13 @@ const criarHandlerTransicao = (acao, {
         };
         patch.notificacaoConfirmacao = notificacaoConfirmacao;
         if (notificacaoConfirmacao.status === "pendente") {
+          const configuracaoEmpresa = await lerConfiguracaoEmpresaOpcional(tx, empresaRef);
           envioConfirmacao = {
             documentoRef,
             notificacaoConfirmacao,
             para: destinatario,
             nomeEmpresa: empresa.nome || empresa.razaoSocial || "Renovar ERP",
+            configuracaoEmpresa,
             agendamento: atual,
           };
         }
@@ -366,6 +377,7 @@ const criarHandlerTransicao = (acao, {
       const envio = await enviarConfirmacao({
         agendamento: envioConfirmacao.agendamento,
         nomeEmpresa: envioConfirmacao.nomeEmpresa,
+        configuracaoEmpresa: envioConfirmacao.configuracaoEmpresa,
         para: envioConfirmacao.para,
       });
       notificacaoFinal = {
