@@ -1,6 +1,7 @@
 export const featuresPorPlano = {
   gratis: {
-    relatoriosOperacionais: true,
+    clientesOperacionais: true,
+    relatoriosOperacionais: false,
     vendas: false,
     crmComercial: false,
     crmBasico: false,
@@ -9,7 +10,8 @@ export const featuresPorPlano = {
     crmFollowUp: false,
   },
   basico: {
-    relatoriosOperacionais: true,
+    clientesOperacionais: true,
+    relatoriosOperacionais: false,
     vendas: true,
     crmComercial: true,
     crmBasico: true,
@@ -18,6 +20,7 @@ export const featuresPorPlano = {
     crmFollowUp: false,
   },
   profissional: {
+    clientesOperacionais: true,
     relatoriosOperacionais: true,
     vendas: true,
     crmComercial: true,
@@ -27,6 +30,7 @@ export const featuresPorPlano = {
     crmFollowUp: true,
   },
   premium: {
+    clientesOperacionais: true,
     relatoriosOperacionais: true,
     vendas: true,
     crmComercial: true,
@@ -61,7 +65,6 @@ export const PLANOS = {
       "Operação básica do segmento",
       "Financeiro básico",
       "Clientes básicos",
-      "Relatórios operacionais básicos",
     ],
     limitacoes: [
       "Sem Vendas",
@@ -89,7 +92,6 @@ export const PLANOS = {
       "Financeiro completo",
       "Clientes completos",
       "Vendas e agenda completas quando aplicáveis",
-      "Relatórios operacionais básicos",
       "CRM básico de clientes",
     ],
     limitacoes: [

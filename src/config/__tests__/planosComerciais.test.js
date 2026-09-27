@@ -27,22 +27,22 @@ test("matriz comercial central possui precos e limites oficiais", () => {
 test("matriz de recursos respeita a nova distribuicao comercial", () => {
   assert.deepEqual(featuresPorPlano, {
     gratis: {
-      relatoriosOperacionais: true,
+      clientesOperacionais: true, relatoriosOperacionais: false,
       vendas: false, crmComercial: false, crmBasico: false,
       crmInteligente: false, crmWhatsapp: false, crmFollowUp: false,
     },
     basico: {
-      relatoriosOperacionais: true,
+      clientesOperacionais: true, relatoriosOperacionais: false,
       vendas: true, crmComercial: true, crmBasico: true,
       crmInteligente: false, crmWhatsapp: false, crmFollowUp: false,
     },
     profissional: {
-      relatoriosOperacionais: true,
+      clientesOperacionais: true, relatoriosOperacionais: true,
       vendas: true, crmComercial: true, crmBasico: true,
       crmInteligente: true, crmWhatsapp: false, crmFollowUp: true,
     },
     premium: {
-      relatoriosOperacionais: true,
+      clientesOperacionais: true, relatoriosOperacionais: true,
       vendas: true, crmComercial: true, crmBasico: true,
       crmInteligente: true, crmWhatsapp: true, crmFollowUp: true,
     },
@@ -50,6 +50,17 @@ test("matriz de recursos respeita a nova distribuicao comercial", () => {
 });
 
 test("gates profissionais e premium permanecem separados", () => {
+  assert.equal(PLANOS.gratis.clientesOperacionais, true);
+  assert.equal(PLANOS.gratis.crmBasico, false);
+  assert.equal(PLANOS.basico.clientesOperacionais, true);
+  assert.equal(PLANOS.basico.crmBasico, true);
+  assert.equal(PLANOS.profissional.crmInteligente, true);
+  assert.equal(PLANOS.profissional.crmFollowUp, true);
+  assert.equal(PLANOS.premium.crmWhatsapp, true);
+  assert.equal(PLANOS.gratis.relatoriosOperacionais, false);
+  assert.equal(PLANOS.basico.relatoriosOperacionais, false);
+  assert.equal(PLANOS.profissional.relatoriosOperacionais, true);
+  assert.equal(PLANOS.premium.relatoriosOperacionais, true);
   assert.equal(PLANOS.basico.dre, false);
   assert.equal(PLANOS.basico.pdfProfissional, false);
   assert.equal(PLANOS.profissional.dre, true);
@@ -69,6 +80,16 @@ test("rota e sidebar combinam plano com RBAC para relatorios", async () => {
   assert.match(sidebar, /podeVerMenu\(PERMISSOES_EMPRESA\.relatorios, podeUsarRelatoriosOperacionais\)/);
 });
 
+test("clientes operacionais usam gate proprio sem ignorar RBAC ou liberar CRM", async () => {
+  const app = await readFile(new URL("../../App.jsx", import.meta.url), "utf8");
+  const sidebar = await readFile(new URL("../../components/Sidebar.jsx", import.meta.url), "utf8");
+
+  assert.match(app, /EmpresaPermissionRoute permissao=\{PERMISSOES_EMPRESA\.crm\}/);
+  assert.match(app, /permitido=\{podeUsarClientesOperacionais\}/);
+  assert.match(sidebar, /podeVerMenu\(PERMISSOES_EMPRESA\.crm, podeUsarClientesOperacionais\)/);
+  assert.doesNotMatch(app, /permitido=\{podeUsarCRMComercial\}/);
+});
+
 test("pagina deriva os precos e limites da configuracao e preserva Mais popular", async () => {
   const pagina = await readFile(new URL("../../pages/Planos.jsx", import.meta.url), "utf8");
 
@@ -80,4 +101,5 @@ test("pagina deriva os precos e limites da configuracao e preserva Mais popular"
   assert.match(pagina, /SECOES_RECURSOS_POR_SEGMENTO\[segmentoAtual\]/);
   assert.match(pagina, /Gerencie clientes, servicos, agenda e financeiro/);
   assert.doesNotMatch(pagina, /Venda de Pecas/);
+  assert.doesNotMatch(pagina, /Relatorios operacionais basicos/);
 });

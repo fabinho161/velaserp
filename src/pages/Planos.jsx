@@ -123,12 +123,12 @@ const SECOES_RECURSOS_PLANOS = {
     Operacao: ["Dashboard basico", "Producao basica", "Estoque integrado", "Financeiro simples"],
     Comercial: ["Preparado para vendas nos planos superiores"],
     Gestao: ["Cadastros essenciais", "Controle operacional inicial"],
-    "Recursos Premium": ["CRM, DRE e PDF profissional nos planos superiores"],
+    "Recursos Premium": ["CRM, relatorios, DRE e PDF profissional nos planos superiores"],
   },
   basico: {
     Operacao: ["Estoque integrado", "Controle operacional", "Vendas ilimitadas"],
     Comercial: ["Cadastro de clientes", "CRM basico", "Historico por cliente"],
-    Gestao: ["Financeiro completo", "Relatorios operacionais basicos"],
+    Gestao: ["Financeiro completo"],
     "Recursos Premium": ["DRE e automacoes comerciais nos planos superiores"],
   },
   profissional: {
@@ -148,11 +148,11 @@ const SECOES_RECURSOS_PLANOS = {
 const SECOES_RECURSOS_SERVICOS = {
   gratis: {
     Operacao: ["Clientes e servicos essenciais", "Agenda para conhecer o fluxo", "Financeiro basico"],
-    Gestao: ["Dashboard basico", "Relatorios operacionais basicos"],
+    Gestao: ["Dashboard basico"],
   },
   basico: {
     Operacao: ["Clientes, servicos e agenda", "Financeiro completo", "Operacao diaria completa"],
-    Gestao: ["Relatorios operacionais basicos", "CRM basico quando aplicavel"],
+    Gestao: ["CRM basico quando aplicavel"],
   },
   profissional: {
     Operacao: ["Tudo do Basico", "Agenda e gestao completas", "Follow-up quando aplicavel"],
@@ -165,15 +165,15 @@ const SECOES_RECURSOS_SERVICOS = {
 };
 
 const SECOES_RECURSOS_COMERCIO = {
-  gratis: { Operacao: ["Cadastros essenciais", "Estoque basico", "Financeiro basico"], Gestao: ["Dashboard basico", "Relatorios operacionais basicos"] },
-  basico: { Operacao: ["Vendas, clientes e estoque", "Financeiro completo", "Operacao comercial completa"], Comercial: ["CRM basico", "Historico por cliente"], Gestao: ["Relatorios operacionais basicos"] },
+  gratis: { Operacao: ["Cadastros essenciais", "Estoque basico", "Financeiro basico"], Gestao: ["Dashboard basico"] },
+  basico: { Operacao: ["Vendas, clientes e estoque", "Financeiro completo", "Operacao comercial completa"], Comercial: ["CRM basico", "Historico por cliente"] },
   profissional: { Operacao: ["Tudo do Basico", "Gestao comercial completa"], Comercial: ["CRM inteligente", "Recompra e follow-up"], Gestao: ["Relatorios completos", "DRE", "PDF profissional"] },
   premium: { Operacao: ["Tudo do Profissional", "Multiempresa e equipe ampliada"], Comercial: ["CRM completo", "WhatsApp integrado"], Gestao: ["Relatorios avancados", "Personalizacao completa", "Prioridade no suporte"] },
 };
 
 const SECOES_RECURSOS_OFICINA = {
-  gratis: { Operacao: ["Clientes e veiculos essenciais", "Financeiro basico"], Gestao: ["Dashboard basico", "Relatorios operacionais basicos"] },
-  basico: { Operacao: ["Clientes, veiculos e ordens de servico", "Financeiro completo", "Operacao completa da oficina"], Gestao: ["Relatorios operacionais basicos", "CRM basico quando aplicavel"] },
+  gratis: { Operacao: ["Clientes e veiculos essenciais", "Financeiro basico"], Gestao: ["Dashboard basico"] },
+  basico: { Operacao: ["Clientes, veiculos e ordens de servico", "Financeiro completo", "Operacao completa da oficina"], Gestao: ["CRM basico quando aplicavel"] },
   profissional: { Operacao: ["Tudo do Basico", "Gestao completa da oficina"], Gestao: ["Relatorios completos", "DRE", "PDF profissional", "CRM inteligente"] },
   premium: { Operacao: ["Tudo do Profissional", "Multiempresa e equipe ampliada"], Gestao: ["Relatorios avancados", "Personalizacao completa", "WhatsApp integrado", "Prioridade no suporte"] },
 };

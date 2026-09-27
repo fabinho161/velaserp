@@ -51,7 +51,7 @@ export default function Sidebar() {
   } = useERP();
   const location = useLocation();
   const {
-    podeUsarCRMComercial,
+    podeUsarClientesOperacionais,
     podeUsarRelatoriosOperacionais,
     podeUsarVendas,
   } = usePlano();
@@ -112,7 +112,7 @@ export default function Sidebar() {
         ...(podeVerMenu(PERMISSOES_EMPRESA.faturamento)
           ? [{ path: "/faturamentos", label: "Faturamento", icon: FileCheck2, modulo: "faturamento" }]
           : []),
-        ...(podeVerMenu(PERMISSOES_EMPRESA.crm, podeUsarCRMComercial)
+        ...(podeVerMenu(PERMISSOES_EMPRESA.crm, podeUsarClientesOperacionais)
           ? [{
               path: "/clientes",
               label: isPrestacaoServicos ? "Clientes" : "CRM",

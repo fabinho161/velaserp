@@ -44,7 +44,7 @@ import Suporte from "./pages/Suporte";
 function AuthenticatedApp() {
   const {
     podeUsarVendas,
-    podeUsarCRMComercial,
+    podeUsarClientesOperacionais,
     podeUsarRelatoriosOperacionais,
   } = usePlano();
 
@@ -147,10 +147,10 @@ function AuthenticatedApp() {
               <SegmentoRoute modulo="clientes">
                 <EmpresaPermissionRoute permissao={PERMISSOES_EMPRESA.crm}>
                   <PlanoRoute
-                    permitido={podeUsarCRMComercial}
-                    titulo="CRM indisponivel no plano atual"
-                    descricao="A carteira de clientes entra a partir do plano Basico, com cadastro de clientes e historico simples."
-                    planoMinimo="Plano Basico"
+                    permitido={podeUsarClientesOperacionais}
+                    titulo="Clientes indisponiveis no plano atual"
+                    descricao="O cadastro operacional de clientes depende de uma assinatura ativa."
+                    planoMinimo="Assinatura ativa"
                   >
                     <ClientesCRM />
                   </PlanoRoute>
