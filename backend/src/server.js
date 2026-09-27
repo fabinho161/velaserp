@@ -4,6 +4,7 @@ const cors = require("cors");
 const express = require("express");
 const helmet = require("helmet");
 const adminDiagnosticsRoutes = require("./routes/adminDiagnosticsRoutes");
+const { router: adminClientesRoutes } = require("./routes/adminClientesRoutes");
 const { router: agendaRoutes } = require("./routes/agendaRoutes");
 const conviteRoutes = require("./routes/conviteRoutes");
 const checkoutRoutes = require("./routes/checkoutRoutes");
@@ -66,6 +67,7 @@ app.use("/api/financeiro/despesas", financeiroDespesasRoutes);
 app.use("/api/ordens-servico", ordensServicoRoutes);
 app.use("/api/webhooks", webhookRoutes);
 app.use("/api/admin", adminDiagnosticsRoutes);
+app.use("/api/admin", adminClientesRoutes);
 
 app.use((err, req, res, next) => {
   if (res.headersSent) {

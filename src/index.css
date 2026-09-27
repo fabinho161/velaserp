@@ -2936,6 +2936,37 @@ tr:hover td {
   font-weight: 700;
 }
 
+.admin-delete-client-modal {
+  width: min(560px, 100%);
+}
+
+.admin-delete-client-summary {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0;
+}
+
+.admin-delete-client-summary div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-delete-client-summary span {
+  color: var(--text-muted);
+}
+
+.admin-delete-client-summary strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.admin-delete-client-modal .modal-actions .danger {
+  background: #b42318;
+  color: #fff;
+}
+
 @media (max-width: 760px) {
   .admin-user-limit-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

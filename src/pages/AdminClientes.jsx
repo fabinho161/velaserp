@@ -109,6 +109,11 @@ export default function AdminClientes() {
     motivoLiberacaoUsuarios: "",
   });
   const [salvandoLimite, setSalvandoLimite] = useState(false);
+  const [clienteExclusao, setClienteExclusao] = useState(null);
+  const [previewExclusao, setPreviewExclusao] = useState(null);
+  const [confirmacaoExclusao, setConfirmacaoExclusao] = useState("");
+  const [carregandoPreview, setCarregandoPreview] = useState(null);
+  const [excluindoCliente, setExcluindoCliente] = useState(false);
   const ordenacaoClientes = useTableSort({
     chave: "cliente",
     direcao: "asc",
@@ -335,6 +340,76 @@ export default function AdminClientes() {
       showToast(error.message || "Erro ao atualizar limite de usuarios.", "error");
     } finally {
       setSalvandoLimite(false);
+    }
+  };
+
+  const chamarAdminClientes = async (caminho, options = {}) => {
+    const token = await auth.currentUser?.getIdToken(true);
+    if (!token) throw new Error("Sessao expirada. Faca login novamente.");
+
+    const response = await fetch(`${API_URL}/api/admin${caminho}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        ...options.headers,
+      },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.ok === false) {
+      const error = new Error(data?.error || "Nao foi possivel concluir a exclusao.");
+      error.parcial = data?.parcial === true;
+      error.faseAtual = data?.faseAtual || null;
+      throw error;
+    }
+    return data;
+  };
+
+  const abrirExclusaoCliente = async (cliente) => {
+    setCarregandoPreview(cliente.uid);
+    try {
+      const data = await chamarAdminClientes(
+        `/clientes/${encodeURIComponent(cliente.uid)}/exclusao-preview`
+      );
+      setClienteExclusao(cliente);
+      setPreviewExclusao(data.preview);
+      setConfirmacaoExclusao("");
+    } catch (error) {
+      showToast(error.message || "Erro ao preparar exclusao do cliente.", "error");
+    } finally {
+      setCarregandoPreview(null);
+    }
+  };
+
+  const fecharExclusaoCliente = () => {
+    if (excluindoCliente) return;
+    setClienteExclusao(null);
+    setPreviewExclusao(null);
+    setConfirmacaoExclusao("");
+  };
+
+  const excluirClienteDefinitivamente = async () => {
+    if (!clienteExclusao || !previewExclusao) return;
+    setExcluindoCliente(true);
+    try {
+      await chamarAdminClientes(`/clientes/${encodeURIComponent(clienteExclusao.uid)}`, {
+        method: "DELETE",
+        body: JSON.stringify({ confirmacaoEmail: confirmacaoExclusao }),
+      });
+      setClienteExclusao(null);
+      setPreviewExclusao(null);
+      setConfirmacaoExclusao("");
+      await carregarClientes();
+      showToast("Cliente excluido definitivamente.", "success");
+    } catch (error) {
+      showToast(
+        error.parcial
+          ? `A exclusao nao foi concluida${error.faseAtual ? ` na fase ${error.faseAtual}` : ""}. Tente novamente.`
+          : error.message || "Erro ao excluir cliente.",
+        "error"
+      );
+    } finally {
+      setExcluindoCliente(false);
     }
   };
 
@@ -595,6 +670,15 @@ export default function AdminClientes() {
                             label: "Ajustar limite de usuarios",
                             onClick: () => abrirModalLimiteUsuarios(cliente),
                           },
+                          ...(cliente.role !== "admin_master" ? [{
+                            label:
+                              carregandoPreview === cliente.uid
+                                ? "Carregando exclusao..."
+                                : "Excluir cliente",
+                            danger: true,
+                            disabled: carregandoPreview === cliente.uid,
+                            onClick: () => abrirExclusaoCliente(cliente),
+                          }] : []),
                         ]}
                       />
                     </td>
@@ -712,6 +796,54 @@ export default function AdminClientes() {
                 disabled={salvandoLimite}
               >
                 {salvandoLimite ? "Salvando..." : "Salvar limite"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {clienteExclusao && previewExclusao && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="admin-delete-client-title">
+          <div className="modal-card admin-delete-client-modal">
+            <h3 id="admin-delete-client-title">Excluir definitivamente o cliente?</h3>
+            <p>
+              Esta acao excluira permanentemente a conta e os dados pertencentes ao
+              cliente. Esta operacao nao podera ser desfeita.
+            </p>
+
+            <div className="admin-delete-client-summary">
+              <div><span>Cliente</span><strong>{previewExclusao.email}</strong></div>
+              <div><span>Empresas proprias</span><strong>{previewExclusao.empresasProprias}</strong></div>
+              <div><span>Participacoes em outras empresas</span><strong>{previewExclusao.participacoesTerceiros}</strong></div>
+              <div><span>Vinculos de convidados</span><strong>{previewExclusao.vinculosConvidados}</strong></div>
+              <div><span>Convites relacionados</span><strong>{previewExclusao.convitesRelacionados}</strong></div>
+            </div>
+
+            <label>
+              Digite o e-mail do cliente para confirmar
+              <input
+                type="email"
+                autoComplete="off"
+                value={confirmacaoExclusao}
+                onChange={(event) => setConfirmacaoExclusao(event.target.value)}
+                disabled={excluindoCliente}
+              />
+            </label>
+
+            <div className="modal-actions">
+              <button type="button" className="confirm-secondary" onClick={fecharExclusaoCliente} disabled={excluindoCliente}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="danger"
+                onClick={excluirClienteDefinitivamente}
+                disabled={
+                  excluindoCliente ||
+                  confirmacaoExclusao.trim().toLowerCase() !== previewExclusao.email
+                }
+              >
+                {excluindoCliente ? "Excluindo..." : "Excluir definitivamente"}
               </button>
             </div>
           </div>
