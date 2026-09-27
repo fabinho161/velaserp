@@ -14,8 +14,9 @@ const caminhoEmpresa = "users/owner/empresas/empresa";
 
 const criarBanco = ({ segmento = "clientes", role = "comercial", ativo = true, cliente = true, servico = true } = {}) => {
   let sequencia = 0;
+  let filaTransacoes = Promise.resolve();
   const docs = new Map([
-    [caminhoEmpresa, { segmento, ownerUid: "owner" }],
+    [caminhoEmpresa, { segmento, ownerUid: "owner", nome: "Empresa Teste" }],
     ["users/owner", {}],
     ["users/admin", { role: "admin_master" }],
     ["usuariosPorAuth/guest/empresas/empresa", {
@@ -36,6 +37,7 @@ const criarBanco = ({ segmento = "clientes", role = "comercial", ativo = true, c
   const ref = (path) => ({
     path, id: path.split("/").at(-1),
     collection: (nome) => collection(`${path}/${nome}`),
+    update: async (data) => docs.set(path, { ...docs.get(path), ...data }),
   });
   const collection = (path) => ({
     path,
@@ -44,7 +46,8 @@ const criarBanco = ({ segmento = "clientes", role = "comercial", ativo = true, c
   });
   const db = {
     collection,
-    runTransaction: async (callback) => {
+    runTransaction: (callback) => {
+      const executar = async () => {
       const writes = [];
       const tx = {
         get: async (item) => {
@@ -67,6 +70,10 @@ const criarBanco = ({ segmento = "clientes", role = "comercial", ativo = true, c
       };
       const resultado = await callback(tx);
       writes.forEach((write) => write());
+      return resultado;
+      };
+      const resultado = filaTransacoes.then(executar, executar);
+      filaTransacoes = resultado.then(() => undefined, () => undefined);
       return resultado;
     },
   };
@@ -540,6 +547,144 @@ test("confirmacao inicio e cancelamento sao autoritativos e cancelamento e idemp
   assert.equal((await chamar(cancelar)).reutilizado, true);
   assert.equal(docs.get(`${caminhoEmpresa}/agendamentos/a1`).canceladoEm, "cancelado");
   assert.equal(docs.get(`${caminhoEmpresa}/agendaControles/2026-09-24`).versao, 1);
+});
+
+test("confirmacao envia email valido uma vez e registra rastreabilidade", async () => {
+  const { db, docs } = criarBanco();
+  const path = `${caminhoEmpresa}/agendamentos/a1`;
+  docs.set(path, {
+    ...bodyValido,
+    clienteNome: "Cliente",
+    clienteEmail: " CLIENTE@EXEMPLO.COM ",
+    servicoNome: "Servico",
+    valorServico: 125,
+    status: "agendado",
+  });
+  const envios = [];
+  const handler = criarHandlerTransicao("confirmar", {
+    getDb: () => db,
+    agora: () => "agora",
+    enviarConfirmacao: async (payload) => {
+      envios.push(payload);
+      return { provider: "resend" };
+    },
+  });
+
+  const resposta = await chamar(handler);
+  const repetida = await chamar(handler);
+
+  assert.equal(resposta.status, "confirmado");
+  assert.equal(repetida.reutilizado, true);
+  assert.equal(envios.length, 1);
+  assert.equal(envios[0].para, "cliente@exemplo.com");
+  assert.equal(envios[0].nomeEmpresa, "Empresa Teste");
+  assert.deepEqual(docs.get(path).notificacaoConfirmacao, {
+    status: "enviado",
+    destinatario: "cliente@exemplo.com",
+    provider: "resend",
+    criadoEm: "agora",
+    enviadoEm: "agora",
+    atualizadoEm: "agora",
+    erro: "",
+  });
+});
+
+for (const clienteEmail of ["", "email-invalido"]) {
+  test(`confirmacao sem destinatario valido registra sem_email para ${clienteEmail || "ausente"}`, async () => {
+    const { db, docs } = criarBanco();
+    const path = `${caminhoEmpresa}/agendamentos/a1`;
+    docs.set(path, { ...bodyValido, clienteEmail, status: "agendado" });
+    let envios = 0;
+    const resposta = await chamar(criarHandlerTransicao("confirmar", {
+      getDb: () => db,
+      agora: () => "agora",
+      enviarConfirmacao: async () => { envios += 1; },
+    }));
+
+    assert.equal(resposta.status, "confirmado");
+    assert.equal(envios, 0);
+    assert.equal(docs.get(path).notificacaoConfirmacao.status, "sem_email");
+  });
+}
+
+test("falha do provedor nao desfaz confirmacao e registra erro sanitizado", async () => {
+  const { db, docs } = criarBanco();
+  const path = `${caminhoEmpresa}/agendamentos/a1`;
+  docs.set(path, { ...bodyValido, clienteEmail: "cliente@exemplo.com", status: "agendado" });
+  const error = Object.assign(new Error("resposta secreta do provedor"), { code: "PROVIDER_FAILED" });
+
+  const resposta = await chamar(criarHandlerTransicao("confirmar", {
+    getDb: () => db,
+    agora: () => "agora",
+    enviarConfirmacao: async () => { throw error; },
+  }));
+
+  assert.equal(resposta.status, "confirmado");
+  assert.equal(docs.get(path).status, "confirmado");
+  assert.equal(docs.get(path).notificacaoConfirmacao.status, "falhou");
+  assert.equal(docs.get(path).notificacaoConfirmacao.erro, "Falha no envio (PROVIDER_FAILED).");
+  assert.doesNotMatch(docs.get(path).notificacaoConfirmacao.erro, /secreta/);
+});
+
+test("notificacao preexistente e confirmacao repetida nunca criam novo disparo", async () => {
+  const { db, docs } = criarBanco();
+  const path = `${caminhoEmpresa}/agendamentos/a1`;
+  docs.set(path, {
+    ...bodyValido,
+    clienteEmail: "cliente@exemplo.com",
+    status: "agendado",
+    notificacaoConfirmacao: { status: "falhou" },
+  });
+  let envios = 0;
+  const handler = criarHandlerTransicao("confirmar", {
+    getDb: () => db,
+    enviarConfirmacao: async () => { envios += 1; },
+  });
+
+  assert.equal((await chamar(handler)).status, "confirmado");
+  assert.equal((await chamar(handler)).reutilizado, true);
+  assert.equal(envios, 0);
+  assert.deepEqual(docs.get(path).notificacaoConfirmacao, { status: "falhou" });
+});
+
+test("duas confirmacoes concorrentes reservam e enviam somente uma notificacao", async () => {
+  const { db, docs } = criarBanco();
+  const path = `${caminhoEmpresa}/agendamentos/a1`;
+  docs.set(path, { ...bodyValido, clienteEmail: "cliente@exemplo.com", status: "agendado" });
+  let envios = 0;
+  const handler = criarHandlerTransicao("confirmar", {
+    getDb: () => db,
+    agora: () => "agora",
+    enviarConfirmacao: async () => { envios += 1; return { provider: "resend" }; },
+  });
+
+  const respostas = await Promise.all([chamar(handler), chamar(handler)]);
+
+  assert.equal(respostas.filter((item) => item.reutilizado === false).length, 1);
+  assert.equal(respostas.filter((item) => item.reutilizado === true).length, 1);
+  assert.equal(envios, 1);
+  assert.equal(docs.get(path).notificacaoConfirmacao.status, "enviado");
+});
+
+test("falha da rastreabilidade apos envio nao falha confirmacao nem permite reenvio", async () => {
+  const { db, docs } = criarBanco();
+  const path = `${caminhoEmpresa}/agendamentos/a1`;
+  docs.set(path, { ...bodyValido, clienteEmail: "cliente@exemplo.com", status: "agendado" });
+  let envios = 0;
+  const logs = [];
+  const handler = criarHandlerTransicao("confirmar", {
+    getDb: () => db,
+    agora: () => "agora",
+    enviarConfirmacao: async () => { envios += 1; return { provider: "smtp" }; },
+    atualizarNotificacao: async () => { throw Object.assign(new Error("falhou"), { code: "WRITE_FAILED" }); },
+    logErro: (...args) => logs.push(args),
+  });
+
+  assert.equal((await chamar(handler)).status, "confirmado");
+  assert.equal((await chamar(handler)).reutilizado, true);
+  assert.equal(envios, 1);
+  assert.equal(docs.get(path).notificacaoConfirmacao.status, "pendente");
+  assert.equal(logs.length, 1);
 });
 
 test("cancelamento libera intervalo para nova criacao", async () => {

@@ -3,6 +3,7 @@ const authFirebase = require("../middlewares/authFirebase");
 const { FieldValue, getDb } = require("../firebaseAdmin");
 const { normalizarRoleEmpresa } = require("../utils/perfisEmpresa");
 const { empresaPertenceAoSegmento } = require("../utils/segmentosEmpresa");
+const { enviarEmailConfirmacaoAgendamento } = require("../services/emailAgendamentos");
 const {
   existeConflitoAgenda,
   montarCamposCompatibilidadeMultisservico,
@@ -46,7 +47,8 @@ const verificarAcessoAgenda = async (db, tx, { uid, ownerUid, empresaId }) => {
       (dados(empresaSnap).ownerUid && dados(empresaSnap).ownerUid !== ownerUid)) {
     throw erro(403, "Operacao indisponivel para esta empresa.", "agenda_sem_permissao");
   }
-  if (uid === ownerUid || dados(atorSnap)?.role === "admin_master") return empresaRef;
+  const empresa = dados(empresaSnap);
+  if (uid === ownerUid || dados(atorSnap)?.role === "admin_master") return { empresaRef, empresa };
 
   const authRef = db.collection("usuariosPorAuth").doc(uid).collection("empresas").doc(empresaId);
   const userRef = atorRef.collection("empresas").doc(empresaId);
@@ -62,7 +64,7 @@ const verificarAcessoAgenda = async (db, tx, { uid, ownerUid, empresaId }) => {
       !ROLES_AGENDA.has(normalizarRoleEmpresa(membro))) {
     throw erro(403, "Permissao insuficiente.", "agenda_sem_permissao");
   }
-  return empresaRef;
+  return { empresaRef, empresa };
 };
 
 const responder = (handler) => async (req, res) => {
@@ -176,7 +178,7 @@ const criarHandlerCriar = ({ getDb: obterDb = getDb, agora = () => FieldValue.se
     const agendaId = db.collection("users").doc(escopo.ownerUid).collection("empresas")
       .doc(escopo.empresaId).collection("agendamentos").doc().id;
     return db.runTransaction(async (tx) => {
-      const empresaRef = await verificarAcessoAgenda(db, tx, { uid: req.user.uid, ...escopo });
+      const { empresaRef } = await verificarAcessoAgenda(db, tx, { uid: req.user.uid, ...escopo });
       const agendaRef = empresaRef.collection("agendamentos");
       const controles = await lerControlesAgenda(tx, empresaRef, [intencao.data]);
       const [cliente, servicos, existentes] = await Promise.all([
@@ -221,7 +223,7 @@ const criarHandlerEditar = ({ getDb: obterDb = getDb, agora = () => FieldValue.s
     const intencao = montarDadosIntencao(req.body);
     const db = obterDb();
     return db.runTransaction(async (tx) => {
-      const empresaRef = await verificarAcessoAgenda(db, tx, { uid: req.user.uid, ...escopo });
+      const { empresaRef } = await verificarAcessoAgenda(db, tx, { uid: req.user.uid, ...escopo });
       const agendaRef = empresaRef.collection("agendamentos");
       const documentoRef = agendaRef.doc(req.params.id);
       const atualSnap = await tx.get(documentoRef);
@@ -284,19 +286,37 @@ const criarHandlerEditar = ({ getDb: obterDb = getDb, agora = () => FieldValue.s
     });
   });
 
-const criarHandlerTransicao = (acao, { getDb: obterDb = getDb, agora = () => FieldValue.serverTimestamp() } = {}) =>
+const emailValido = (valor) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(valor || "").trim());
+
+const sanitizarErroEmail = (error) => {
+  const codigo = String(error?.code || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 60);
+  return codigo ? `Falha no envio (${codigo}).` : "Falha ao enviar a confirmação.";
+};
+
+const atualizarNotificacaoConfirmacao = (documentoRef, notificacaoConfirmacao) =>
+  documentoRef.update({ notificacaoConfirmacao });
+
+const criarHandlerTransicao = (acao, {
+  getDb: obterDb = getDb,
+  agora = () => FieldValue.serverTimestamp(),
+  enviarConfirmacao = enviarEmailConfirmacaoAgendamento,
+  atualizarNotificacao = atualizarNotificacaoConfirmacao,
+  logErro = (mensagem, detalhes) => console.error(mensagem, detalhes),
+} = {}) =>
   responder(async (req) => {
     const regra = TRANSICOES[acao];
     const escopo = validarEscopo(req.body);
     if (!regra || !idValido(req.params?.id)) throw erro(400, "Agendamento invalido.", "agenda_nao_encontrada");
     const db = obterDb();
-    return db.runTransaction(async (tx) => {
-      const empresaRef = await verificarAcessoAgenda(db, tx, { uid: req.user.uid, ...escopo });
+    const resultado = await db.runTransaction(async (tx) => {
+      const { empresaRef, empresa } = await verificarAcessoAgenda(db, tx, { uid: req.user.uid, ...escopo });
       const documentoRef = empresaRef.collection("agendamentos").doc(req.params.id);
       const snap = await tx.get(documentoRef);
       if (!existe(snap)) throw erro(404, "Agendamento nao encontrado.", "agenda_nao_encontrada");
       const atual = snap.data();
-      if (atual.status === regra.para) return { agendamentoId: req.params.id, status: regra.para, reutilizado: true };
+      if (atual.status === regra.para) {
+        return { agendamentoId: req.params.id, status: regra.para, reutilizado: true };
+      }
       if (!regra.de.includes(atual.status)) {
         throw erro(409, "Transicao de atendimento invalida.", "agenda_transicao_invalida");
       }
@@ -305,9 +325,77 @@ const criarHandlerTransicao = (acao, { getDb: obterDb = getDb, agora = () => Fie
         const controles = await lerControlesAgenda(tx, empresaRef, [atual.data]);
         tocarControlesAgenda(tx, controles, timestamp);
       }
-      tx.update(documentoRef, { status: regra.para, [regra.marco]: timestamp, atualizadoEm: timestamp });
-      return { agendamentoId: req.params.id, status: regra.para, reutilizado: false };
+      const patch = { status: regra.para, [regra.marco]: timestamp, atualizadoEm: timestamp };
+      let envioConfirmacao = null;
+      if (acao === "confirmar" && !atual.notificacaoConfirmacao) {
+        const destinatario = String(atual.clienteEmail || "").trim().toLowerCase();
+        const notificacaoConfirmacao = {
+          status: emailValido(destinatario) ? "pendente" : "sem_email",
+          destinatario,
+          provider: null,
+          criadoEm: timestamp,
+          enviadoEm: null,
+          atualizadoEm: timestamp,
+          erro: "",
+        };
+        patch.notificacaoConfirmacao = notificacaoConfirmacao;
+        if (notificacaoConfirmacao.status === "pendente") {
+          envioConfirmacao = {
+            documentoRef,
+            notificacaoConfirmacao,
+            para: destinatario,
+            nomeEmpresa: empresa.nome || empresa.razaoSocial || "Renovar ERP",
+            agendamento: atual,
+          };
+        }
+      }
+      tx.update(documentoRef, patch);
+      return {
+        agendamentoId: req.params.id,
+        status: regra.para,
+        reutilizado: false,
+        envioConfirmacao,
+      };
     });
+
+    const { envioConfirmacao, ...resposta } = resultado;
+    if (!envioConfirmacao) return resposta;
+
+    let notificacaoFinal;
+    try {
+      const envio = await enviarConfirmacao({
+        agendamento: envioConfirmacao.agendamento,
+        nomeEmpresa: envioConfirmacao.nomeEmpresa,
+        para: envioConfirmacao.para,
+      });
+      notificacaoFinal = {
+        ...envioConfirmacao.notificacaoConfirmacao,
+        status: "enviado",
+        provider: String(envio?.provider || "").slice(0, 40) || null,
+        enviadoEm: agora(),
+        atualizadoEm: agora(),
+        erro: "",
+      };
+    } catch (error) {
+      notificacaoFinal = {
+        ...envioConfirmacao.notificacaoConfirmacao,
+        status: "falhou",
+        provider: null,
+        enviadoEm: null,
+        atualizadoEm: agora(),
+        erro: sanitizarErroEmail(error),
+      };
+    }
+
+    try {
+      await atualizarNotificacao(envioConfirmacao.documentoRef, notificacaoFinal);
+    } catch (error) {
+      logErro("Falha ao atualizar rastreabilidade da confirmação de agendamento.", {
+        agendamentoId: req.params.id,
+        codigo: String(error?.code || "agenda_notificacao_rastreabilidade").slice(0, 80),
+      });
+    }
+    return resposta;
   });
 
 const possuiVinculoAtendimento = (snapshot, agendamentoId) =>
@@ -322,7 +410,7 @@ const criarHandlerExcluir = ({ getDb: obterDb = getDb, agora = () => FieldValue.
     if (!idValido(req.params?.id)) throw erro(400, "Agendamento invalido.", "agenda_nao_encontrada");
     const db = obterDb();
     return db.runTransaction(async (tx) => {
-      const empresaRef = await verificarAcessoAgenda(db, tx, { uid: req.user.uid, ...escopo });
+      const { empresaRef } = await verificarAcessoAgenda(db, tx, { uid: req.user.uid, ...escopo });
       const documentoRef = empresaRef.collection("agendamentos").doc(req.params.id);
       const agendamentoSnap = await tx.get(documentoRef);
       if (!existe(agendamentoSnap)) {
