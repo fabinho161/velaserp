@@ -139,8 +139,6 @@ export default function ClientesCRM() {
   const { showToast } = useToast();
   const { confirmar } = useConfirmacao();
   const {
-    podeUsarCRMComercial,
-    podeUsarCRMBasico,
     podeUsarCRMInteligente,
     podeUsarCRMWhatsapp,
     podeUsarCRMFollowUp,
@@ -676,24 +674,6 @@ export default function ClientesCRM() {
     );
   };
 
-  if (!podeUsarCRMComercial) {
-    return (
-      <div className="crm-page">
-        <div className="card plan-locked-card crm-locked-card">
-          <h2>CRM Comercial indisponível no plano atual</h2>
-          <p>
-            A Carteira de Clientes está disponível a partir do plano Básico.
-            Faça upgrade para cadastrar clientes comerciais, acompanhar histórico
-            de compras e organizar sua carteira.
-          </p>
-          <button type="button" onClick={() => navigate("/planos")}>
-            Ver planos
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="crm-page">
       <div className="page-header">
@@ -708,7 +688,7 @@ export default function ClientesCRM() {
           </p>
         </div>
 
-        {podeUsarCRMBasico && podeEscreverClientes && (
+        {podeEscreverClientes && (
           <button type="button" onClick={abrirNovoCliente}>
             <UserPlus size={18} />
             Novo cliente

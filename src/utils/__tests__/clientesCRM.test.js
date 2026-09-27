@@ -147,10 +147,24 @@ test("ClientesCRM aplica RBAC visual e mantém WhatsApp independente de escrita"
     "utf8",
   );
 
-  assert.match(pagina, /podeUsarCRMBasico && podeEscreverClientes/);
+  assert.match(pagina, /\{podeEscreverClientes && \(\s*<button type="button" onClick=\{abrirNovoCliente\}>/);
   assert.match(pagina, /podeEscreverClientes && \{\s*label: "Editar cliente"/);
   assert.match(pagina, /podeEscreverClientes && \{\s*label: cliente\.ativo === false/);
   assert.match(pagina, /podeUsarCRMWhatsapp && \{\s*label: "Chamar no WhatsApp"/);
   assert.match(pagina, /const podeExcluirClientes = false;/);
   assert.match(pagina, /podeExcluirClientes && \{\s*label: "Excluir cliente"/);
+});
+
+test("Clientes operacional não é bloqueado pelos gates de CRM", () => {
+  const pagina = readFileSync(
+    fileURLToPath(new URL("../../pages/ClientesCRM.jsx", import.meta.url)),
+    "utf8",
+  );
+
+  assert.doesNotMatch(pagina, /if \(!podeUsarCRMComercial\)/);
+  assert.doesNotMatch(pagina, /CRM Comercial indisponível no plano atual/);
+  assert.doesNotMatch(pagina, /podeUsarCRMBasico && podeEscreverClientes/);
+  assert.match(pagina, /!isPrestacaoServicos && podeUsarCRMInteligente/);
+  assert.match(pagina, /!isPrestacaoServicos && podeUsarCRMFollowUp/);
+  assert.match(pagina, /podeUsarCRMWhatsapp && \{/);
 });
