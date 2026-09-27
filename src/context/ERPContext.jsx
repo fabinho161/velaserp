@@ -1141,6 +1141,9 @@ const excluirEmpresa = useCallback(async (id) => {
   const statusEmpresaSelecionada = normalizarStatusUsuarioEmpresa(
     empresaSelecionada?.status
   );
+  const segmentoEmpresaSelecionada = normalizarSegmentoEmpresa(
+    empresaSelecionada?.segmento
+  );
   const usuarioEmpresaAtualAtivo = Boolean(
     usuarioEmpresaAtual &&
     !usuarioEmpresaInativo &&
@@ -1208,7 +1211,7 @@ const excluirEmpresa = useCallback(async (id) => {
           operacao: "get:onSnapshot",
           error,
           perfil: perfilEmpresaAtual,
-          segmento: normalizarSegmentoEmpresa(empresaSelecionada?.segmento),
+          segmento: segmentoEmpresaSelecionada,
         });
         setEmpresas((empresasAtuais) =>
           removerPlanoEspelhoEmpresa(empresasAtuais, empresaId, empresaOwnerUid)
@@ -1225,9 +1228,9 @@ const excluirEmpresa = useCallback(async (id) => {
   }, [
     empresaId,
     empresaOwnerUid,
-    empresaSelecionada,
     empresaSelecionadaExiste,
     perfilEmpresaAtual,
+    segmentoEmpresaSelecionada,
     statusEmpresaSelecionada,
     usuarioEmpresaAtualAtivo,
     usuarioUid,
